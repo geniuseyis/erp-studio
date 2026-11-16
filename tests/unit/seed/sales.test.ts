@@ -176,3 +176,13 @@ test("aynı tohum aynı veriyi üretir", async () => {
   };
   expect(await projection(a)).toEqual(await projection(b));
 });
+
+test("ürün adı kataloğun adıdır; kategori adda iki kez geçmez", async () => {
+  const rows = await a.select().from(products).orderBy(asc(products.code));
+  const first = rows.find((p) => p.code === "URN-0001");
+  expect(first?.name).toBe("Eksen Gardırop");
+  for (const p of rows) {
+    expect(p.name, p.code).toBe(SEED_PRODUCTS.find((s) => s.code === p.code)?.name);
+    expect(p.name.endsWith(`${p.category} ${p.category}`), p.name).toBe(false);
+  }
+});

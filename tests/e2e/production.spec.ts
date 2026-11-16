@@ -32,6 +32,35 @@ async function openWorkOrder(page: Page, code: string): Promise<Locator> {
   return drawer;
 }
 
+test("ürün adında kategori bir kez geçer: URN-0001 Eksen Gardırop", async ({ page }) => {
+  await loginAs(page, "Zeynep Arıkan");
+  await navTo(page, "Ürünler");
+  expect((await one<{ n: number }>(page, `select count(*)::int as n from products where name like '%' || category || ' ' || category`)).n).toBe(0);
+  const rows = page.getByRole("table", { name: "Ürünler" }).locator("tbody tr");
+  await page.getByRole("searchbox", { name: "Ürün ara" }).fill("URN-0001");
+  await expect.poll(() => rows.count()).toBe(1);
+  await rows.first().click();
+  const drawer = page.getByRole("dialog", { name: "Eksen Gardırop" });
+  await expect(drawer).toBeVisible();
+  const title = (await drawer.getByRole("heading", { level: 2 }).first().textContent()) ?? "";
+  expect(title.match(/Eksen Gardırop/g)).toHaveLength(1);
+  expect(title).not.toMatch(/Gardırop Gardırop/);
+  await page.keyboard.press("Escape");
+
+  // İş emri listesi ve atölye kartları da ürün adını tekrarsız gösterir.
+  const categories = (await sql<{ category: string }>(page, "select distinct category from products")).map((c) => c.category);
+  const noRepeat = async (label: string) => {
+    await navTo(page, label);
+    await expect(page.getByRole("main")).toContainText(/IE-/);
+    const text = (await page.getByRole("main").textContent()) ?? "";
+    for (const c of categories) expect(text, `${label}: ${c}`).not.toContain(`${c} ${c}`);
+  };
+  await noRepeat("İş emirleri");
+  await signOut(page);
+  await loginAs(page, "Cem Doğru");
+  await noRepeat("Atölye");
+});
+
 test("ürün çekmecesinde reçete ve rota görünür; ahşap üründe cila satırı var", async ({ page }) => {
   await loginAs(page, "Zeynep Arıkan");
   await navTo(page, "Ürünler");

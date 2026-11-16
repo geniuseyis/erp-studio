@@ -20,7 +20,7 @@ import { addLine, cancelOrder, confirmOrder, createOrder, shipOrder } from "@/do
 import { roundUpToStep, toKurus, type Unit } from "@/domain/units";
 import { SEED_CUSTOMERS } from "./data/customers";
 import { SEED_MATERIALS } from "./data/materials";
-import { productName, SEED_PRODUCTS, STATIONS } from "./data/products";
+import { SEED_PRODUCTS, STATIONS } from "./data/products";
 import { mulberry32 } from "./rng";
 
 const DEFAULT_SEED = 20261116;
@@ -113,7 +113,8 @@ export async function seedSales(db: Db, opts: { now: Date; seed?: number }): Pro
         SEED_PRODUCTS.map((p) => ({
           code: p.code,
           modelKey: p.modelKey,
-          name: productName(p.name, p.category),
+          // Katalogdaki ad zaten "<model> <kategori>" biçimindedir (catalog.gen.ts productName).
+          name: p.name,
           collection: p.collection,
           category: p.category,
           widthMm: p.dims.width,
