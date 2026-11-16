@@ -5,13 +5,51 @@
 import { getTableColumns, getTableName, sql } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import type { Db } from "@/db/client";
-import { auditLog, departments, materials, settings, stockCountLines, stockCounts, stockMovements, users } from "@/db/schema";
+import {
+  auditLog,
+  bomLines,
+  customers,
+  departments,
+  materials,
+  productMovements,
+  products,
+  routings,
+  salesOrderLines,
+  salesOrders,
+  settings,
+  stations,
+  stockCountLines,
+  stockCounts,
+  stockMovements,
+  users,
+  workOrderSteps,
+  workOrders,
+} from "@/db/schema";
 
 /** Anlık görüntünün üretildiği "şimdi". Yüklemede bütün tarihler (yükleme anı − bu an) kadar, tam gün olarak kaydırılır. */
 export const SNAPSHOT_NOW = new Date("2026-11-15T09:00:00+03:00");
 
 /** Yabancı anahtar sırasıyla: önce başvurulan tablolar. */
-const TABLES: PgTable[] = [departments, users, materials, stockMovements, stockCounts, stockCountLines, auditLog, settings];
+const TABLES: PgTable[] = [
+  departments,
+  users,
+  materials,
+  stockMovements,
+  stockCounts,
+  stockCountLines,
+  stations,
+  products,
+  bomLines,
+  routings,
+  customers,
+  salesOrders,
+  salesOrderLines,
+  workOrders,
+  workOrderSteps,
+  productMovements,
+  auditLog,
+  settings,
+];
 const CHUNK = 400;
 
 export type Snapshot = {
@@ -64,6 +102,9 @@ export async function loadSnapshot(db: Db, snapshot: Snapshot, now: Date): Promi
     // Sıra numaraları elle yazıldı; sayacı en büyük değerin üstüne al ki yeni hareketler çakışmasın.
     await tx.execute(
       sql`select setval(pg_get_serial_sequence('stock_movements', 'seq'), greatest((select coalesce(max(seq), 0) from stock_movements), 1))`,
+    );
+    await tx.execute(
+      sql`select setval(pg_get_serial_sequence('product_movements', 'seq'), greatest((select coalesce(max(seq), 0) from product_movements), 1))`,
     );
   });
 }
