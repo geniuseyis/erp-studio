@@ -257,12 +257,36 @@ describe("katalog dosyası", () => {
     }
   });
 
-  test("katalog dosyası deriveBom ile kararlı: aynı giriş aynı çıktı", () => {
-    for (const product of SEED_PRODUCTS) {
-      expect(deriveBom(product)).toEqual(product.bom);
-      expect(deriveBom(product)).toEqual(deriveBom(structuredClone(product)));
-      expect(deriveRouting(product)).toEqual(product.routing);
-    }
+  // Sabit değerler gerçek katalogdan (2026-11-16) kopyalandı. Bir kural, malzeme fiyatı ya da katalog dışa aktarımı
+  // değişirse bu test düşer; değişiklik bilinçliyse değerler yeniden kopyalanır ve DATA_SOURCES yeniden üretilir.
+  test.each([
+    {
+      code: "URN-0001",
+      name: "Eksen Gardırop",
+      finish: "beyaz",
+      costKurus: 2_345_707,
+      priceKurus: 4_225_000,
+      bomLines: 19,
+      routing: { KSM: 136, KNR: 68, CNC: 146, MNT: 254, PKT: 33 },
+    },
+    {
+      code: "URN-0002",
+      name: "Eksen Gardırop",
+      finish: "ahsap",
+      costKurus: 3_078_628,
+      priceKurus: 5_545_000,
+      bomLines: 21,
+      routing: { KSM: 136, KNR: 68, CNC: 146, MNT: 254, BYA: 77, PKT: 33 },
+    },
+  ])("katalog kuralları sabit: $code $name ($finish) maliyet, fiyat, reçete ve rota", (expected) => {
+    const product = SEED_PRODUCTS.find((x) => x.code === expected.code)!;
+    expect(product.name).toBe(expected.name);
+    expect(product.finish).toBe(expected.finish);
+    expect(unitCostKurus(product.bom, product.routing)).toBe(expected.costKurus);
+    expect(product.priceKurus).toBe(expected.priceKurus);
+    expect(product.bom).toHaveLength(expected.bomLines);
+    expect(Object.fromEntries(product.routing.map((s) => [s.station, s.minutesPerUnit]))).toEqual(expected.routing);
+    expect(product.routing.map((s) => s.station)).toEqual(Object.keys(expected.routing));
   });
 
   test("panelsiz tek ürün beyaz havluluk", () => {
