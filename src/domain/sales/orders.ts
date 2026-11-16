@@ -6,7 +6,7 @@ import { type Ctx, inTx, isUuid } from "../context";
 import { DomainError } from "../errors";
 import { assertCan } from "../permissions";
 import { istanbulDayStart, istanbulYear } from "../production/calendar";
-import { reserveProduct } from "../production/productLedger";
+import { reserveProduct, shipProduct } from "../production/productLedger";
 import type { Shortage } from "../production/types";
 import { findShortages, materialNeeds, type MaterialNeed, openWorkOrder } from "../production/workOrders";
 import { refreshOrderStatus, setLineStatus } from "./status";
@@ -205,5 +205,32 @@ export async function confirmOrder(ctx: Ctx, orderId: string): Promise<{ order: 
     const [row] = await tx.db.select().from(salesOrders).where(eq(salesOrders.id, order.id));
     if (!row) throw new Error("sipariş okunamadı");
     return { order: asOrder(row), shortages: await findShortages(tx.db, waitingNeeds) };
+  });
+}
+
+/** Hazır siparişi sevk eder (Depo): her satırın ayrılmış mamulü çıkar, satırlar ve sipariş sevk edilmiş olur. */
+export async function shipOrder(ctx: Ctx, orderId: string): Promise<SalesOrder> {
+  assertCan(ctx.user, "inventory", "execute");
+  return inTx(ctx, async (tx) => {
+    const [order] = isUuid(orderId) ? await tx.db.select().from(salesOrders).where(eq(salesOrders.id, orderId)).for("update") : [];
+    if (!order) throw new DomainError("NOT_FOUND", "Sipariş bulunamadı");
+    const all = await tx.db
+      .select()
+      .from(salesOrderLines)
+      .where(eq(salesOrderLines.orderId, order.id))
+      .orderBy(asc(salesOrderLines.createdAt), asc(salesOrderLines.id));
+    const lines = all.filter((l) => l.status !== "cancelled");
+    if (order.status !== "ready" || lines.length === 0 || lines.some((l) => l.status !== "ready")) {
+      throw new DomainError("INVALID_STATE", "Sevk için bütün kalemler hazır olmalı");
+    }
+    for (const line of lines) {
+      await shipProduct(tx, { productId: line.productId, qtyMilli: line.qtyMilli, ref: { type: "sales_order_line", id: line.id } });
+      await setLineStatus(tx, line.id, "shipped");
+    }
+    await tx.db.update(salesOrders).set({ status: "shipped", shippedAt: tx.now }).where(eq(salesOrders.id, order.id));
+    await logAudit(tx, { entity: "sales_order", entityId: order.id, action: "ship", summary: `${order.code} sevk edildi` });
+    const [row] = await tx.db.select().from(salesOrders).where(eq(salesOrders.id, order.id));
+    if (!row) throw new Error("sipariş okunamadı");
+    return asOrder(row);
   });
 }
