@@ -5,22 +5,15 @@ import { logAudit } from "../audit";
 import { type Ctx, inTx, isUuid } from "../context";
 import { DomainError } from "../errors";
 import { assertCan } from "../permissions";
+import { istanbulDayStart, istanbulYear } from "../production/calendar";
 import { asOrder, asOrderLine, type SalesOrder, type SalesOrderLine } from "./types";
 
 const CODE_PREFIX = "SIP-";
-const ISTANBUL_OFFSET_MS = 3 * 60 * 60 * 1000; // UTC+3, yaz/kış saati yok
 const MIN_QTY_MILLI = 1_000;
 const MAX_QTY_MILLI = 9_999_000;
 
 function invalid(message: string): DomainError {
   return new DomainError("VALIDATION", message);
-}
-
-/** Verilen anın İstanbul takvim günü: yıl ve günün başlangıcı (UTC anı olarak). */
-function istanbulDay(at: Date): { year: number; startsAt: Date } {
-  const shifted = new Date(at.getTime() + ISTANBUL_OFFSET_MS);
-  const startsAt = new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()) - ISTANBUL_OFFSET_MS);
-  return { year: shifted.getUTCFullYear(), startsAt };
 }
 
 function checkQty(qtyMilli: number): void {
@@ -51,14 +44,13 @@ async function mustFindLine(db: Db, lineId: string): Promise<typeof salesOrderLi
 export async function createOrder(ctx: Ctx, i: { customerId: string; dueAt: Date; note?: string }): Promise<SalesOrder> {
   assertCan(ctx.user, "sales", "write");
   if (!(i.dueAt instanceof Date) || Number.isNaN(i.dueAt.getTime())) throw invalid("Termin geçersiz");
-  const today = istanbulDay(ctx.now);
-  if (i.dueAt.getTime() < today.startsAt.getTime()) throw invalid("Termin geçmiş bir gün olamaz");
+  if (i.dueAt.getTime() < istanbulDayStart(ctx.now).getTime()) throw invalid("Termin geçmiş bir gün olamaz");
 
   return inTx(ctx, async (tx) => {
     const [customer] = isUuid(i.customerId) ? await tx.db.select().from(customers).where(eq(customers.id, i.customerId)) : [];
     if (!customer) throw new DomainError("NOT_FOUND", "Müşteri bulunamadı");
 
-    const prefix = `${CODE_PREFIX}${today.year}-`;
+    const prefix = `${CODE_PREFIX}${istanbulYear(ctx.now)}-`;
     const existing = await tx.db.select({ code: salesOrders.code }).from(salesOrders).where(like(salesOrders.code, `${prefix}%`));
     const max = existing.reduce((n, r) => Math.max(n, Number(r.code.slice(prefix.length)) || 0), 0);
     const code = `${prefix}${String(max + 1).padStart(4, "0")}`;
