@@ -4,11 +4,19 @@ Bu dosya `node scripts/gen-data-sources.mjs` ile `src/seed/data/materials.ts` i�
 
 ## Özet
 
-- Fiyat araması tarihi: **2026-11-15**.
-- 42 malzemeden **9** tanesinin fiyatı herkese açık bir ilana dayanır, **33** tanesi tahmindir.
-- Kaynaklı fiyatlar web aramasının sonuç özetlerinden alındı; ürün sayfaları tek tek açılıp doğrulanmadı. İlanlar tarihsizdir ve değişmiş olabilir.
-- Tahminler, aynı gruptaki kaynaklı kalemden ya da genel piyasa bilgisinden türetilmiştir ve gerçek fiyat teklifi yerine geçmez.
-- Arayüzde bütün fiyatlar "örnek veri" olarak etiketlenir.
+- Fiyat araması tarihi: **2026-11-16**. Yalnızca Türkiye'deki, Türkçe kaynaklar kullanıldı.
+- 42 malzemeden **14** tanesinin fiyatı ürün ya da liste sayfası açılıp okunarak, **18** tanesininki arama sonucu özetinden alındı; **10** tanesi tahmindir ve tahminin dayanağı tabloda yazılıdır.
+- "Arama özeti" olan kaynakların çoğu Koçtaş, Cimri ve Hepsiburada'dır: bu siteler otomatik sayfa okumayı reddediyor (HTTP 403), bu yüzden fiyat ürün sayfasında doğrulanamadı.
+- Kaynak bir aralık veriyorsa alt sınır alındı; liste fiyatı ile sepet indirimi ayrı gösteriliyorsa liste fiyatı alındı.
+- İlanlar değişebilir; fiyatlar gerçek bir satın alma teklifi yerine geçmez. Arayüzde bütün fiyatlar "örnek veri" olarak etiketlenir.
+
+## KDV
+
+- **Katalogdaki birim fiyatlar KDV hariçtir.** Mobilya üreticisi satın aldığı malzemenin KDV'sini indirim konusu yapar, bu yüzden maliyet KDV'siz tutulur.
+- Kaynakta KDV dahil görünen (ya da KDV yazmayan perakende) fiyatlar genel oran olan **%20**'ye göre 1,20'ye bölündü. Malzeme, parça ve aksesuar teslimleri genel orana tabidir.
+- Bakanlık rayiçleri zaten KDV hariçtir: listenin kendi notu "Bu listelerde yer alan değerlere KDV dahil değildir."
+- **Mobilya satışında KDV %10'dur.** Dayanak: KDV oranları kararına ekli (II) sayılı listenin 33. sırası (1994 sayılı Cumhurbaşkanı Kararı, 2 Ocak 2020; oran 7346 sayılı Kararla 10 Temmuz 2023'ten beri %10). Sıra 9401 (oturma mobilyaları, döşemeli olanlar dahil), 9403.10–9403.89 (ahşap, metal ve plastik mobilyalar) ve 9404.10, 9404.21, 9404.29 (şilte ve şilte mesnetleri) pozisyonlarını kapsar. Kaynak: [GİB, Güncel KDV oranları](https://cdn.gib.gov.tr/api/gibportal-file/file/getFileResources?objectKey=arsiv%2Fyardim-kaynaklar%2Fyararli-bilgiler%2Fkdv-oranlari.pdf) (10/07/2023 itibarıyla güncel liste). 2024–2026 tarihli muhasebe kaynaklarında bu orana dair bir değişiklik geçmiyor.
+- Mobilya parçaları ve aksesuarları (9401.90, 9403.90), montaj, nakliye ve tamir hizmetleri listede olmadığı için **%20**'dir.
 
 ## Ölçüler
 
@@ -20,52 +28,54 @@ Demo hesaplarındaki çalışan adları kurgusaldır. E-postalar `@baltacioglus.
 
 ## Malzeme fiyatları
 
-| Malzeme | Kategori | Birim fiyat | Dayanak |
-|---|---|---|---|
-| MDF Lam 18 mm Parlak Beyaz 2100×2800 | Panel | 1.590,00 TL / plaka | [Bauhaus](https://www.bauhaus.com.tr/mdflam-2100-2800-18-mm-parlak-beyaz-cy-61514960): MdfLam 2100×2800×18 mm Parlak Beyaz: 1.590,00 TL |
-| MDF Lam 18 mm Antrasit 2100×2800 | Panel | 1.650,00 TL / plaka | tahmin |
-| Suntalam 18 mm Beyaz 2100×2800 | Panel | 1.150,00 TL / plaka | [Bauhaus](https://www.bauhaus.com.tr/suntalam-2100-2800-18mm-441-flora-1-plaka-588m2-61537949): Suntalam 2100×2800×18 mm (441 Flora 1): 1.150,00 TL; aynı fiyat diğer desenlere uygulandı |
-| Suntalam 18 mm Ceviz Desen 2100×2800 | Panel | 1.150,00 TL / plaka | [Bauhaus](https://www.bauhaus.com.tr/suntalam-2100-2800-18mm-441-flora-1-plaka-588m2-61537949): Suntalam 2100×2800×18 mm (441 Flora 1): 1.150,00 TL; aynı fiyat diğer desenlere uygulandı |
-| MDF Lam 8 mm Beyaz Arkalık 2100×2800 | Panel | 780,00 TL / plaka | tahmin |
-| Ham MDF 18 mm 2100×2800 | Panel | 1.050,00 TL / plaka | tahmin |
-| Meşe Kaplamalı MDF 19 mm 2100×2800 | Panel | 3.400,00 TL / plaka | tahmin |
-| Meşe Masif 40 mm, Fırınlanmış | Masif | 65.000,00 TL / m³ | tahmin |
-| Ceviz Masif 40 mm, Fırınlanmış | Masif | 130.000,00 TL / m³ | tahmin |
-| Kayın Masif 50 mm, Fırınlanmış | Masif | 38.000,00 TL / m³ | tahmin |
-| Isıl İşlemli Dişbudak 25 mm | Masif | 72.000,00 TL / m³ | tahmin |
-| Çam Masif 50 mm, Fırın Kurusu | Masif | 11.500,00 TL / m³ | [habergazetesi.com.tr](https://www.habergazetesi.com.tr/kereste-fiyatlari): Çam fırın kurusu 50×100 mm: 10.000–11.500 TL/m³; sayfanın güncelliği belirsiz |
-| PVC Kenar Bandı 22×0,4 mm Beyaz | Kenar bandı | 3,45 TL / m | [Koçtaş](https://www.koctas.com.tr/kenar-bandi-pvc-tutkalsiz-22mm040mm-100mt-mat-akcaagac/p/5000678440): PVC kenar bandı 22×0,4 mm 100 m rulo: 339–349 TL |
-| ABS Kenar Bandı 22×0,8 mm Beyaz | Kenar bandı | 6,50 TL / m | tahmin |
-| ABS Kenar Bandı 22×2 mm Antrasit | Kenar bandı | 14,00 TL / m | tahmin |
-| ABS Kenar Bandı 22×2 mm Meşe | Kenar bandı | 15,00 TL / m | tahmin |
-| ABS Kenar Bandı 43×2 mm Ceviz | Kenar bandı | 29,00 TL / m | tahmin |
-| Frenli Menteşe 110° Düz, 35 mm Çanak | Hırdavat | 62,00 TL / adet | tahmin |
-| Frenli Menteşe 110° Yarım Deve | Hırdavat | 66,00 TL / adet | tahmin |
-| Teleskopik Frenli Ray 45 cm (Takım) | Hırdavat | 495,00 TL / adet | tahmin |
-| Teleskopik Frenli Ray 50 cm (Takım) | Hırdavat | 523,49 TL / adet | [Koçtaş](https://www.koctas.com.tr/samet-galvan-teleskopik-frenli-cekmece-rayi-46x500/p/5000737629): Samet Galvan teleskopik frenli çekmece rayı 46×500: 523,49 TL |
-| Minifiks Bağlantı Seti 15 mm | Hırdavat | 4,80 TL / adet | tahmin |
-| Ahşap Kavela 8×35 mm | Hırdavat | 0,45 TL / adet | tahmin |
-| Çubuk Kulp 192 mm Mat Siyah | Hırdavat | 85,00 TL / adet | tahmin |
-| Gardırop Askı Borusu Oval 3 m | Hırdavat | 210,00 TL / adet | tahmin |
-| Ayarlı Plastik Baza Ayağı 10 cm | Hırdavat | 9,50 TL / adet | tahmin |
-| Sunta Vidası 4×40 mm (1000'lik Kutu) | Hırdavat | 310,00 TL / adet | tahmin |
-| Poliüretan Vernik, Mat | Boya ve kimyasal | 1.400,00 TL / L | [Koçtaş](https://www.koctas.com.tr/demarin-demacoat-923-poliuretan-vernik/p/5003388542): Demarin Demacoat 923 poliüretan vernik 1 L: 1.400 TL |
-| Poliüretan Sertleştirici | Boya ve kimyasal | 1.150,00 TL / L | tahmin |
-| Yağ Bazlı Ahşap Cilası, Doğal | Boya ve kimyasal | 950,00 TL / L | tahmin |
-| Selülozik Tiner | Boya ve kimyasal | 180,00 TL / L | tahmin |
-| Akrilik Lake Boya, Beyaz | Boya ve kimyasal | 620,00 TL / kg | tahmin |
-| PVA Ahşap Tutkalı D3 | Boya ve kimyasal | 165,00 TL / kg | tahmin |
-| Keten Döşemelik Kumaş, Ekru, 140 cm En | Kumaş | 480,00 TL / m | tahmin |
-| Kadife Döşemelik Kumaş, Antrasit | Kumaş | 560,00 TL / m | tahmin |
-| Bukle Döşemelik Kumaş, Krem | Kumaş | 690,00 TL / m | tahmin |
-| Elyaf Vatka 200 gr/m² | Kumaş | 75,00 TL / m | tahmin |
-| Palet Streç Film 50 cm 17 Mikron 300 m | Ambalaj | 500,00 TL / adet | [Hepsiburada](https://www.hepsiburada.com/ekol-ambalaj-strec-filmler-xc-60001207-b20978): Ekol Ambalaj palet streç film 50 cm 17 mikron 2 kg: yaklaşık 500 TL |
-| Oluklu Mukavva Levha 50×70 cm | Ambalaj | 39,88 TL / adet | [Koçtaş](https://www.koctas.com.tr/kutu-ve-ambalaj-malzemeleri/koli/c/107014001): 50×70 cm oluklu mukavva 10 adet: 398,80 TL |
-| Karton Köşe Koruyucu 1 m | Ambalaj | 14,00 TL / adet | tahmin |
-| Balonlu Naylon 100 cm × 100 m | Ambalaj | 780,00 TL / adet | tahmin |
-| Koli Bandı 45 mm × 100 m | Ambalaj | 48,00 TL / adet | tahmin |
+| Malzeme | Kategori | Birim fiyat (KDV hariç) | Dayanak | Doğrulama |
+|---|---|---|---|---|
+| MDF Lam 18 mm Parlak Beyaz 2100×2800 | Panel | 2.500,00 TL / plaka | [Özsoy Orman](https://ozsoyorman.com/urun/mdf-lam-nedir/): MDF Lam 210×280×18 mm, 1 adet: 3.000,00 TL, fiyata KDV dahil → KDV'siz | ürün sayfası okundu |
+| MDF Lam 18 mm Antrasit 2100×2800 | Panel | 2.666,67 TL / plaka | [Emek Orman Ürünleri](https://www.emekormanurunleri.com/mdf): 18 mm MDFLAM referans fiyatı 3.200–4.870 TL (KDV dahil, 12 Ekim 2026); renkli plaka için alt sınır alındı → KDV'siz | ürün sayfası okundu |
+| Suntalam 18 mm Beyaz 2100×2800 | Panel | 1.458,33 TL / plaka | [MDF Marketi](http://www.mdfmarketi.com/en-ekonomik-mdf-urunleri-en-ucuz-mdf-marketinde/): 18 mm Suntalam 210×280 çift taraf beyaz: 1.750 TL (liste tarihi 12/10/2026; KDV yazmıyor, dahil kabul edildi) → KDV'siz | ürün sayfası okundu |
+| Suntalam 18 mm Ceviz Desen 2100×2800 | Panel | 1.958,33 TL / plaka | [Haber Gazetesi](https://www.habergazetesi.com.tr/sunta-fiyatlari): 210×280 cm 18 mm renkli/desenli suntalam: 2.350–2.800 TL (Ocak 2026 ortalaması); alt sınır alındı → KDV'siz | ürün sayfası okundu |
+| MDF Lam 8 mm Beyaz Arkalık 2100×2800 | Panel | 1.541,67 TL / plaka | [MDF Marketi](http://www.mdfmarketi.com/en-ekonomik-mdf-urunleri-en-ucuz-mdf-marketinde/): 8 mm MDF LAM 210×280: 1.850 TL (liste tarihi 12/10/2026; KDV yazmıyor, dahil kabul edildi) → KDV'siz | ürün sayfası okundu |
+| Ham MDF 18 mm 2100×2800 | Panel | 2.250,00 TL / plaka | [Emek Orman Ürünleri](https://www.emekormanurunleri.com/mdf): Ham MDF 18 mm 210×280 cm: 2.700 TL (KDV dahil referans fiyat, 12 Ekim 2026) → KDV'siz | ürün sayfası okundu |
+| Meşe Kaplamalı MDF 19 mm 2100×2800 | Panel | 4.058,33 TL / plaka | tahmin: İlan bulunamadı. Doğal kaplama melamin kaplamadan pahalıdır; Emek Orman'ın 18 mm MDFLAM aralığının üst sınırı (4.870 TL, KDV dahil) alındı. | tahmin |
+| Meşe Masif 40 mm, Fırınlanmış | Masif | 19.200,00 TL / m³ | [Çevre, Şehircilik ve İklim Değişikliği Bakanlığı 2026 rayiçleri](https://webdosya.csb.gov.tr/v2/yfk/2026/01/1-BF-202619011535-20260119155143.pdf): 10.130.4507 Meşe kerestesi: 19.200,00 TL/m³ (1 Ocak 2026 rayici, KDV hariç, işbaşında teslim) | ürün sayfası okundu |
+| Ceviz Masif 40 mm, Fırınlanmış | Masif | 21.600,00 TL / m³ | [Çevre, Şehircilik ve İklim Değişikliği Bakanlığı 2026 rayiçleri](https://webdosya.csb.gov.tr/v2/yfk/2026/01/1-BF-202619011535-20260119155143.pdf): 10.130.4508 Ceviz kerestesi: 21.600,00 TL/m³ (1 Ocak 2026 rayici, KDV hariç, işbaşında teslim) | ürün sayfası okundu |
+| Kayın Masif 50 mm, Fırınlanmış | Masif | 12.000,00 TL / m³ | [Çevre, Şehircilik ve İklim Değişikliği Bakanlığı 2026 rayiçleri](https://webdosya.csb.gov.tr/v2/yfk/2026/01/1-BF-202619011535-20260119155143.pdf): 10.130.4509 Kayın kerestesi: 12.000,00 TL/m³ (1 Ocak 2026 rayici, KDV hariç, işbaşında teslim) | ürün sayfası okundu |
+| Isıl İşlemli Dişbudak 25 mm | Masif | 24.000,00 TL / m³ | tahmin: Rayiç listesinde dişbudak yok. Isıl işlem maliyet ekler; meşe rayicinin (19.200 TL/m³) %25 fazlası alındı. | tahmin |
+| Çam Masif 50 mm, Fırın Kurusu | Masif | 10.200,00 TL / m³ | [Çevre, Şehircilik ve İklim Değişikliği Bakanlığı 2026 rayiçleri](https://webdosya.csb.gov.tr/v2/yfk/2026/01/1-BF-202619011535-20260119155143.pdf): 10.130.4501 Çam kerestesi (I. sınıf): 10.200,00 TL/m³ (1 Ocak 2026 rayici, KDV hariç, işbaşında teslim) | ürün sayfası okundu |
+| PVC Kenar Bandı 22×0,4 mm Beyaz | Kenar bandı | 2,83 TL / m | [Koçtaş](https://www.koctas.com.tr/kenar-bandi-pvc-tutkalsiz-22mm040mm-100mt-mat-akcaagac/p/5000678440): PVC kenar bandı 22×0,4 mm 100 m rulo: 339–349 TL; alt sınır alındı → KDV'siz | arama özeti |
+| ABS Kenar Bandı 22×0,8 mm Beyaz | Kenar bandı | 6,30 TL / m | tahmin: Türkiye'de ABS 22×0,8 ilanı bulunamadı. 22×2 mm PVC bandın KDV hariç metre fiyatının (15,75 TL) kalınlık oranıyla yaklaşık %40'ı alındı. | tahmin |
+| ABS Kenar Bandı 22×2 mm Antrasit | Kenar bandı | 18,90 TL / m | tahmin: Türkiye'de ABS 22×2 ilanı bulunamadı. ABS, PVC'den pahalıdır; pvckenarbantlari.com'daki 22×2 mm PVC aralığının (15,75–18,90 TL/m + KDV) üst sınırı alındı. | tahmin |
+| ABS Kenar Bandı 22×2 mm Meşe | Kenar bandı | 18,90 TL / m | tahmin: Antrasit ABS 22×2 ile aynı dayanak: 22×2 mm PVC aralığının üst sınırı (18,90 TL/m + KDV). | tahmin |
+| ABS Kenar Bandı 43×2 mm Ceviz | Kenar bandı | 37,80 TL / m | tahmin: Genişlik iki katı olduğundan 22×2 mm ABS tahmininin (18,90 TL/m) iki katı alındı. | tahmin |
+| Frenli Menteşe 110° Düz, 35 mm Çanak | Hırdavat | 42,83 TL / adet | [idefix](https://www.idefix.com/std-norm-pistonlu-frenli-duz-mentese-100-lu-paket-p-27356674): Std Norm pistonlu frenli düz menteşe, 110°, 35 mm tas, 100'lü paket: 5.138,99 TL (sepette 4.882,04 TL); liste fiyatı alındı → KDV'siz | ürün sayfası okundu |
+| Frenli Menteşe 110° Yarım Deve | Hırdavat | 44,96 TL / adet | tahmin: Aynı serinin düz menteşesinin KDV hariç fiyatına (42,83 TL) %5 eklendi; yarım deve gövde biraz daha pahalıdır. | tahmin |
+| Teleskopik Frenli Ray 45 cm (Takım) | Hırdavat | 392,62 TL / adet | tahmin: Frenli 45 cm ilanı bulunamadı. Aynı markanın frenli 50 cm takımı (523,49 TL, KDV dahil) boy oranıyla (45/50) küçültüldü. | tahmin |
+| Teleskopik Frenli Ray 50 cm (Takım) | Hırdavat | 436,24 TL / adet | [Koçtaş](https://www.koctas.com.tr/samet-galvan-teleskopik-frenli-cekmece-rayi-46x500/p/5000737629): Samet Galvan teleskopik frenli çekmece rayı 46×500: 523,49 TL → KDV'siz | arama özeti |
+| Minifiks Bağlantı Seti 15 mm | Hırdavat | 12,42 TL / adet | [Cimri (Hepsiburada ilanı)](https://www.cimri.com/minifix): Hafele Minifix Seti 15/18 mm, 10 adet: 149 TL → KDV'siz | arama özeti |
+| Ahşap Kavela 8×35 mm | Hırdavat | 1,67 TL / adet | [Koçtaş](https://www.koctas.com.tr/ptx-ahsap-kavela-pimi-50-parca/p/2000024664): Ptx ahşap kavela pimi, 50 parça: 99,99 TL (perakende paket; toptan alımda daha ucuzdur) → KDV'siz | arama özeti |
+| Çubuk Kulp 192 mm Mat Siyah | Hırdavat | 102,42 TL / adet | [Koçtaş](https://www.koctas.com.tr/hafele-hind-kulp-mat-siyah-192-mm/p/1000331131): Hafele Hind kulp mat siyah 192 mm: 122,90 TL (indirimli 92,99 TL); liste fiyatı alındı → KDV'siz | arama özeti |
+| Gardırop Askı Borusu Oval 3 m | Hırdavat | 666,50 TL / adet | [Koçtaş](https://www.koctas.com.tr/oval-aski-borusu-krom-150-cm-kbo150/p/1000579705): Oval askı borusu krom 150 cm: 399,90 TL; 3 m için iki katı alındı → KDV'siz | arama özeti |
+| Ayarlı Plastik Baza Ayağı 10 cm | Hırdavat | 52,08 TL / adet | [Cimri (Hepsiburada ilanı)](https://www.cimri.com/plastik-dolap-ayagi): Feyza Yapı 10 cm plastik ayak, 4'lü paket: yaklaşık 250 TL → KDV'siz | arama özeti |
+| Sunta Vidası 4×40 mm (1000'lik Kutu) | Hırdavat | 801,95 TL / adet | [Koçtaş](https://www.koctas.com.tr/sunta-vidasi-4x40-500-adet/p/5001229245): Sunta vidası 4×40, 500 adet: 481,17 TL; 1000'lik kutu için iki katı alındı → KDV'siz | arama özeti |
+| Poliüretan Vernik, Mat | Boya ve kimyasal | 1.166,67 TL / L | [Koçtaş](https://www.koctas.com.tr/demarin-demacoat-923-poliuretan-vernik/p/5003388542): Demarin Demacoat 923 poliüretan vernik 1 L: 1.400 TL → KDV'siz | arama özeti |
+| Poliüretan Sertleştirici | Boya ve kimyasal | 933,33 TL / L | tahmin: Hacmi belli bir ilan bulunamadı. Aynı sistemin vernik fiyatının (1.400 TL/L, KDV dahil) %80'i alındı. | tahmin |
+| Yağ Bazlı Ahşap Cilası, Doğal | Boya ve kimyasal | 922,11 TL / L | [Koçtaş](https://www.koctas.com.tr/polisan-wood-wood-teak-yagi/p/1000106398): Polisan Wood Teak yağı, renksiz, 0,75 L: 829,90 TL; litreye çevrildi → KDV'siz | arama özeti |
+| Selülozik Tiner | Boya ve kimyasal | 149,14 TL / L | [Koçtaş](https://www.koctas.com.tr/pamukkale-manas-selulozik-tiner-10-lt/p/5002074837): Pamukkale Manas selülozik tiner 10 L: 1.789,70 TL; litreye çevrildi → KDV'siz | arama özeti |
+| Akrilik Lake Boya, Beyaz | Boya ve kimyasal | 475,72 TL / kg | [Koçtaş](https://www.koctas.com.tr/rich-multi-surface-1750-gr-2102-antik-beyaz/p/1000477706): Rich Multi Surface antik beyaz 1.750 g: 999 TL; kilograma çevrildi → KDV'siz | arama özeti |
+| PVA Ahşap Tutkalı D3 | Boya ve kimyasal | 269,76 TL / kg | [idefix](https://www.idefix.com/shumanss-d3-masif-ahsap-tutkali-25kgkova-p-5475610): Shumanss D3 masif ahşap tutkalı 25 kg kova: 8.092,66 TL (sepette 6.878,76 TL); yüksek fiyat alındı, kilograma çevrildi → KDV'siz | ürün sayfası okundu |
+| Keten Döşemelik Kumaş, Ekru, 140 cm En | Kumaş | 283,33 TL / m | [Marmara Koltuk](https://www.marmarakoltuk.com/kumas/): Keten döşemelik kumaş, metre: 340 TL → KDV'siz | arama özeti |
+| Kadife Döşemelik Kumaş, Antrasit | Kumaş | 458,33 TL / m | [Marmara Koltuk](https://www.marmarakoltuk.com/kumas/): Velvet kadife döşemelik kumaş, metre: 550 TL → KDV'siz | arama özeti |
+| Bukle Döşemelik Kumaş, Krem | Kumaş | 572,92 TL / m | tahmin: Satış birimi belli bir bukle ilanı bulunamadı. Bukle kadifeden pahalıdır; velvet kadife metre fiyatının (550 TL) %25 fazlası alındı. | tahmin |
+| Elyaf Vatka 200 gr/m² | Kumaş | 387,78 TL / m | [n11](https://www.n11.com/arama?m=Erpol): Erpol vatka elyaf 150 g, 210 cm en, 1 metre: 349 TL; 200 g için ağırlık oranıyla artırıldı → KDV'siz | arama özeti |
+| Palet Streç Film 50 cm 17 Mikron 300 m | Ambalaj | 416,67 TL / adet | [Hepsiburada](https://www.hepsiburada.com/ekol-ambalaj-strec-filmler-xc-60001207-b20978): Ekol Ambalaj palet streç film 50 cm 17 mikron 2 kg: yaklaşık 500 TL → KDV'siz | arama özeti |
+| Oluklu Mukavva Levha 50×70 cm | Ambalaj | 33,23 TL / adet | [Koçtaş](https://www.koctas.com.tr/kutu-ve-ambalaj-malzemeleri/koli/c/107014001): 50×70 cm oluklu mukavva, 10 adet: 398,80 TL → KDV'siz | arama özeti |
+| Karton Köşe Koruyucu 1 m | Ambalaj | 12,92 TL / adet | [n11](https://www.n11.com/urun/100adet-1metre-karton-kosebent-kose-koruyucu-palet-kartonu-12287740): 1 metre karton köşebent, 100 adet: 1.549,90 TL → KDV'siz | arama özeti |
+| Balonlu Naylon 100 cm × 100 m | Ambalaj | 2.089,53 TL / adet | [Akakçe](https://www.akakce.com/ambalaj-naylonu,33.html): Balonlu naylon rulo 100 cm × 100 m (40 g/m²): en ucuz 2.507,43 TL → KDV'siz | ürün sayfası okundu |
+| Koli Bandı 45 mm × 100 m | Ambalaj | 40,60 TL / adet | [idefix](https://www.idefix.com/stella-hotmelt-koli-banti-45-x-100-72-adet-p-17024786): Stella hotmelt koli bandı 45×100, 72 adet: 3.508,00 TL (sepette 3.122,12 TL); yüksek fiyat alındı, adede çevrildi → KDV'siz | ürün sayfası okundu |
 
 ## Bulunan ama kullanılmayan veriler
 
-- Meşe kereste için [habergazetesi.com.tr](https://www.habergazetesi.com.tr/kereste-fiyatlari) sayfası 17.000–20.000 TL/m³ veriyor. Sayfanın güncelliği belirsiz ve rakam fırınlanmış birinci sınıf meşe için düşük göründüğünden kullanılmadı; meşe ve ceviz fiyatları tahmindir.
-- Frenli menteşe için Koçtaş ilanlarında ([Samet Master](https://www.koctas.com.tr/samet-master-frenli-duz-mentese-havsali/p/5000737665)) 193,43 TL ve 791,44 TL görünüyor, ancak paket adedi arama özetinden anlaşılamadı; menteşe adet fiyatı tahmindir.
+- 18 mm suntalam için kaynaklar geniş bir aralık veriyor: [Bauhaus](https://www.bauhaus.com.tr/suntalam-2100-2800-18mm-441-flora-1-plaka-588m2-61537949) 1.150 TL (Flora desen, 1 plaka), [Kaplan Orman](https://www.kaplanormanurunleri.com/) 2.300 TL (beyaz), [Haber Gazetesi](https://www.habergazetesi.com.tr/sunta-fiyatlari) 2.150–2.550 TL (çift yüz beyaz, Ocak 2026). Tarihli ve aralığın ortasında kaldığı için MDF Marketi'nin 1.750 TL'si kullanıldı.
+- [Bauhaus](https://www.bauhaus.com.tr/mdflam-2100-2800-18-mm-parlak-beyaz-cy-61514960) parlak beyaz MDFlam için 1.590 TL gösteriyor, ancak sayfa "fiyat metrekare cinsinden hesaplanmaktadır" diyor ve fiyatın plaka mı metrekare mi olduğu anlaşılmıyor; kullanılmadı.
+- Kereste için [Haber Gazetesi](https://www.habergazetesi.com.tr/kereste-fiyatlari) meşeye 17.000–20.000 TL/m³ veriyor; Bakanlık rayici (19.200 TL/m³) bu aralığın içinde kaldığı için resmî kaynak tercih edildi.
+- Bakanlık rayiçleri aylık güncelleniyor; katalogdaki rakamlar 1 Ocak 2026 listesindendir. Ekim–Kasım 2026 listelerinin PDF'ine ulaşılamadı.
