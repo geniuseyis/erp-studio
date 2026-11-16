@@ -1,49 +1,104 @@
-// Ctrl+K paleti: sayfalar, malzemeler ve komutlar tek listede. React içermez; birim testiyle denetlenir.
+// Ctrl+K paleti: sayfalar, kayıtlar (sipariş, iş emri, müşteri, ürün, malzeme) ve komutlar tek listede. React içermez; birim testiyle denetlenir.
 import type { SessionUser } from "@/domain/context";
 import type { MaterialRow } from "@/domain/inventory/queries";
+import { can } from "@/domain/permissions";
+import type { ProductRow, WorkOrderRow } from "@/domain/production/queries";
+import type { CustomerRow, OrderRow } from "@/domain/sales/queries";
 import { matchesSearch } from "@/domain/text";
 import { visibleNav } from "./nav";
 
-export type PaletteGroup = "Sayfalar" | "Malzemeler" | "Komutlar";
+export type PaletteGroup = "Sayfalar" | "Siparişler" | "İş emirleri" | "Müşteriler" | "Ürünler" | "Malzemeler" | "Komutlar";
 export type PaletteItem = { id: string; group: PaletteGroup; label: string; hint?: string; run: () => void };
 
 /** Yazınca listelenen en çok malzeme sayısı. */
 export const MAX_MATERIALS = 8;
+/** Sipariş, iş emri, müşteri ve ürün gruplarının her birinde listelenen en çok kayıt. */
+export const MAX_RECORDS = 5;
 
 type Args = {
   user: SessionUser;
   query: string;
   materials: readonly MaterialRow[];
+  orders: readonly OrderRow[];
+  workOrders: readonly WorkOrderRow[];
+  customers: readonly CustomerRow[];
+  products: readonly ProductRow[];
   go: (href: string) => void;
   actions: { toggleTheme(): void; switchAccount(): void; signOut(): void };
 };
 
-/**
- * Boş sorguda sayfalar ve komutlar; yazınca sayfalar, malzemeler (kod ya da adla, en çok 8) ve komutlar süzülür.
- * Kullanıcının göremediği sayfalar hiç listelenmez. Sıra: sayfalar, malzemeler, komutlar.
- */
-export function buildItems({ user, query, materials, go, actions }: Args): PaletteItem[] {
-  const q = query.trim();
+type RecordItem = Omit<PaletteItem, "run"> & { open: string };
 
-  const pages: PaletteItem[] = visibleNav(user)
+/**
+ * Boş sorguda sayfalar ve komutlar; yazınca sayfalar, kayıtlar ve komutlar süzülür.
+ * Sıra: sayfalar, siparişler, iş emirleri, müşteriler, ürünler (her biri en çok 5), malzemeler (en çok 8), komutlar.
+ * Kullanıcının göremediği sayfalar ve o sayfalara ait kayıtlar hiç listelenmez.
+ */
+export function buildItems({ user, query, materials, orders, workOrders, customers, products, go, actions }: Args): PaletteItem[] {
+  const q = query.trim();
+  const nav = visibleNav(user);
+  const sees = (href: string) => nav.some((n) => n.href === href);
+
+  const pages: PaletteItem[] = nav
     .filter((n) => matchesSearch([n.label, n.group], q))
     .map((n) => ({ id: `sayfa:${n.href}`, group: "Sayfalar", label: n.label, hint: n.group, run: () => go(n.href) }));
 
-  const found: PaletteItem[] = q
-    ? materials
-        .filter((m) => matchesSearch([m.code, m.name], q))
-        .slice(0, MAX_MATERIALS)
-        .map((m) => ({
-          id: `malzeme:${m.id}`,
-          group: "Malzemeler",
-          label: m.name,
-          hint: m.code,
-          run: () => go(`/stok/malzemeler?ac=${m.id}`),
-        }))
-    : [];
+  /** Yazılan sorguya uyan kayıtlar; sorgu boşsa ya da ekranı göremiyorsa hiçbiri. */
+  function records<T>(href: string, rows: readonly T[], fields: (row: T) => string[], max: number, item: (row: T) => RecordItem): PaletteItem[] {
+    if (!q || !sees(href)) return [];
+    return rows
+      .filter((r) => matchesSearch(fields(r), q))
+      .slice(0, max)
+      .map((r) => {
+        const { open, ...rest } = item(r);
+        return { ...rest, run: () => go(open) };
+      });
+  }
 
+  const found: PaletteItem[] = [
+    ...records("/satis/siparisler", orders, (o) => [o.code, o.customerName], MAX_RECORDS, (o) => ({
+      id: `siparis:${o.id}`,
+      group: "Siparişler",
+      label: o.code,
+      hint: o.customerName,
+      open: `/satis/siparisler?ac=${o.id}`,
+    })),
+    ...records("/uretim/is-emirleri", workOrders, (w) => [w.code, w.productName, w.orderCode ?? ""], MAX_RECORDS, (w) => ({
+      id: `is-emri:${w.id}`,
+      group: "İş emirleri",
+      label: w.code,
+      hint: w.productName,
+      open: `/uretim/is-emirleri?ac=${w.id}`,
+    })),
+    ...records("/satis/musteriler", customers, (c) => [c.code, c.name], MAX_RECORDS, (c) => ({
+      id: `musteri:${c.id}`,
+      group: "Müşteriler",
+      label: c.name,
+      hint: c.code,
+      open: `/satis/musteriler?ac=${c.id}`,
+    })),
+    ...records("/uretim/urunler", products, (p) => [p.code, p.name], MAX_RECORDS, (p) => ({
+      id: `urun:${p.id}`,
+      group: "Ürünler",
+      label: p.name,
+      hint: p.code,
+      open: `/uretim/urunler?ac=${p.id}`,
+    })),
+    ...records("/stok/malzemeler", materials, (m) => [m.code, m.name], MAX_MATERIALS, (m) => ({
+      id: `malzeme:${m.id}`,
+      group: "Malzemeler",
+      label: m.name,
+      hint: m.code,
+      open: `/stok/malzemeler?ac=${m.id}`,
+    })),
+  ];
+
+  const newOrder: PaletteItem[] = can(user, "sales", "write")
+    ? [{ id: "komut:yeni-siparis", group: "Komutlar", label: "Yeni sipariş", hint: "Sipariş taslağı aç", run: () => go("/satis/siparisler?yeni=1") }]
+    : [];
   const commands: PaletteItem[] = (
     [
+      ...newOrder,
       { id: "komut:tema", group: "Komutlar", label: "Temayı değiştir", hint: "Açık ya da koyu", run: actions.toggleTheme },
       { id: "komut:hesap", group: "Komutlar", label: "Hesap değiştir", hint: "Başka bir çalışanla gir", run: actions.switchAccount },
       { id: "komut:cikis", group: "Komutlar", label: "Çıkış yap", run: actions.signOut },

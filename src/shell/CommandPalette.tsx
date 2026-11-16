@@ -3,22 +3,40 @@
 import { Command } from "cmdk";
 import { useRouter } from "next/navigation";
 import { Dialog as RadixDialog } from "radix-ui";
+import { useQuery } from "@tanstack/react-query";
 import { type ComponentType, useMemo, useState } from "react";
 import type { SessionUser } from "@/domain/context";
+import { listProducts, listWorkOrders } from "@/domain/production/queries";
+import { listCustomers, listOrders } from "@/domain/sales/queries";
 import { CategorySwatch } from "@/features/inventory/CategorySwatch";
 import { useMaterials } from "@/features/inventory/hooks";
 import { cn } from "@/ui/cn";
-import { ArrowRightIcon, LogoutIcon, MoonIcon, SearchIcon, UsersIcon } from "@/ui/icons";
+import { ArrowRightIcon, LogoutIcon, MoonIcon, PlusIcon, SearchIcon, UsersIcon } from "@/ui/icons";
 import { useTheme } from "@/ui/theme";
 import { buildItems, type PaletteGroup, type PaletteItem } from "./commands";
+import { useDb } from "./db-context";
 import { useSession } from "./session";
 
-const GROUPS: PaletteGroup[] = ["Sayfalar", "Malzemeler", "Komutlar"];
+const GROUPS: PaletteGroup[] = ["Sayfalar", "Siparişler", "İş emirleri", "Müşteriler", "Ürünler", "Malzemeler", "Komutlar"];
 const COMMAND_ICON: Record<string, ComponentType<{ size?: number }>> = {
+  "komut:yeni-siparis": PlusIcon,
   "komut:tema": MoonIcon,
   "komut:hesap": UsersIcon,
   "komut:cikis": LogoutIcon,
 };
+
+/**
+ * Palet açıkken bir kez okunan kayıt listeleri; her tuş vuruşunda veritabanına gidilmez, süzme bellekteki listede yapılır.
+ * Bir işlem sonrası bütün sorgular zaten yenilenir (db-context), bu yüzden listeler eskimez.
+ */
+function usePaletteRecords(open: boolean) {
+  const { db } = useDb();
+  const orders = useQuery({ queryKey: ["sales", "palette", "orders"], queryFn: () => listOrders(db), enabled: open });
+  const customers = useQuery({ queryKey: ["sales", "palette", "customers"], queryFn: () => listCustomers(db), enabled: open });
+  const workOrders = useQuery({ queryKey: ["production", "palette", "workOrders"], queryFn: () => listWorkOrders(db), enabled: open });
+  const products = useQuery({ queryKey: ["production", "palette", "products"], queryFn: () => listProducts(db), enabled: open });
+  return { orders: orders.data, customers: customers.data, workOrders: workOrders.data, products: products.data };
+}
 
 /** Ctrl+K ya da Cmd+K ile açılan arama: sayfaya git, malzemeyi aç, komut çalıştır. */
 export function CommandPalette({ user, open, onOpenChange }: { user: SessionUser; open: boolean; onOpenChange: (open: boolean) => void }) {
@@ -26,6 +44,7 @@ export function CommandPalette({ user, open, onOpenChange }: { user: SessionUser
   const { resolved, setTheme } = useTheme();
   const { signOut } = useSession();
   const materials = useMaterials();
+  const records = usePaletteRecords(open);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState("");
 
@@ -35,10 +54,14 @@ export function CommandPalette({ user, open, onOpenChange }: { user: SessionUser
         user,
         query,
         materials: materials.data ?? [],
+        orders: records.orders ?? [],
+        workOrders: records.workOrders ?? [],
+        customers: records.customers ?? [],
+        products: records.products ?? [],
         go: (href) => router.push(href),
         actions: { toggleTheme: () => setTheme(resolved === "dark" ? "light" : "dark"), switchAccount: signOut, signOut },
       }),
-    [user, query, materials.data, router, resolved, setTheme, signOut],
+    [user, query, materials.data, records.orders, records.workOrders, records.customers, records.products, router, resolved, setTheme, signOut],
   );
   const categoryOf = useMemo(() => new Map((materials.data ?? []).map((m) => [`malzeme:${m.id}`, m.category])), [materials.data]);
 
@@ -76,7 +99,7 @@ export function CommandPalette({ user, open, onOpenChange }: { user: SessionUser
               <Command.Input
                 value={query}
                 onValueChange={setQuery}
-                placeholder="Sayfa, malzeme ya da komut ara"
+                placeholder="Sayfa, sipariş, ürün ya da komut ara"
                 className="h-14 w-full bg-transparent text-lg text-fg outline-none placeholder:text-fg-muted"
               />
               <kbd className="hidden shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 font-sans text-xs text-fg-muted ring-1 ring-line ring-inset sm:inline">Esc</kbd>
@@ -153,7 +176,7 @@ export function SearchTrigger({ onOpen }: { onOpen: () => void }) {
     >
       <SearchIcon size={17} />
       <span className="flex-1 truncate">Ara</span>
-      <span className="hidden truncate text-sm sm:inline">sayfa, malzeme, komut</span>
+      <span className="hidden truncate text-sm sm:inline">sayfa, sipariş, ürün, komut</span>
       <kbd className="hidden rounded-md bg-surface-2 px-1.5 py-0.5 font-sans text-xs ring-1 ring-line ring-inset sm:inline">{mac ? "⌘K" : "Ctrl K"}</kbd>
     </button>
   );
