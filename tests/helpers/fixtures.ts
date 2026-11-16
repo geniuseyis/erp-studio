@@ -1,5 +1,5 @@
 import type { Db } from "@/db/client";
-import { customers, departments, materials, products, stations, users } from "@/db/schema";
+import { bomLines, customers, departments, materials, products, routings, stations, users } from "@/db/schema";
 import { type Ctx, DEPARTMENT_NAMES, type DepartmentCode, type Level, type SessionUser } from "@/domain/context";
 import { hashPassword } from "@/domain/password";
 
@@ -128,4 +128,20 @@ export async function addCustomer(
     .returning();
   if (!row) throw new Error("müşteri eklenemedi");
   return row;
+}
+
+/** Doğrudan tabloya bir reçete kalemi ekler. */
+export async function addBomLine(
+  db: Db,
+  i: { productId: string; materialId: string; qtyMilli: number; scrapPermille?: number },
+): Promise<void> {
+  await db.insert(bomLines).values({ ...i, scrapPermille: i.scrapPermille ?? 0 });
+}
+
+/** Doğrudan tabloya bir rota adımı ekler. */
+export async function addRouting(
+  db: Db,
+  i: { productId: string; seq: number; stationId: string; minutesPerUnit: number },
+): Promise<void> {
+  await db.insert(routings).values(i);
 }

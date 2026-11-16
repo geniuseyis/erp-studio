@@ -1,4 +1,5 @@
-import type { PRODUCT_MOVEMENT_TYPES, productMovements } from "@/db/schema";
+import type { PRODUCT_MOVEMENT_TYPES, productMovements, WORK_ORDER_STATUSES, workOrders, workOrderSteps } from "@/db/schema";
+import type { Unit } from "../units";
 
 export type ProductMovementType = (typeof PRODUCT_MOVEMENT_TYPES)[number];
 
@@ -8,3 +9,16 @@ export type ProductMovement = Omit<ProductMovementRecord, "type"> & { type: Prod
 export function asProductMovement(row: ProductMovementRecord): ProductMovement {
   return row as ProductMovement;
 }
+
+export type WorkOrderStatus = (typeof WORK_ORDER_STATUSES)[number];
+
+type WorkOrderRecord = typeof workOrders.$inferSelect;
+export type WorkOrder = Omit<WorkOrderRecord, "status"> & { status: WorkOrderStatus };
+export type WorkOrderStep = typeof workOrderSteps.$inferSelect;
+
+export function asWorkOrder(row: WorkOrderRecord): WorkOrder {
+  return row as WorkOrder;
+}
+
+/** İş emrinin ayıramadığı malzeme: gereken ve o an kullanılabilir (eldeki − ayrılmış) miktar. */
+export type Shortage = { materialId: string; code: string; name: string; unit: Unit; neededMilli: number; availableMilli: number };
