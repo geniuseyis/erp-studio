@@ -1,4 +1,4 @@
-import { and, eq, like } from "drizzle-orm";
+import { and, asc, eq, like } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { customers, products, salesOrderLines, salesOrders } from "@/db/schema";
 import { logAudit } from "../audit";
@@ -6,7 +6,11 @@ import { type Ctx, inTx, isUuid } from "../context";
 import { DomainError } from "../errors";
 import { assertCan } from "../permissions";
 import { istanbulDayStart, istanbulYear } from "../production/calendar";
-import { asOrder, asOrderLine, type SalesOrder, type SalesOrderLine } from "./types";
+import { reserveProduct } from "../production/productLedger";
+import type { Shortage } from "../production/types";
+import { findShortages, materialNeeds, type MaterialNeed, openWorkOrder } from "../production/workOrders";
+import { refreshOrderStatus, setLineStatus } from "./status";
+import { asOrder, asOrderLine, type LineStatus, type SalesOrder, type SalesOrderLine } from "./types";
 
 const CODE_PREFIX = "SIP-";
 const MIN_QTY_MILLI = 1_000;
@@ -149,5 +153,57 @@ export async function removeLine(ctx: Ctx, lineId: string): Promise<void> {
     const order = await mustFindDraftOrder(tx.db, line.orderId);
     await tx.db.delete(salesOrderLines).where(eq(salesOrderLines.id, line.id));
     await logAudit(tx, { entity: "sales_order", entityId: order.id, action: "remove_line", summary: `${order.code}: satır silindi` });
+  });
+}
+
+/**
+ * Siparişi onaylar; satırlar sırayla, tek transaction içinde işlenir. Her satıra kullanılabilir mamul
+ * ayrılır; kalan adet için iş emri açılır (malzemeler hepsi-ya-hiçbiri ayrılır). Önceki satırların
+ * ayırdıkları sonrakilerden düşülür. Dönen eksikler, bütün satırlar işlendikten sonraki stoğa göre
+ * malzemesini bekleyen iş emirlerinin toplam ihtiyacıdır.
+ */
+export async function confirmOrder(ctx: Ctx, orderId: string): Promise<{ order: SalesOrder; shortages: Shortage[] }> {
+  assertCan(ctx.user, "sales", "write");
+  return inTx(ctx, async (tx) => {
+    const [order] = isUuid(orderId) ? await tx.db.select().from(salesOrders).where(eq(salesOrders.id, orderId)).for("update") : [];
+    if (!order) throw new DomainError("NOT_FOUND", "Sipariş bulunamadı");
+    if (order.status !== "draft") throw new DomainError("INVALID_STATE", "Sipariş zaten onaylanmış");
+    const lines = await tx.db
+      .select()
+      .from(salesOrderLines)
+      .where(eq(salesOrderLines.orderId, order.id))
+      .orderBy(asc(salesOrderLines.createdAt), asc(salesOrderLines.id));
+    if (lines.length === 0) throw invalid("Satırsız sipariş onaylanamaz");
+
+    const waitingNeeds: MaterialNeed[] = [];
+    for (const line of lines) {
+      const [product] = await tx.db.select().from(products).where(eq(products.id, line.productId));
+      if (!product) throw new DomainError("NOT_FOUND", "Ürün bulunamadı");
+      const reserve = Math.min(Math.max(product.onHandMilli - product.reservedMilli, 0), line.qtyMilli);
+      if (reserve > 0) {
+        await reserveProduct(tx, { productId: product.id, qtyMilli: reserve, ref: { type: "sales_order_line", id: line.id } });
+      }
+
+      let status: LineStatus = "ready";
+      const remaining = line.qtyMilli - reserve;
+      if (remaining > 0) {
+        const { workOrder } = await openWorkOrder(tx, { productId: product.id, qtyMilli: remaining, salesOrderLineId: line.id });
+        if (workOrder.materialsReserved) {
+          status = "in_production";
+        } else {
+          status = "waiting_material";
+          waitingNeeds.push(...(await materialNeeds(tx.db, product.id, remaining)));
+        }
+      }
+      await setLineStatus(tx, line.id, status, line.reservedMilli + reserve);
+    }
+
+    await tx.db.update(salesOrders).set({ status: "confirmed", confirmedAt: tx.now }).where(eq(salesOrders.id, order.id));
+    await logAudit(tx, { entity: "sales_order", entityId: order.id, action: "confirm", summary: `${order.code} onaylandı` });
+    await refreshOrderStatus(tx, order.id);
+
+    const [row] = await tx.db.select().from(salesOrders).where(eq(salesOrders.id, order.id));
+    if (!row) throw new Error("sipariş okunamadı");
+    return { order: asOrder(row), shortages: await findShortages(tx.db, waitingNeeds) };
   });
 }
