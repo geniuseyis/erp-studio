@@ -68,6 +68,8 @@ export type Snapshot = {
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** uuid sıra numarasına çevrilebilen sütun türleri (drizzle columnType). */
+const INTERNABLE = new Set(["PgUUID", "PgText"]);
 
 function dateColumns(table: PgTable): string[] {
   return Object.entries(getTableColumns(table))
@@ -81,13 +83,17 @@ export async function exportSnapshot(db: Db, takenAt: Date): Promise<Snapshot> {
   const index = new Map<string, number>();
   const tables: Snapshot["tables"] = {};
   for (const table of TABLES) {
-    const columns = Object.keys(getTableColumns(table));
+    const all = getTableColumns(table);
+    const columns = Object.keys(all);
+    const dates = new Set(dateColumns(table));
+    // Yalnızca uuid ve düz metin sütunları sıkıştırılır; json/jsonb değerleri karışık türde olabilir, dokunulmaz.
+    const internable = new Set(columns.filter((key) => INTERNABLE.has(all[key]?.columnType ?? "")));
     const uuidColumns = new Set<string>();
     const rows = ((await db.select().from(table)) as Record<string, unknown>[]).map((row) =>
       columns.map((key) => {
         const value = row[key];
-        if (value instanceof Date) return value.getTime();
-        if (typeof value === "string" && UUID.test(value)) {
+        if (dates.has(key) && value instanceof Date) return value.getTime();
+        if (internable.has(key) && typeof value === "string" && UUID.test(value)) {
           uuidColumns.add(key);
           let i = index.get(value);
           if (i === undefined) {
