@@ -1,5 +1,5 @@
 import type { Db } from "@/db/client";
-import { departments, materials, users } from "@/db/schema";
+import { customers, departments, materials, products, stations, users } from "@/db/schema";
 import { type Ctx, DEPARTMENT_NAMES, type DepartmentCode, type Level, type SessionUser } from "@/domain/context";
 import { hashPassword } from "@/domain/password";
 
@@ -59,3 +59,73 @@ export async function addMaterial(
   return row;
 }
 let materialSeq = 0;
+
+let productSeq = 0;
+/** Doğrudan tabloya stoksuz bir mamul ekler. */
+export async function addProduct(
+  db: Db,
+  over: Partial<typeof products.$inferInsert> = {},
+): Promise<typeof products.$inferSelect> {
+  productSeq += 1;
+  const [row] = await db
+    .insert(products)
+    .values({
+      code: `MAM-${String(productSeq).padStart(4, "0")}`,
+      modelKey: `test-model-${productSeq}`,
+      name: `Test mamul ${productSeq}`,
+      collection: "Test",
+      category: "koltuk",
+      widthMm: 800,
+      depthMm: 800,
+      heightMm: 800,
+      finish: "beyaz",
+      priceKurus: 100_000,
+      vatRate: 10,
+      ...over,
+    })
+    .returning();
+  if (!row) throw new Error("mamul eklenemedi");
+  return row;
+}
+
+let stationSeq = 0;
+export async function addStation(
+  db: Db,
+  over: Partial<typeof stations.$inferInsert> = {},
+): Promise<typeof stations.$inferSelect> {
+  stationSeq += 1;
+  const [row] = await db
+    .insert(stations)
+    .values({
+      code: `IST-${String(stationSeq).padStart(2, "0")}`,
+      name: `Test istasyon ${stationSeq}`,
+      seq: stationSeq,
+      dailyCapacityMin: 480,
+      ...over,
+    })
+    .returning();
+  if (!row) throw new Error("istasyon eklenemedi");
+  return row;
+}
+
+let customerSeq = 0;
+export async function addCustomer(
+  db: Db,
+  over: Partial<typeof customers.$inferInsert> = {},
+): Promise<typeof customers.$inferSelect> {
+  customerSeq += 1;
+  const [row] = await db
+    .insert(customers)
+    .values({
+      code: `MUS-${String(customerSeq).padStart(4, "0")}`,
+      name: `Test müşteri ${customerSeq}`,
+      kind: "bireysel",
+      city: "İstanbul",
+      district: "Kadıköy",
+      phone: "0212 000 00 00",
+      ...over,
+    })
+    .returning();
+  if (!row) throw new Error("müşteri eklenemedi");
+  return row;
+}
