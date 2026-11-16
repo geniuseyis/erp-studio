@@ -1,0 +1,68 @@
+# BALTACIOĞLU'S ERP Studio
+
+Mobilya üretimi yapan bir atölye için kurumsal kaynak planlama (ERP) uygulaması. Bu sürüm bir **vitrin**: gerçek bir PostgreSQL veritabanı tarayıcının içinde çalışır, sunucu gerekmez, veriler ziyaretçinin tarayıcısından çıkmaz.
+
+![Ana panel](docs/screens/plan-2/03-ana-panel.png)
+
+## Neler var
+
+- **Giriş ve departmanlar:** 7 departman, 14 kurgusal çalışan. Her departman kendi modülünde işlem yapar, diğerlerini yalnızca görür. Operatör yürütür, uzman kayıt açar, müdür onaylar.
+- **Ana panel:** stok değeri, kritik kalemler, açık sayımlar, son hareketler ve kategoriye göre stok değeri. Her özet ilgili süzülmüş listeye götürür.
+- **Malzemeler:** 42 kalemlik katalog; Türkçe harfe duyarsız arama ("mese" → Meşe), kategori ve kritik süzgeçleri, sütun seçimi, CSV indirme, sipariş noktasını gösteren cetvel.
+- **Stok hareketleri:** stok yalnızca hareketlerle değişir; her giriş, çıkış ve sayım farkı kayıtlıdır.
+- **Sayım:** fiş açılır, raftaki miktar girilir, müdür onaylayınca farklar stok hareketine dönüşür.
+- **Kullanıcı yönetimi:** bilgi işlem ve yönetim kullanıcı ekler, düzenler, pasife alır, parola sıfırlar.
+- **Ctrl+K paleti:** sayfaya git, malzemeyi aç, temayı değiştir.
+- Açık ve koyu tema, telefon görünümü, klavyeyle tam kullanım, "hareketi azalt" ayarına uyan animasyonlar.
+
+| Giriş | Malzeme ayrıntısı | Telefon |
+|---|---|---|
+| ![Giriş](docs/screens/plan-2/01-giris.png) | ![Malzeme ayrıntısı](docs/screens/plan-2/09-malzeme-ayrinti-koyu.png) | ![Telefon](docs/screens/plan-2/16-telefon-malzemeler.png) |
+
+## Çalıştırma
+
+Node.js 24 ve npm gerekir.
+
+```bash
+npm install
+npm run dev        # http://localhost:3001
+```
+
+Giriş ekranında **Demo hesabıyla giriş yap** düğmesi bütün çalışanları listeler. Demo parolası `Demo2026!`. Örneğin depo işlemleri için Onur Tekin (Depo Uzmanı), sayım onayı için Sevgi Polat (Depo ve Sevkiyat Müdürü), kullanıcı yönetimi için Ece Korkmaz (Sistem Uzmanı).
+
+Veriler tarayıcıda kalır. Ayarlar → **Veriyi sıfırla** başlangıçtaki örnek veriye döner.
+
+## Mimari
+
+```
+src/
+  db/        Drizzle şeması, tarayıcıda PGlite (Web Worker + OPFS), göçler
+  domain/    İş kuralları; React içermez. Stok yalnızca postMovement ile değişir, yetki burada da denetlenir
+  seed/      Kurgusal örnek veri ve derleme sırasında üretilen anlık görüntü
+  features/  Ekranlar (stok, kullanıcılar, ana panel, ayarlar)
+  shell/     Açılış, giriş, oturum, menü, komut paleti
+  ui/        Tasarım sistemi: renk belirteçleri, tablo, pencere, çekmece, cetvel göstergesi
+```
+
+- **Next.js 16** (App Router), **React 19**, **TypeScript** (strict), **Tailwind CSS 4**
+- **PostgreSQL**: tarayıcıda [PGlite](https://pglite.dev) ile; sorgular **Drizzle ORM** üzerinden. İkinci aşamada aynı şema ve servisler sunucudaki PostgreSQL'e taşınacak.
+- **TanStack Query** önbellek, **Zustand** oturum, **Radix** erişilebilir bileşenler, **cmdk** palet, **Motion** animasyon
+- Para tam sayı kuruş, miktar tam sayı binde birim olarak saklanır; kayan noktalı tutar yoktur.
+
+Depolama seçimi ve ölçümler için [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md), örnek verinin kaynakları için [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md).
+
+## Testler
+
+```bash
+npm test           # birim testleri (Vitest, gerçek PGlite veritabanıyla)
+npm run test:e2e   # tarayıcı testleri (Playwright, başsız Chrome)
+npm run verify     # tür denetimi, lint, birim testleri ve üretim derlemesi
+```
+
+212 birim testi ve 51 tarayıcı testi var. Tarayıcı testleri yetkileri, Türkçe aramayı, çift tıklamayı, iki sekmeyi, kapalı tarayıcı deposunu, klavye odağını ve telefon genişliğini kapsar.
+
+## Durum
+
+Plan 1 (temel, stok ve kullanıcılar) tamam. Sırada satış ve üretim (mobilya kataloğundan reçeteler, iş emirleri), satın alma, raporlar ve yapay zekâ destekli yardımcı var.
+
+Bu bir vitrin sürümüdür: kişi ve firma adları kurgusaldır, fiyatların bir kısmı tahmindir.
