@@ -8,6 +8,7 @@ export type NavItem = { href: string; label: string; module: Module; group: NavG
 export const NAV: NavItem[] = [
   { href: "/", label: "Ana panel", module: "reports", group: "Genel" },
   { href: "/satis/siparisler", label: "Siparişler", module: "sales", group: "Satış" },
+  { href: "/satis/musteriler", label: "Müşteriler", module: "sales", group: "Satış" },
   { href: "/stok/malzemeler", label: "Malzemeler", module: "inventory", group: "Stok" },
   { href: "/stok/hareketler", label: "Stok hareketleri", module: "inventory", group: "Stok" },
   { href: "/stok/sayim", label: "Sayım", module: "inventory", group: "Stok" },

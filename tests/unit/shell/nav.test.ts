@@ -22,7 +22,7 @@ test("satış uzmanı stok sayfalarını görür, kullanıcı yönetimini görme
 
 test("satış ekranları 'Satış' grubunda, ana panelin hemen ardından", () => {
   const sales = NAV.filter((n) => n.group === "Satış").map((n) => n.href);
-  expect(sales).toEqual(["/satis/siparisler"]);
+  expect(sales).toEqual(["/satis/siparisler", "/satis/musteriler"]);
   expect(NAV_GROUPS.slice(0, 2)).toEqual(["Genel", "Satış"]);
   expect(labels(user("depo", "uzman"))).toContain("Siparişler");
 });
