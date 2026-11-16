@@ -1,6 +1,18 @@
-// docs/DATA_SOURCES.md dosyasını src/seed/data/materials.ts içindeki katalogdan üretir: node scripts/gen-data-sources.mjs
+// docs/DATA_SOURCES.md dosyasını src/seed/data/materials.ts ve products.ts'ten üretir: node scripts/gen-data-sources.mjs
 import { writeFileSync } from "node:fs";
+import { registerHooks } from "node:module";
 import { SEED_MATERIALS } from "../src/seed/data/materials.ts";
+
+// src içindeki modüller uzantısız içe aktarır (./materials) ve JSON'u özniteliksiz yükler; Node ikisini de
+// kendiliğinden çözmez. Bu kanca yalnızca bu betik için .ts uzantısını ekler ve JSON'u JSON olarak yükletir.
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier.endsWith(".json")) return { ...nextResolve(specifier, context), importAttributes: { type: "json" } };
+    if (specifier.startsWith(".") && !/\.[cm]?[jt]s$/.test(specifier)) return nextResolve(`${specifier}.ts`, context);
+    return nextResolve(specifier, context);
+  },
+});
+const { LABOR_KURUS_PER_MINUTE, SEED_PRODUCTS, STATIONS, unitCostKurus } = await import("../src/seed/data/products.ts");
 
 const CATEGORY = {
   panel: "Panel",
@@ -30,9 +42,19 @@ const rows = SEED_MATERIALS.map(
     } |`,
 );
 
+const FINISH = { beyaz: "Beyaz", ahsap: "Ahşap" };
+const kurus = (n) => `${tl(n / 100)} TL`;
+const productRows = SEED_PRODUCTS.map(
+  (p) =>
+    `| ${p.code} | ${p.name} | ${FINISH[p.finish]} | ${kurus(unitCostKurus(p.bom, p.routing))} | ${kurus(p.priceKurus)} | %${p.vatRate} |`,
+);
+const stationList = STATIONS.map((s) => `${s.name} (${s.dailyCapacityMin} dk/gün)`).join(", ");
+const vat20 = [...new Set(SEED_PRODUCTS.filter((p) => p.vatRate === 20).map((p) => `"${p.category}"`))].join(", ");
+const vat10Count = new Set(SEED_PRODUCTS.filter((p) => p.vatRate === 10).map((p) => p.category)).size;
+
 const out = `# Örnek verinin kaynakları
 
-Bu dosya \`node scripts/gen-data-sources.mjs\` ile \`src/seed/data/materials.ts\` içinden üretilir; elle düzenlemeyin.
+Bu dosya \`node scripts/gen-data-sources.mjs\` ile \`src/seed/data/materials.ts\` ve \`src/seed/data/products.ts\` içinden üretilir; elle düzenlemeyin.
 
 ## Özet
 
@@ -66,6 +88,22 @@ Demo hesaplarındaki çalışan adları kurgusaldır. E-postalar \`@baltacioglus
 |---|---|---|---|---|
 ${rows.join("\n")}
 
+## Ürünler
+
+- Katalog, mobilya sitesinin ürün kitabındaki ${SEED_PRODUCTS.length / 2} modeldir. Her model beyaz ve ahşap kaplamayla iki ayrı ürün olur (${SEED_PRODUCTS.length} ürün). Parça ölçüleri sitenin kendi model üreticilerinden \`npm run catalog:export\` ile \`src/seed/data/catalog.generated.json\` dosyasına aktarılır; reçete, rota, maliyet ve fiyat \`src/seed/data/products.ts\` içindeki kurallarla bu ölçülerden türetilir.
+- **İşçilik dakikası 2,91 TL.** 2026 brüt asgari ücreti 33.030,00 TL'dir; imalat sektöründe 5 puanlık SGK işveren teşvikiyle işverene aylık maliyeti 39.223,13 TL'dir. Ayda 225 çalışma saatiyle 39.223,13 ÷ 225 ÷ 60 = 2,905 TL/dk; katalogda ${tl(LABOR_KURUS_PER_MINUTE / 100)} TL/dk kullanılır. Kaynaklar: [PwC, 2026 asgari ücret ve işveren maliyeti](https://www.pwc.com.tr/tr/medya/kose-yazilari/celal-ozcan/2026-yili-asgari-ucreti-ve-sektorlere-gore-isveren-maliyeti.html), [Alo Maliye, 2026 asgari ücreti](https://www.alomaliye.com/2025/12/23/2026-yili-asgari-ucreti-2026-yili-asgari-ucret-bilgilendirme/).
+- **Maliyet** = Σ malzeme birim fiyatı (yukarıdaki tablo, KDV hariç) × miktar × (1 + fire) + rota dakikası × 2,91 TL × 2.
+- **Varsayım, genel gider:** rota dakikası işçiliğin iki katıyla maliyetlenir; ikinci kat atölye genel gideridir (enerji, makine amortismanı, kira). Oran bir kaynağa dayanmaz.
+- **Varsayım, satış fiyatı:** KDV hariç satış fiyatı maliyetin 1,8 katıdır ve 50 TL'ye yukarı yuvarlanır. Oran bir kaynağa dayanmaz.
+- **Varsayım, KDV sınıflandırması:** ${vat20} 9403 ve 9401 pozisyonlarındaki mobilyalardan sayılmadı, genel oran olan **%20** uygulanır; diğer ${vat10Count} kategori mobilyadır ve **%10**'dur (yukarıdaki KDV bölümü). Sınıflandırma bir gümrük müşavirine doğrulatılmadı.
+- **Hazır alınan parçalar reçeteye girmez:** ayna camı, LED aydınlatma, cam parçalar, metal ayak ve çerçeveler (kızak ve dikme ayaklar) ve beyaz havluluğun çelik boru gövdesi dışarıdan hazır alınır; katalogda fiyatları olmadığı için maliyete katılmadı. Bu yüzden LED aynanın ve beyaz havluluğun fiyatı yalnızca atölyede işlenen parçaları ve ambalajı yansıtır; beyaz havluluğun rotasında yalnızca paketleme vardır. Kuvars tezgâh reçetede ön yüz levhası olarak hesaplanır.
+- **Reçete:** plaka miktarı panel alanının 5,88 m²'lik (2100×2800 mm) plakaya bölümüdür; ayaklar hacimle masif keresteden düşülür. Fire oranları levhada %15, masifte %30, kenar bandı ve cilada %10, minifiks ve kavelada %5'tir. Bütün miktarlar 0,01 birime yukarı yuvarlanır.
+- **Rota istasyonları:** ${stationList}. Dakikalar panel sayısı, kenar bandı metresi, menteşe ve ray sayısı, cephe sayısı ve ahşapta cilalı alandan hesaplanır. Kapasiteler varsayımdır.
+
+| Kod | Ürün | Kaplama | Birim maliyet (KDV hariç) | Satış fiyatı (KDV hariç) | KDV |
+|---|---|---|---|---|---|
+${productRows.join("\n")}
+
 ## Bulunan ama kullanılmayan veriler
 
 - 18 mm suntalam için kaynaklar geniş bir aralık veriyor: [Bauhaus](https://www.bauhaus.com.tr/suntalam-2100-2800-18mm-441-flora-1-plaka-588m2-61537949) 1.150 TL (Flora desen, 1 plaka), [Kaplan Orman](https://www.kaplanormanurunleri.com/) 2.300 TL (beyaz), [Haber Gazetesi](https://www.habergazetesi.com.tr/sunta-fiyatlari) 2.150–2.550 TL (çift yüz beyaz, Ocak 2026). Tarihli ve aralığın ortasında kaldığı için MDF Marketi'nin 1.750 TL'si kullanıldı.
@@ -76,5 +114,5 @@ ${rows.join("\n")}
 
 writeFileSync("docs/DATA_SOURCES.md", out);
 console.log(
-  `DATA_SOURCES.md: ${SEED_MATERIALS.length} kalem; ${page.length} sayfa, ${snippet.length} özet, ${estimated.length} tahmin`,
+  `DATA_SOURCES.md: ${SEED_MATERIALS.length} kalem; ${page.length} sayfa, ${snippet.length} özet, ${estimated.length} tahmin; ${SEED_PRODUCTS.length} ürün`,
 );

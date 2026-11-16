@@ -1,6 +1,6 @@
 # Örnek verinin kaynakları
 
-Bu dosya `node scripts/gen-data-sources.mjs` ile `src/seed/data/materials.ts` içinden üretilir; elle düzenlemeyin.
+Bu dosya `node scripts/gen-data-sources.mjs` ile `src/seed/data/materials.ts` ve `src/seed/data/products.ts` içinden üretilir; elle düzenlemeyin.
 
 ## Özet
 
@@ -72,6 +72,61 @@ Demo hesaplarındaki çalışan adları kurgusaldır. E-postalar `@baltacioglus.
 | Karton Köşe Koruyucu 1 m | Ambalaj | 12,92 TL / adet | [n11](https://www.n11.com/urun/100adet-1metre-karton-kosebent-kose-koruyucu-palet-kartonu-12287740): 1 metre karton köşebent, 100 adet: 1.549,90 TL → KDV'siz | arama özeti |
 | Balonlu Naylon 100 cm × 100 m | Ambalaj | 2.089,53 TL / adet | [Akakçe](https://www.akakce.com/ambalaj-naylonu,33.html): Balonlu naylon rulo 100 cm × 100 m (40 g/m²): en ucuz 2.507,43 TL → KDV'siz | ürün sayfası okundu |
 | Koli Bandı 45 mm × 100 m | Ambalaj | 40,60 TL / adet | [idefix](https://www.idefix.com/stella-hotmelt-koli-banti-45-x-100-72-adet-p-17024786): Stella hotmelt koli bandı 45×100, 72 adet: 3.508,00 TL (sepette 3.122,12 TL); yüksek fiyat alındı, adede çevrildi → KDV'siz | ürün sayfası okundu |
+
+## Ürünler
+
+- Katalog, mobilya sitesinin ürün kitabındaki 20 modeldir. Her model beyaz ve ahşap kaplamayla iki ayrı ürün olur (40 ürün). Parça ölçüleri sitenin kendi model üreticilerinden `npm run catalog:export` ile `src/seed/data/catalog.generated.json` dosyasına aktarılır; reçete, rota, maliyet ve fiyat `src/seed/data/products.ts` içindeki kurallarla bu ölçülerden türetilir.
+- **İşçilik dakikası 2,91 TL.** 2026 brüt asgari ücreti 33.030,00 TL'dir; imalat sektöründe 5 puanlık SGK işveren teşvikiyle işverene aylık maliyeti 39.223,13 TL'dir. Ayda 225 çalışma saatiyle 39.223,13 ÷ 225 ÷ 60 = 2,905 TL/dk; katalogda 2,91 TL/dk kullanılır. Kaynaklar: [PwC, 2026 asgari ücret ve işveren maliyeti](https://www.pwc.com.tr/tr/medya/kose-yazilari/celal-ozcan/2026-yili-asgari-ucreti-ve-sektorlere-gore-isveren-maliyeti.html), [Alo Maliye, 2026 asgari ücreti](https://www.alomaliye.com/2025/12/23/2026-yili-asgari-ucreti-2026-yili-asgari-ucret-bilgilendirme/).
+- **Maliyet** = Σ malzeme birim fiyatı (yukarıdaki tablo, KDV hariç) × miktar × (1 + fire) + rota dakikası × 2,91 TL × 2.
+- **Varsayım, genel gider:** rota dakikası işçiliğin iki katıyla maliyetlenir; ikinci kat atölye genel gideridir (enerji, makine amortismanı, kira). Oran bir kaynağa dayanmaz.
+- **Varsayım, satış fiyatı:** KDV hariç satış fiyatı maliyetin 1,8 katıdır ve 50 TL'ye yukarı yuvarlanır. Oran bir kaynağa dayanmaz.
+- **Varsayım, KDV sınıflandırması:** "Dekoratif duvar paneli", "LED ayna", "Havluluk" 9403 ve 9401 pozisyonlarındaki mobilyalardan sayılmadı, genel oran olan **%20** uygulanır; diğer 17 kategori mobilyadır ve **%10**'dur (yukarıdaki KDV bölümü). Sınıflandırma bir gümrük müşavirine doğrulatılmadı.
+- **Hazır alınan parçalar reçeteye girmez:** ayna camı, LED aydınlatma, cam parçalar, metal ayak ve çerçeveler (kızak ve dikme ayaklar) ve beyaz havluluğun çelik boru gövdesi dışarıdan hazır alınır; katalogda fiyatları olmadığı için maliyete katılmadı. Bu yüzden LED aynanın ve beyaz havluluğun fiyatı yalnızca atölyede işlenen parçaları ve ambalajı yansıtır; beyaz havluluğun rotasında yalnızca paketleme vardır. Kuvars tezgâh reçetede ön yüz levhası olarak hesaplanır.
+- **Reçete:** plaka miktarı panel alanının 5,88 m²'lik (2100×2800 mm) plakaya bölümüdür; ayaklar hacimle masif keresteden düşülür. Fire oranları levhada %15, masifte %30, kenar bandı ve cilada %10, minifiks ve kavelada %5'tir. Bütün miktarlar 0,01 birime yukarı yuvarlanır.
+- **Rota istasyonları:** Kesim (960 dk/gün), Kenar bantlama (480 dk/gün), Delik ve CNC (480 dk/gün), Montaj (960 dk/gün), Boya ve cila (480 dk/gün), Paketleme (480 dk/gün). Dakikalar panel sayısı, kenar bandı metresi, menteşe ve ray sayısı, cephe sayısı ve ahşapta cilalı alandan hesaplanır. Kapasiteler varsayımdır.
+
+| Kod | Ürün | Kaplama | Birim maliyet (KDV hariç) | Satış fiyatı (KDV hariç) | KDV |
+|---|---|---|---|---|---|
+| URN-0001 | Eksen Gardırop | Beyaz | 23.457,07 TL | 42.250,00 TL | %10 |
+| URN-0002 | Eksen Gardırop | Ahşap | 30.786,28 TL | 55.450,00 TL | %10 |
+| URN-0003 | Sükût Komodin | Beyaz | 3.593,33 TL | 6.500,00 TL | %10 |
+| URN-0004 | Sükût Komodin | Ahşap | 4.078,71 TL | 7.350,00 TL | %10 |
+| URN-0005 | Ritim Şifonyer | Beyaz | 9.934,38 TL | 17.900,00 TL | %10 |
+| URN-0006 | Ritim Şifonyer | Ahşap | 11.603,03 TL | 20.900,00 TL | %10 |
+| URN-0007 | Tezgâh Mutfak dolabı | Beyaz | 18.772,11 TL | 33.800,00 TL | %10 |
+| URN-0008 | Tezgâh Mutfak dolabı | Ahşap | 26.328,60 TL | 47.400,00 TL | %10 |
+| URN-0009 | Kiler Erzak dolabı | Beyaz | 11.815,90 TL | 21.300,00 TL | %10 |
+| URN-0010 | Kiler Erzak dolabı | Ahşap | 15.487,83 TL | 27.900,00 TL | %10 |
+| URN-0011 | Telve Kahve köşesi | Beyaz | 11.210,28 TL | 20.200,00 TL | %10 |
+| URN-0012 | Telve Kahve köşesi | Ahşap | 14.337,15 TL | 25.850,00 TL | %10 |
+| URN-0013 | Kâtip Kitaplıklı bilgisayar masası | Beyaz | 6.629,70 TL | 11.950,00 TL | %10 |
+| URN-0014 | Kâtip Kitaplıklı bilgisayar masası | Ahşap | 8.625,91 TL | 15.550,00 TL | %10 |
+| URN-0015 | Atölye Çalışma masası | Beyaz | 3.264,45 TL | 5.900,00 TL | %10 |
+| URN-0016 | Atölye Çalışma masası | Ahşap | 4.429,33 TL | 8.000,00 TL | %10 |
+| URN-0017 | Sayfa Kitaplık | Beyaz | 9.268,97 TL | 16.700,00 TL | %10 |
+| URN-0018 | Sayfa Kitaplık | Ahşap | 11.310,37 TL | 20.400,00 TL | %10 |
+| URN-0019 | Perde TV ünitesi | Beyaz | 4.827,16 TL | 8.700,00 TL | %10 |
+| URN-0020 | Perde TV ünitesi | Ahşap | 5.845,77 TL | 10.550,00 TL | %10 |
+| URN-0021 | Ada Orta sehpa | Beyaz | 1.732,83 TL | 3.150,00 TL | %10 |
+| URN-0022 | Ada Orta sehpa | Ahşap | 3.136,70 TL | 5.650,00 TL | %10 |
+| URN-0023 | Köşe Köşe sehpası | Beyaz | 703,58 TL | 1.300,00 TL | %10 |
+| URN-0024 | Köşe Köşe sehpası | Ahşap | 1.135,76 TL | 2.050,00 TL | %10 |
+| URN-0025 | Sofra Yemek masası | Beyaz | 3.075,76 TL | 5.550,00 TL | %10 |
+| URN-0026 | Sofra Yemek masası | Ahşap | 5.071,22 TL | 9.150,00 TL | %10 |
+| URN-0027 | Çıta Dekoratif duvar paneli | Beyaz | 4.812,31 TL | 8.700,00 TL | %20 |
+| URN-0028 | Çıta Dekoratif duvar paneli | Ahşap | 6.211,48 TL | 11.200,00 TL | %20 |
+| URN-0029 | Eşik Portmanto | Beyaz | 6.206,23 TL | 11.200,00 TL | %10 |
+| URN-0030 | Eşik Portmanto | Ahşap | 7.711,49 TL | 13.900,00 TL | %10 |
+| URN-0031 | Adım Ayakkabılık | Beyaz | 4.000,71 TL | 7.250,00 TL | %10 |
+| URN-0032 | Adım Ayakkabılık | Ahşap | 5.458,74 TL | 9.850,00 TL | %10 |
+| URN-0033 | Karşılama Dresuar | Beyaz | 3.877,99 TL | 7.000,00 TL | %10 |
+| URN-0034 | Karşılama Dresuar | Ahşap | 4.453,25 TL | 8.050,00 TL | %10 |
+| URN-0035 | Vaha Banyo dolabı | Beyaz | 4.229,93 TL | 7.650,00 TL | %10 |
+| URN-0036 | Vaha Banyo dolabı | Ahşap | 5.347,90 TL | 9.650,00 TL | %10 |
+| URN-0037 | Hale LED ayna | Beyaz | 916,00 TL | 1.650,00 TL | %20 |
+| URN-0038 | Hale LED ayna | Ahşap | 1.187,22 TL | 2.150,00 TL | %20 |
+| URN-0039 | Merdiven Havluluk | Beyaz | 555,81 TL | 1.050,00 TL | %20 |
+| URN-0040 | Merdiven Havluluk | Ahşap | 1.186,55 TL | 2.150,00 TL | %20 |
 
 ## Bulunan ama kullanılmayan veriler
 
