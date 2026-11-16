@@ -130,13 +130,14 @@ await step("atölye her istasyonda başlar ve bitirir", async () => {
   await nav("Atölye");
   await page.getByRole("group", { name: "İstasyon" }).waitFor();
   const stations = page.getByRole("group", { name: "İstasyon" }).getByRole("button");
+  await stations.first().waitFor();
   const total = await stations.count();
   let done = 0;
   for (let i = 0; i < total; i++) {
     await stations.nth(i).click();
     const card = page.getByRole("article", { name: workOrderCode });
     // Kuyruk istasyon değişince yeniden yüklenir; kısa süre beklenir, iş emri bu istasyonda yoksa geçilir.
-    await card.waitFor({ timeout: 3000 }).catch(() => {});
+    await card.waitFor({ timeout: done === 0 ? 10_000 : 3000 }).catch(() => {});
     if ((await card.count()) === 0) continue;
     await card.getByRole("button", { name: "Başla" }).click();
     await card.getByRole("button", { name: "Bitti" }).click();
