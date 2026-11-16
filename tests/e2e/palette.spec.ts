@@ -36,6 +36,19 @@ test("'Temayı değiştir' komutu temayı değiştirir", async ({ page }) => {
   await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).not.toBe(before);
 });
 
+test("palet arama kutusu odakta çerçeve çizmez, normal düğmeler klavye halkasını korur", async ({ page }) => {
+  await loginAs(page, "Onur Tekin");
+  await page.keyboard.press("Control+k");
+  const input = page.getByRole("combobox");
+  await expect(input).toBeFocused();
+  await expect(input).toHaveCSS("outline-style", "none");
+  await page.keyboard.press("Escape");
+
+  await page.keyboard.press("Tab");
+  const focused = page.locator(":focus-visible").first();
+  await expect(focused).toHaveCSS("outline-style", "solid");
+});
+
 test("kullanıcının göremediği sayfa palette yok", async ({ page }) => {
   await loginAs(page, "Onur Tekin");
   await page.keyboard.press("Control+k");

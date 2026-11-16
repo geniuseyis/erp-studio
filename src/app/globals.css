@@ -70,9 +70,15 @@ h3 {
   text-wrap: balance;
 }
 
-:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
+/*
+ * Klavye odak halkası taban katmanında: katmansız olsaydı `outline-none` ve
+ * `outline-offset-*` gibi araç sınıflarını ezerdi (palet arama kutusunda mavi çerçeve).
+ */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
 }
 
 .tabular {
