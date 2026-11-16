@@ -1,10 +1,10 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { beforeEach, expect, test } from "vitest";
 import type { Db } from "@/db/client";
-import { materials, products, salesOrderLines, salesOrders, stockMovements, workOrders, workOrderSteps } from "@/db/schema";
+import { auditLog, materials, productMovements, products, salesOrderLines, salesOrders, stockMovements, workOrders, workOrderSteps } from "@/db/schema";
 import type { Ctx } from "@/domain/context";
 import { receiveStock, verifyLedger } from "@/domain/inventory/ledger";
-import { verifyProductLedger } from "@/domain/production/productLedger";
+import { produceIn, verifyProductLedger } from "@/domain/production/productLedger";
 import { finishCurrentStep, retryMaterials, startNextStep } from "@/domain/production/workOrders";
 import { addLine, confirmOrder, createOrder } from "@/domain/sales/orders";
 import { addBomLine, addCustomer, addMaterial, addProduct, addRouting, addStation, addUser, ctxFor } from "../../helpers/fixtures";
@@ -225,4 +225,80 @@ test("tam akıştan sonra iki defter de tutarlı", async () => {
 test("olmayan iş emri NOT_FOUND", async () => {
   await expect(startNextStep(atolye, "00000000-0000-4000-8000-000000000000")).rejects.toMatchObject({ code: "NOT_FOUND" });
   await expect(finishCurrentStep(atolye, "x")).rejects.toMatchObject({ code: "NOT_FOUND" });
+});
+
+test("iptal satırlı iş emri biter: mamul serbest stoğa girer, satıra ayrılmaz", async () => {
+  await reserveMaterials();
+  const [before] = await lines();
+  await db.update(salesOrderLines).set({ status: "cancelled" }).where(eq(salesOrderLines.id, before!.id));
+  await runAllSteps();
+
+  expect((await workOrder()).status).toBe("completed");
+  expect(await product()).toMatchObject({ onHandMilli: 1000, reservedMilli: 0 });
+  const [line] = await lines();
+  expect(line).toMatchObject({ status: "cancelled", reservedMilli: before!.reservedMilli });
+  const reserves = await db.select().from(productMovements).where(eq(productMovements.type, "reserve"));
+  expect(reserves).toEqual([]);
+  const [done] = await db.select().from(auditLog).where(eq(auditLog.action, "complete"));
+  expect(done?.summary).toContain("satır iptal, mamul serbest stokta");
+  expect(await verifyProductLedger(db)).toEqual([]);
+});
+
+test("kısmi ayırma: stoktaki 1 adet onayda ayrılır, iş emri kalan 2'yi üretir, satır ready", async () => {
+  const o2 = await createOrder(satis, { customerId: (await addCustomer(db)).id, dueAt: day("2026-12-15") });
+  const product2 = (await addProduct(db)).id;
+  for (let seq = 1; seq <= 3; seq += 1) {
+    await addRouting(db, { productId: product2, seq, stationId: (await addStation(db)).id, minutesPerUnit: 20 });
+  }
+  await addBomLine(db, { productId: product2, materialId, qtyMilli: 1000 });
+  await receiveStock(depo, { materialId, qtyMilli: 10000, unitCostKurus: 100 });
+  await produceIn(depo, { productId: product2, qtyMilli: 1000, ref: { type: "manual", id: "test" } });
+  await addLine(satis, { orderId: o2.id, productId: product2, qtyMilli: 3000 });
+  await confirmOrder(satis, o2.id);
+
+  const [wo] = await db.select().from(workOrders).where(eq(workOrders.productId, product2));
+  expect(wo?.qtyMilli).toBe(2000);
+  const [mid] = await db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, o2.id));
+  expect(mid?.reservedMilli).toBe(1000);
+
+  for (let i = 0; i < 3; i += 1) {
+    await startNextStep(atolye, wo!.id);
+    await finishCurrentStep(atolye, wo!.id);
+  }
+  const [line] = await db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, o2.id));
+  expect(line).toMatchObject({ reservedMilli: 3000, status: "ready" });
+  const [order] = await db.select().from(salesOrders).where(eq(salesOrders.id, o2.id));
+  expect(order?.status).toBe("ready");
+  expect(await verifyProductLedger(db)).toEqual([]);
+});
+
+test("her başlatma ve bitirme işlem geçmişine yazılır", async () => {
+  await reserveMaterials();
+  await runAllSteps();
+  const rows = await db.select().from(auditLog).where(eq(auditLog.entityId, workOrderId)).orderBy(asc(auditLog.createdAt));
+  const count = (action: string) => rows.filter((r) => r.action === action).length;
+  expect(count("step_start")).toBe(3);
+  expect(count("step_finish")).toBe(3);
+  expect(count("start")).toBe(1);
+  expect(count("complete")).toBe(1);
+  const wo = await workOrder();
+  expect(rows.find((r) => r.action === "step_start")?.summary).toMatch(new RegExp(`^${wo.code} Test istasyon [0-9]+ başladı$`));
+  expect(rows.find((r) => r.action === "complete")?.summary).toMatch(/1 adet SIP-\S+ satırına ayrıldı, satır hazır/);
+});
+
+test("tüketim defter hatası verirse ilk başlatma geri alınır", async () => {
+  await reserveMaterials();
+  // Eldeki stok ayrılmışın altına düşürülür: tüketim defterde reddedilir.
+  await db.execute(sql`alter table materials drop constraint materials_reserved_check`);
+  await db.update(materials).set({ onHandMilli: 0 }).where(eq(materials.id, materialId));
+  const movements = (await db.select().from(stockMovements)).length;
+  const audits = (await db.select().from(auditLog)).length;
+
+  await expect(startNextStep(atolye, workOrderId)).rejects.toMatchObject({ code: "INSUFFICIENT_STOCK" });
+  expect((await steps()).every((s) => s.startedAt === null)).toBe(true);
+  const wo = await workOrder();
+  expect(wo.status).toBe("planned");
+  expect(wo.startedAt).toBeNull();
+  expect((await db.select().from(stockMovements)).length).toBe(movements);
+  expect((await db.select().from(auditLog)).length).toBe(audits);
 });
