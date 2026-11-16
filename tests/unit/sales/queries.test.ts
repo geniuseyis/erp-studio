@@ -71,6 +71,19 @@ test("geciken sipariş: termin geçmiş ve sevk edilmemiş", async () => {
   expect((await listOrders(db, { now }))[0]?.overdue).toBe(false);
 });
 
+test("termin günü içinde sipariş gecikmiş sayılmaz; ertesi gün sayılır", async () => {
+  const { order } = await draft("A", "2026-12-15");
+  await confirmOrder(satis, order.id);
+  const onDueDay = new Date("2026-12-15T10:00:00+03:00");
+  const nextDay = new Date("2026-12-16T00:01:00+03:00");
+  expect((await listOrders(db, { now: onDueDay }))[0]?.overdue).toBe(false);
+  expect((await getOrder(db, order.id, onDueDay))?.overdue).toBe(false);
+  expect((await salesSummary(db, onDueDay)).overdue).toBe(0);
+  expect((await listOrders(db, { now: new Date("2026-12-15T23:59:00+03:00") }))[0]?.overdue).toBe(false);
+  expect((await listOrders(db, { now: nextDay }))[0]?.overdue).toBe(true);
+  expect((await salesSummary(db, nextDay)).overdue).toBe(1);
+});
+
 test("malzeme bekleyen sipariş işaretlenir; stoklu sipariş işaretlenmez", async () => {
   const { order } = await draft("A");
   await confirmOrder(satis, order.id);

@@ -2,6 +2,7 @@ import { asc, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { customers, products, salesOrderLines, salesOrders, users, workOrders } from "@/db/schema";
 import { isUuid } from "../context";
+import { istanbulDayStart } from "../production/calendar";
 import { asWorkOrder, type ProductFinish, type WorkOrderStatus } from "../production/types";
 import { matchesSearch } from "../text";
 import { lineNetKurus, orderTotals } from "./money";
@@ -32,6 +33,13 @@ function toOrderRow(record: OrderRecord, customerName: string, lines: LineRecord
   const order = asOrder(record);
   const totals = orderTotals(lines.map(asOrderLine));
   const dueAt = order.dueAt ?? order.createdAt;
+  // Termin İstanbul gününün başıdır; sipariş ancak termin günü bittikten sonra gecikmiş sayılır.
+  const overdue =
+    order.dueAt !== null &&
+    order.dueAt.getTime() < istanbulDayStart(now).getTime() &&
+    order.status !== "draft" &&
+    order.status !== "shipped" &&
+    order.status !== "cancelled";
   return {
     id: order.id,
     code: order.code,
@@ -40,7 +48,7 @@ function toOrderRow(record: OrderRecord, customerName: string, lines: LineRecord
     status: order.status,
     waitingMaterial: lines.some((l) => l.status === "waiting_material"),
     dueAt,
-    overdue: order.dueAt !== null && order.dueAt.getTime() < now.getTime() && order.status !== "draft" && order.status !== "shipped" && order.status !== "cancelled",
+    overdue,
     lineCount: lines.filter((l) => l.status !== "cancelled").length,
     netKurus: totals.netKurus,
     totalKurus: totals.totalKurus,
