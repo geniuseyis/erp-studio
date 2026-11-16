@@ -157,7 +157,7 @@ export async function retryMaterials(ctx: Ctx, workOrderId: string): Promise<{ w
 }
 
 /** İş emri için ayrılmış net malzeme: ayırma − ayırma iptali, malzeme başına. */
-async function reservedForWorkOrder(db: Db, workOrderId: string): Promise<MaterialNeed[]> {
+export async function reservedForWorkOrder(db: Db, workOrderId: string): Promise<MaterialNeed[]> {
   const rows = await db
     .select({ materialId: stockMovements.materialId, sum: sql<number>`sum(${stockMovements.deltaReservedMilli})::float8` })
     .from(stockMovements)
