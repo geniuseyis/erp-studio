@@ -10,6 +10,7 @@ import {
   deriveBom,
   deriveRouting,
   priceKurus,
+  productName,
   unitCostKurus,
   vatRateFor,
 } from "@/seed/data/products";
@@ -201,6 +202,24 @@ describe("maliyet, fiyat ve KDV", () => {
 
   test("gardırop KDV %10", () => {
     expect(vatRateFor("Gardırop")).toBe(10);
+  });
+});
+
+describe("ürün adı", () => {
+  test("kategori model adıyla başlıyorsa ad tekrarlanmaz", () => {
+    expect(productName("Köşe", "Köşe sehpası")).toBe("Köşe sehpası");
+    expect(productName("KÖŞE", "köşe sehpası")).toBe("Köşe sehpası");
+  });
+
+  test("başka durumda model adı ve kategori", () => {
+    expect(productName("Eksen", "Gardırop")).toBe("Eksen Gardırop");
+    // yalnızca tam kelime: "Ada" + "Adalı masa" birleşir
+    expect(productName("Ada", "Adalı masa")).toBe("Ada Adalı masa");
+  });
+
+  test("katalogda adı tekrarlanan ürün yok", () => {
+    const kose = SEED_PRODUCTS.filter((x) => x.modelKey === "kose-sehpa").map((x) => x.name);
+    expect(kose).toEqual(["Köşe sehpası", "Köşe sehpası"]);
   });
 });
 

@@ -1,8 +1,20 @@
 // Örnek mamul kataloğu. Ürünler mobilya sitesinin kitabındaki 20 modeldir; her biri beyaz ve ahşap kaplamayla.
 // Parça özetleri catalog.generated.json'dan (npm run catalog:export) gelir; reçete, rota, maliyet ve fiyat
 // buradaki kurallarla türetilir. Kuralların dayanağı ve varsayımlar: docs/DATA_SOURCES.md.
+import { searchKey } from "../../domain/text";
 import catalog from "./catalog.generated.json";
 import { SEED_MATERIALS } from "./materials";
+
+/**
+ * Katalog adı: model adı + kategori ("Eksen Gardırop"). Kategori model adıyla başlıyorsa ad tekrarlanmaz;
+ * kategorinin baş harfi büyütülür ("Köşe" + "Köşe sehpası" → "Köşe sehpası").
+ */
+export function productName(name: string, category: string): string {
+  if (searchKey(category).startsWith(`${searchKey(name)} `)) {
+    return category.charAt(0).toLocaleUpperCase("tr") + category.slice(1);
+  }
+  return `${name} ${category}`;
+}
 
 /** Panel özeti, mm. t en ince kenar; a ≥ b. */
 export type PanelSummary = { t: number; a: number; b: number; slot: string; role: string };

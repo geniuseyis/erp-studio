@@ -4,7 +4,7 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import type { CatalogEntry, PanelSummary } from "@/seed/data/products";
+import { type CatalogEntry, type PanelSummary, productName } from "@/seed/data/products";
 
 const SITE_PRODUCTS = new URL("../../../Baltacıoğlu's/src/furniture/book/products.ts", import.meta.url);
 const OUT = "src/seed/data/catalog.generated.json";
@@ -78,7 +78,7 @@ function entry(product: Book["BOOK_PRODUCTS"][number], finish: "white" | "wood",
   }
   return {
     modelKey: product.id,
-    name: `${product.name} ${product.category}`,
+    name: productName(product.name, product.category),
     category: product.category,
     collection,
     finish: label,

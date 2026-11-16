@@ -109,8 +109,8 @@ Demo hesaplarındaki çalışan adları kurgusaldır. E-postalar `@baltacioglus.
 | URN-0020 | Perde TV ünitesi | Ahşap | 5.845,77 TL | 10.550,00 TL | %10 |
 | URN-0021 | Ada Orta sehpa | Beyaz | 1.732,83 TL | 3.150,00 TL | %10 |
 | URN-0022 | Ada Orta sehpa | Ahşap | 3.136,70 TL | 5.650,00 TL | %10 |
-| URN-0023 | Köşe Köşe sehpası | Beyaz | 703,58 TL | 1.300,00 TL | %10 |
-| URN-0024 | Köşe Köşe sehpası | Ahşap | 1.135,76 TL | 2.050,00 TL | %10 |
+| URN-0023 | Köşe sehpası | Beyaz | 703,58 TL | 1.300,00 TL | %10 |
+| URN-0024 | Köşe sehpası | Ahşap | 1.135,76 TL | 2.050,00 TL | %10 |
 | URN-0025 | Sofra Yemek masası | Beyaz | 3.075,76 TL | 5.550,00 TL | %10 |
 | URN-0026 | Sofra Yemek masası | Ahşap | 5.071,22 TL | 9.150,00 TL | %10 |
 | URN-0027 | Çıta Dekoratif duvar paneli | Beyaz | 4.812,31 TL | 8.700,00 TL | %20 |
