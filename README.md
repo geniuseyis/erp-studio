@@ -11,13 +11,30 @@ Mobilya üretimi yapan bir atölye için kurumsal kaynak planlama (ERP) uygulama
 - **Malzemeler:** 42 kalemlik katalog; Türkçe harfe duyarsız arama ("mese" → Meşe), kategori ve kritik süzgeçleri, sütun seçimi, CSV indirme, sipariş noktasını gösteren cetvel.
 - **Stok hareketleri:** stok yalnızca hareketlerle değişir; her giriş, çıkış ve sayım farkı kayıtlıdır.
 - **Sayım:** fiş açılır, raftaki miktar girilir, müdür onaylayınca farklar stok hareketine dönüşür.
+- **Siparişler:** taslaktan sevke; satır ekleme, KDV hariç ve dahil toplam, onayda stok ayrılır ya da iş emri açılır, malzeme eksikse "Malzeme bekliyor". Durum çipleri, termin ve geciken işareti.
+- **Müşteriler:** kurgusal müşteriler (gerçek il ve ilçeler), müşterinin siparişleri ve açık tutarı.
+- **Ürünler:** mobilya kataloğundan ürünler; reçete, rota, mamul stoğu ve birim maliyet.
+- **İş emirleri:** adım çizelgesi, ayrılan malzemeler, eksik listesi; planlama başlangıç gününü verir.
+- **Atölye:** istasyonun kuyruğu, tablette rahat büyük Başla ve Bitti düğmeleri; son adım bitince mamul stoğa girer, sipariş Hazır olur, depo sevk eder.
 - **Kullanıcı yönetimi:** bilgi işlem ve yönetim kullanıcı ekler, düzenler, pasife alır, parola sıfırlar.
-- **Ctrl+K paleti:** sayfaya git, malzemeyi aç, temayı değiştir.
+- **Ctrl+K paleti:** sayfaya git; sipariş, iş emri, müşteri, ürün ya da malzeme ara ve çekmecesini aç; "Yeni sipariş" (satışta); temayı değiştir.
 - Açık ve koyu tema, telefon görünümü, klavyeyle tam kullanım, "hareketi azalt" ayarına uyan animasyonlar.
 
 | Giriş | Malzeme ayrıntısı | Telefon |
 |---|---|---|
 | ![Giriş](docs/screens/plan-2/01-giris.png) | ![Malzeme ayrıntısı](docs/screens/plan-2/09-malzeme-ayrinti-koyu.png) | ![Telefon](docs/screens/plan-2/16-telefon-malzemeler.png) |
+
+Satış ve üretim (Aşama 2A):
+
+| Siparişler | Sipariş çekmecesi |
+|---|---|
+| ![Siparişler](docs/screens/asama-2/01-siparisler.png) | ![Sipariş çekmecesi](docs/screens/asama-2/02-siparis-cekmecesi.png) |
+
+| İş emri çekmecesi | Atölye (tablet) | Siparişler (telefon) |
+|---|---|---|
+| ![İş emri çekmecesi](docs/screens/asama-2/06-is-emri-cekmecesi.png) | ![Atölye tablet](docs/screens/asama-2/08-atolye-tablet.png) | ![Siparişler telefon](docs/screens/asama-2/09-telefon-siparisler.png) |
+
+Diğer görüntüler `docs/screens/asama-2` klasöründe: müşteriler, ürün çekmecesi, iş emirleri ve masaüstü atölye.
 
 ## Çalıştırma
 
@@ -39,7 +56,7 @@ src/
   db/        Drizzle şeması, tarayıcıda PGlite (Web Worker + OPFS), göçler
   domain/    İş kuralları; React içermez. Stok yalnızca postMovement ile değişir, yetki burada da denetlenir
   seed/      Kurgusal örnek veri ve derleme sırasında üretilen anlık görüntü
-  features/  Ekranlar (stok, kullanıcılar, ana panel, ayarlar)
+  features/  Ekranlar (stok, satış, üretim ve atölye, kullanıcılar, ana panel, ayarlar)
   shell/     Açılış, giriş, oturum, menü, komut paleti
   ui/        Tasarım sistemi: renk belirteçleri, tablo, pencere, çekmece, cetvel göstergesi
 ```
@@ -59,10 +76,10 @@ npm run test:e2e   # tarayıcı testleri (Playwright, başsız Chrome)
 npm run verify     # tür denetimi, lint, birim testleri ve üretim derlemesi
 ```
 
-212 birim testi ve 51 tarayıcı testi var. Tarayıcı testleri yetkileri, Türkçe aramayı, çift tıklamayı, iki sekmeyi, kapalı tarayıcı deposunu, klavye odağını ve telefon genişliğini kapsar.
+431 birim testi ve 75 tarayıcı testi var. Tarayıcı testleri siparişten sevke beş departmanlı akışı, yetkileri, Türkçe aramayı, çift tıklamayı, iki sekmeyi, kapalı tarayıcı deposunu, klavye odağını ve telefon genişliğini kapsar.
 
 ## Durum
 
-Plan 1 (temel, stok ve kullanıcılar) tamam. Sırada satış ve üretim (mobilya kataloğundan reçeteler, iş emirleri), satın alma, raporlar ve yapay zekâ destekli yardımcı var.
+Plan 1 (temel, stok ve kullanıcılar) ve Plan 2A (satış ve üretim: siparişten sevke) tamam. Sırada haftalık üretim planı ve termin önerisi (2B), ardından satın alma, raporlar ve yapay zekâ destekli yardımcı var.
 
 Bu bir vitrin sürümüdür: kişi ve firma adları kurgusaldır, fiyatların bir kısmı tahmindir.

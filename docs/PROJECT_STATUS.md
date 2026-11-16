@@ -1,6 +1,6 @@
 # Proje durumu
 
-Son güncelleme: 2026-11-16 (Plan 1 tamamlandı)
+Son güncelleme: 2026-11-16 (Plan 2A: satış ve üretim tamamlandı)
 
 ## Yapılanlar (Plan 1: temel)
 
@@ -11,13 +11,23 @@ Son güncelleme: 2026-11-16 (Plan 1 tamamlandı)
 - Tasarım sistemi "Sıcak atölye": ceviz başlık bandı ve üstüne binen kartlar, açık ve koyu tema, cetvel göstergesi, kategori numuneleri, yaylı animasyonlar (Motion), "hareketi azalt" desteği. İki tur kullanıcı geri bildirimiyle yeniden çizildi (ekranlar: `docs/screens/plan-2`).
 - Ekranlar: açılış, giriş (demo hesapları ayrı pencerede), ana panel, malzemeler ve ayrıntı çekmecesi, stok hareketleri, sayım ve fiş ayrıntısı, kullanıcı yönetimi, ayarlar (veriyi sıfırla), Ctrl+K komut paleti.
 
+## Yapılanlar (Plan 2A: satış ve üretim)
+
+- **Veri modeli:** ürünler ve reçeteler, istasyonlar ve rotalar, müşteriler, siparişler ve satırları, iş emirleri ve adımları, mamul stok defteri (`product_movements`). Şema sürümü değiştiği için vitrin veritabanları kendiliğinden yeniden kurulur.
+- **Örnek veri:** mobilya sitesinin kataloğundan ürünler, reçeteleri ve rotaları; kurgusal müşteriler; son 30 günün sipariş ve iş emri geçmişi. Fiyatlar ve KDV oranları `docs/DATA_SOURCES.md` içinde.
+- **İş kuralları (`src/domain/sales`, `src/domain/production`):** sipariş açma, satır ekleme, onay (mamul stoğu yeterse ayırır, değilse iş emri açıp reçete malzemelerini ayırır, malzeme yoksa "Malzeme bekliyor"), iptal, sevk; iş emrini planlama, malzemeyi yeniden deneme, istasyon adımını başlatma ve bitirme (sıra atlanamaz), bitince mamulün stoğa girmesi ve siparişin Hazır olması. Mamul stoğu yalnızca `postProductMovement` ile değişir; iki defter (malzeme ve mamul) tutarlılık testiyle denetlenir.
+- **Ekranlar:** Siparişler (çekmecede satır ekleme, onay, sevk, iptal), Müşteriler, Ürünler (reçete ve rota), İş emirleri (adım çizelgesi, malzeme durumu, planlama), Atölye (istasyon kuyruğu, büyük Başla ve Bitti düğmeleri; tablette en az 48 px). Atölye yalnızca işlem yetkisi olanlara menüde görünür.
+- **Ctrl+K:** sipariş, iş emri, müşteri ve ürün kodu ya da adıyla arama (yazınca, her grupta en çok 5; görme yetkisi olmayan ekranın kaydı çıkmaz), seçilince çekmece açılır. Satışta "Yeni sipariş" komutu. Kayıt listeleri palet açılınca bir kez okunur, tuş vuruşunda veritabanına gidilmez.
+- **Yetki:** Satış sipariş açar ve onaylar, Planlama iş emrini planlar, Atölye adımları ilerletir, Depo sevk eder; hem düğme gizlenir hem servis `FORBIDDEN` döner.
+- Ekran görüntüleri: `docs/screens/asama-2`.
+
 ## Testler
 
 | Tür | Sayı | Not |
 |---|---|---|
-| Birim (Vitest) | 212 | Gerçek PGlite veritabanıyla; dosya başına paylaşılan veritabanı |
-| Tarayıcı (Playwright) | 51 (+2 elle çalıştırılan: ekran görüntüsü, ölçüm) | Başsız Chrome, "hareketi azalt" açık |
-| Üretim dolaşımı | `scripts/walkthrough.mjs` | Giriş, stok girişi, sayım, palet, kullanıcı ekleme, sıfırlama; konsol hatası yok |
+| Birim (Vitest) | 431 | Gerçek PGlite veritabanıyla; dosya başına paylaşılan veritabanı |
+| Tarayıcı (Playwright) | 75 (+1 elle çalıştırılan: ekran görüntüsü) | Başsız Chrome, "hareketi azalt" açık |
+| Üretim dolaşımı | `scripts/walkthrough.mjs` | Giriş, stok girişi, sayım, palet, siparişten sevke (satış, planlama, atölye, depo), kullanıcı ekleme, sıfırlama; konsol hatası ve 4xx yok |
 
 ## Tarayıcıda PostgreSQL
 
@@ -26,7 +36,7 @@ Son güncelleme: 2026-11-16 (Plan 1 tamamlandı)
 - **Çok sekme:** PGlite sekmelerden birini lider seçer, diğerleri sorgularını ona yollar. Kurulum ve örnek veri yüklemesi Web Locks ile tek sekmede çalışır. Bir sekmedeki değişiklik `BroadcastChannel` ile diğer sekmelerin sorgularını yeniler.
 - **Depolama kapalıysa** (OPFS yok, ya da site verisi engellendiği için Worker içinde reddediliyor): veritabanı bellekte açılır (`persistent: false`) ve ekranda kalıcı bir uyarı durur. Worker reddi açıkça bildirir; sessizce takılırsa 60 sn sonra bellekte devam edilir.
 - **Sıfırlama ve sürüm değişimi:** `public` şeması silinip yeniden kurulur.
-- **Örnek veri:** derleme sırasında üretilen anlık görüntüden (`src/seed/snapshot.generated.json`, ~210 KB) tablo başına toplu INSERT ile yüklenir; tarihler yükleme anına kaydırılır. Anlık görüntü `npm run seed:snapshot` ile yenilenir; güncel olup olmadığını bir birim testi denetler.
+- **Örnek veri:** derleme sırasında üretilen anlık görüntüden (`src/seed/snapshot.generated.json`, ~210 KB) tablo başına toplu INSERT ile yüklenir; tarihler yükleme anına kaydırılır. Anlık görüntü (~900 KB) `npm run seed:snapshot` ile yenilenir; güncel olup olmadığını bir birim testi denetler.
 
 ### Neden bu depolama (2026-11-15 ölçümleri, başsız Chrome, RTX 4070 makine)
 
@@ -42,11 +52,24 @@ Ayrıca örnek veriyi tarayıcıda servislerle üretmek (2.000'den fazla sorgu) 
 
 | Ölçüm | Değer |
 |---|---|
-| Soğuk açılış (giriş ekranı görünene kadar) | 2,5–5,1 sn (sınır 8 sn; 2026-11-16) |
-| Yenilemede açılış | 1,4–2,5 sn |
+| Soğuk açılış (giriş ekranı görünene kadar) | 3,0–5,1 sn (sınır 8 sn; 2026-11-16, Plan 2A sonrası 9 ölçüm) |
+| Yenilemede açılış | 1,4–3,4 sn (dokuz ölçümün sekizinde 1,4–1,5 sn) |
 | İndirilen PostgreSQL dosyaları | `pglite.wasm` 9,1 MB + `pglite.data` 6,2 MB (sıkıştırılmamış) |
 
 ## Bilinen sınırlar
+
+**Plan 2B'ye kalanlar** (`/uretim/plan` menüde henüz yok):
+
+- Haftalık plan ızgarası (istasyon × gün), sürükle-bırak ve klavyeyle taşıma, kapasite çubuğu.
+- Termin önerisi (istasyon kapasitesine göre en erken teslim tarihi).
+- İş emirleri için kanban görünümü (istasyona göre sütunlar).
+
+**Bilinçle ertelenenler (2A):**
+
+- Satın alınan parçalar (ayna, LED, metal ayak) reçetelerde ve maliyette yok; ürün maliyeti yalnızca levha, bant, menteşe gibi stoktaki malzemeleri sayar.
+- Hata yönlendirmesi ileti metnini okuyor (hata kodu yerine metne bakan yerler var); metin değişirse yönlendirme bozulur.
+- Eşzamanlılık: eksik malzeme okumalarında `FOR UPDATE` yok. Tarayıcıda tek bağlantı olduğu için sorun çıkmaz; ikinci aşamada sunucu PostgreSQL'e geçerken kilitleme eklenmeli.
+- Örnek verinin anlık görüntüsünün güncel olup olmadığını denetleyen birim testi zaman damgalarını karşılaştırmıyor.
 
 - Ölçümler yerel sunucuda ve yalnızca Chrome'da yapıldı. Yayında dosyalar sıkıştırılmış gelir ve önbellekte kalır, ama ilk ziyarette yaklaşık 15 MB'lık indirme bağlantı hızına göre süre ekler. Yayın sonrası gerçek ağda yeniden ölçülmeli.
 - **Firefox ve Safari'de denenmedi.** `memfs2opfs` bir Worker içinde OPFS eşzamanlı dosya erişimi ister; bu tarayıcılarda çalışmazsa uygulama bellekte açılır ve uyarı gösterir.
@@ -58,4 +81,4 @@ Ayrıca örnek veriyi tarayıcıda servislerle üretmek (2.000'den fazla sorgu) 
 
 ## Sıradaki
 
-Ayrıntılı yol haritası: [ROADMAP.md](ROADMAP.md). Sırada GitHub'a ilk yayın, ardından Plan 2 (satış ve üretim), Plan 3 (satın alma), Plan 4 (raporlar ve 12 aylık veri), Plan 5 (asistan ve yayın).
+Ayrıntılı yol haritası: [ROADMAP.md](ROADMAP.md). Sırada Plan 2B (haftalık plan, termin önerisi, kanban), ardından Plan 3 (satın alma), Plan 4 (raporlar ve 12 aylık veri), Plan 5 (asistan ve yayın).
