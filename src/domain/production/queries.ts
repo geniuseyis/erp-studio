@@ -3,6 +3,7 @@ import { asc, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { bomLines, materials, products, routings, salesOrderLines, salesOrders, stations, users, workOrders, workOrderSteps } from "@/db/schema";
 import { isUuid } from "../context";
+import type { MaterialCategory } from "../inventory/types";
 import { matchesSearch } from "../text";
 import type { Unit } from "../units";
 import { asProduct, asWorkOrder, type Product, type ProductFinish, type Shortage, type Station, type WorkOrderStatus } from "./types";
@@ -42,7 +43,7 @@ export async function listProducts(db: Db, f: ProductFilter = {}): Promise<Produ
 }
 
 export type ProductDetail = ProductRow & {
-  bom: { materialId: string; code: string; name: string; unit: Unit; qtyMilli: number; scrapPermille: number; availableMilli: number }[];
+  bom: { materialId: string; code: string; name: string; category: MaterialCategory; unit: Unit; qtyMilli: number; scrapPermille: number; availableMilli: number }[];
   routing: { seq: number; stationCode: string; stationName: string; minutesPerUnit: number }[];
 };
 
@@ -69,6 +70,7 @@ export async function getProduct(db: Db, id: string): Promise<ProductDetail | nu
       materialId: material.id,
       code: material.code,
       name: material.name,
+      category: material.category as MaterialCategory,
       unit: material.unit as Unit,
       qtyMilli: line.qtyMilli,
       scrapPermille: line.scrapPermille,

@@ -80,7 +80,7 @@ test("ürün detayı: reçete, rota ve kullanılabilir miktar", async () => {
   await receiveStock(depo, { materialId, qtyMilli: 5000, unitCostKurus: 100 });
   const p = await getProduct(db, productId);
   expect(p?.bom).toHaveLength(1);
-  expect(p?.bom[0]).toMatchObject({ materialId, qtyMilli: 2000, scrapPermille: 0, availableMilli: 5000, unit: "plaka" });
+  expect(p?.bom[0]).toMatchObject({ materialId, qtyMilli: 2000, scrapPermille: 0, availableMilli: 5000, unit: "plaka", category: "hirdavat" });
   expect(p?.routing.map((r) => [r.seq, r.stationCode, r.minutesPerUnit])).toEqual([
     [1, stationCodes[0], 20],
     [2, stationCodes[1], 20],
