@@ -1,19 +1,23 @@
 "use client";
 
 import { ORDER_STATUSES } from "@/db/schema";
+import { can } from "@/domain/permissions";
 import type { OrderRow } from "@/domain/sales/queries";
 import type { OrderStatus } from "@/domain/sales/types";
 import { formatMoney } from "@/domain/units";
 import { HeroStat, Page, PageHeader } from "@/shell/AppGuard";
+import { useSession } from "@/shell/session";
 import { useUrlState } from "@/shell/useUrlState";
 import { Button } from "@/ui/Button";
 import { FilterChip, SearchBox } from "@/ui/Chip";
 import { type Column, DataTable } from "@/ui/DataTable";
 import { EmptyState } from "@/ui/EmptyState";
 import { formatDate, formatMoneyWhole } from "@/ui/format";
+import { PlusIcon } from "@/ui/icons";
 import { CountUp } from "@/ui/motion";
 import { useOrders, useSalesSummary } from "./hooks";
 import { formatDue, ORDER_STATUS_LABEL } from "./labels";
+import { NewOrderDialog } from "./NewOrderDialog";
 import { OrderDrawer } from "./OrderDrawer";
 import { DueDate, OrderStatusChips } from "./OrderStatus";
 
@@ -68,6 +72,7 @@ function asStatus(value: string | null): OrderStatus | undefined {
 }
 
 export function OrdersScreen() {
+  const { user } = useSession();
   const [params, setParams] = useUrlState();
 
   const search = params.get("q") ?? "";
@@ -75,6 +80,8 @@ export function OrdersScreen() {
   const waitingOnly = params.get("bekleyen") === "1";
   const overdueOnly = params.get("geciken") === "1";
   const openId = params.get("ac");
+  const canWrite = user ? can(user, "sales", "write") : false;
+  const creating = canWrite && params.get("yeni") === "1";
   const filtered = search !== "" || status !== undefined || waitingOnly || overdueOnly;
 
   const orders = useOrders({ search, status });
@@ -90,6 +97,13 @@ export function OrdersScreen() {
       <PageHeader
         title="Siparişler"
         description="Müşteri siparişleri: taslaktan sevke kadar durumları, terminleri ve tutarlarıyla."
+        actions={
+          canWrite ? (
+            <Button variant="light" icon={<PlusIcon />} onClick={() => setParams({ yeni: "1" })}>
+              Yeni sipariş
+            </Button>
+          ) : null
+        }
         stats={
           s ? (
             <>
@@ -156,11 +170,17 @@ export function OrdersScreen() {
               Yazımı kontrol edin ya da süzgeçleri kaldırın.
             </EmptyState>
           ) : (
-            <EmptyState title="Henüz sipariş yok">Siparişleri satış ekibi açar.</EmptyState>
+            <EmptyState title="Henüz sipariş yok">{canWrite ? "İlk siparişi açmak için “Yeni sipariş” düğmesini kullanın." : "Siparişleri satış ekibi açar."}</EmptyState>
           )
         }
       />
       {openId ? <OrderDrawer key={openId} id={openId} onClose={() => setParams({ ac: null })} /> : null}
+      {creating ? (
+        <NewOrderDialog
+          onClose={() => setParams({ yeni: null })}
+          onCreated={(id) => setParams({ yeni: null, ac: id })}
+        />
+      ) : null}
     </Page>
   );
 }

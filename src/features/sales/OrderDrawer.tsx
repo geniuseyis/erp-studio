@@ -20,6 +20,7 @@ import { useToast } from "@/ui/Toast";
 import { errorMessage } from "../inventory/labels";
 import { useCancelOrder, useConfirmOrder, useOrder, useRemoveLine, useShipOrder } from "./hooks";
 import { formatDiscount, formatShortage, LINE_STATUS_LABEL, LINE_STATUS_TONE, orderTone } from "./labels";
+import { LineForm } from "./LineForm";
 import { DueDate, OrderStatusChips } from "./OrderStatus";
 
 const BADGE: Record<Tone, string> = {
@@ -156,7 +157,7 @@ export function OrderDrawer({ id, onClose }: { id: string; onClose: () => void }
                 Satırlar <span className="tabular text-base font-medium text-fg-muted">({o.lines.length})</span>
               </h3>
               {o.lines.length === 0 ? (
-                <p className="text-fg-muted">{isDraft && canWrite ? "Henüz satır yok." : "Bu siparişte satır yok."}</p>
+                <p className="text-fg-muted">{isDraft && canWrite ? "Henüz satır yok. Aşağıdan ürün ekleyin." : "Bu siparişte satır yok."}</p>
               ) : (
                 <ul aria-label="Satırlar" className="grid gap-2">
                   {o.lines.map((line) => (
@@ -166,6 +167,7 @@ export function OrderDrawer({ id, onClose }: { id: string; onClose: () => void }
               )}
             </section>
 
+            {isDraft && canWrite ? <LineForm orderId={o.id} /> : null}
 
             <Totals order={o} />
           </div>
