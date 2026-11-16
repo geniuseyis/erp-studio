@@ -26,6 +26,8 @@ Plaka ölçüleri (2100×2800 mm; 8, 18 ve 19 mm), kenar bandı kesitleri (22×0
 
 Demo hesaplarındaki çalışan adları kurgusaldır. E-postalar `@baltacioglus.example` alanındadır; `.example` gerçek bir alan adı olarak tescil edilemez.
 
+Müşteriler (`src/seed/data/customers.ts`, 25 kayıt) kurgusaldır: bireysel müşteri adları sık görülen ad ve soyadların rastgele birleşimidir; kurumsal adlar ("… Mimarlık", "… Otelcilik", "… Ofis Mobilyaları") gerçek bir firmaya benzemesin diye sıradan olmayan birleşimlerden seçildi. İl ve ilçe çiftleri gerçektir. Telefonlar `0 5xx 000 00 NN` biçimindedir; ortadaki "000 00" bir abone numarasına denk gelmez. Vade bireyselde 0, kurumsalda 30, 45 ya da 60 gündür.
+
 ## Malzeme fiyatları
 
 | Malzeme | Kategori | Birim fiyat (KDV hariç) | Dayanak | Doğrulama |

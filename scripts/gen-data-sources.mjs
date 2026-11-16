@@ -1,6 +1,7 @@
 // docs/DATA_SOURCES.md dosyasını src/seed/data/materials.ts ve products.ts'ten üretir: node scripts/gen-data-sources.mjs
 import { writeFileSync } from "node:fs";
 import { registerHooks } from "node:module";
+import { SEED_CUSTOMERS } from "../src/seed/data/customers.ts";
 import { SEED_MATERIALS } from "../src/seed/data/materials.ts";
 
 // src içindeki modüller uzantısız içe aktarır (./materials) ve JSON'u özniteliksiz yükler; Node ikisini de
@@ -81,6 +82,8 @@ Plaka ölçüleri (2100×2800 mm; 8, 18 ve 19 mm), kenar bandı kesitleri (22×0
 ## Kişiler ve firmalar
 
 Demo hesaplarındaki çalışan adları kurgusaldır. E-postalar \`@baltacioglus.example\` alanındadır; \`.example\` gerçek bir alan adı olarak tescil edilemez.
+
+Müşteriler (\`src/seed/data/customers.ts\`, ${SEED_CUSTOMERS.length} kayıt) kurgusaldır: bireysel müşteri adları sık görülen ad ve soyadların rastgele birleşimidir; kurumsal adlar ("… Mimarlık", "… Otelcilik", "… Ofis Mobilyaları") gerçek bir firmaya benzemesin diye sıradan olmayan birleşimlerden seçildi. İl ve ilçe çiftleri gerçektir. Telefonlar \`0 5xx 000 00 NN\` biçimindedir; ortadaki "000 00" bir abone numarasına denk gelmez. Vade bireyselde 0, kurumsalda 30, 45 ya da 60 gündür.
 
 ## Malzeme fiyatları
 
