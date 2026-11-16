@@ -67,3 +67,4 @@ export const ReceiptIcon = make(<><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z" /><pa
 export const ContactIcon = make(<><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="11" r="2.5" /><path d="M5.5 17a3.5 3.5 0 0 1 7 0M15 10h3M15 14h3" /></>);
 export const TruckIcon = make(<><path d="M3 6h11v10H3zM14 9h4l3 3v4h-7" /><circle cx="7" cy="17.5" r="1.75" /><circle cx="17" cy="17.5" r="1.75" /></>);
 export const TrashIcon = make(<path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13M10 11v5M14 11v5" />);
+export const MalletIcon = make(<><path d="m13 11-8.5 8.5a1.5 1.5 0 0 1-2-2L11 9" /><path d="M9.5 7.5 14 3l7 7-4.5 4.5Z" /></>);

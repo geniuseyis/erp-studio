@@ -27,6 +27,25 @@ test("satış ekranları 'Satış' grubunda, ana panelin hemen ardından", () =>
   expect(labels(user("depo", "uzman"))).toContain("Siparişler");
 });
 
+test("üretim ekranları 'Üretim' grubunda, satıştan sonra; plan ekranı henüz yok", () => {
+  const production = NAV.filter((n) => n.group === "Üretim").map((n) => n.href);
+  expect(production).toEqual(["/uretim/urunler", "/uretim/is-emirleri", "/atolye"]);
+  expect(NAV_GROUPS.slice(0, 3)).toEqual(["Genel", "Satış", "Üretim"]);
+  expect(NAV.some((n) => n.href === "/uretim/plan")).toBe(false);
+  // Ürünler ve iş emirleri herkese görünür (görüntüleme serbest).
+  for (const dept of ["satis", "depo", "planlama", "atolye"] as const) {
+    expect(labels(user(dept, "uzman"))).toEqual(expect.arrayContaining(["Ürünler", "İş emirleri"]));
+  }
+});
+
+test("atölye menüsü yalnızca işlem yetkisi olanlara: atölye ve yönetim görür, satış görmez", () => {
+  expect(labels(user("atolye", "operator"))).toContain("Atölye");
+  expect(labels(user("yonetim", "mudur"))).toContain("Atölye");
+  expect(labels(user("satis", "uzman"))).not.toContain("Atölye");
+  expect(labels(user("satis", "mudur"))).not.toContain("Atölye");
+  expect(labels(user("planlama", "mudur"))).not.toContain("Atölye");
+});
+
 test("bilgi işlem ve yönetim kullanıcı yönetimini görür", () => {
   expect(labels(user("bt", "uzman"))).toContain("Kullanıcılar");
   expect(labels(user("yonetim", "mudur"))).toContain("Kullanıcılar");

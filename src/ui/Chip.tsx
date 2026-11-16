@@ -15,10 +15,12 @@ type FilterChipProps = {
   /** Aynı gruptaki çiplerin seçili kapsülü bu adla bir çipten ötekine kayar. */
   group?: string;
   tone?: "default" | "danger";
+  /** `lg`: 48 px yüksekliğinde, dokunmatik ekran (atölye tableti) için. */
+  size?: "md" | "lg";
 };
 
 /** Aç-kapa süzgeç çipi. Seçili olduğu `aria-pressed` ile de bildirilir; seçili zemin gruptaki çipler arasında kayar. */
-export function FilterChip({ pressed, onClick, children, count, group, tone = "default" }: FilterChipProps) {
+export function FilterChip({ pressed, onClick, children, count, group, tone = "default", size = "md" }: FilterChipProps) {
   const fill = tone === "danger" ? "bg-danger" : "bg-accent";
   return (
     <button
@@ -26,7 +28,8 @@ export function FilterChip({ pressed, onClick, children, count, group, tone = "d
       aria-pressed={pressed}
       onClick={onClick}
       className={cn(
-        "press relative isolate inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium whitespace-nowrap",
+        "press relative isolate inline-flex shrink-0 items-center gap-1.5 rounded-full font-medium whitespace-nowrap",
+        size === "lg" ? "h-12 px-4 text-base" : "h-8 px-3 text-sm",
         pressed ? (tone === "danger" ? "text-danger-bg" : "text-accent-fg") : "text-fg hover:bg-surface-2",
         !pressed && "ring-1 ring-line ring-inset",
       )}

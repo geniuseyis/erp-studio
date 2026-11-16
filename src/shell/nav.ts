@@ -1,8 +1,9 @@
 import type { SessionUser } from "@/domain/context";
-import { can, type Module } from "@/domain/permissions";
+import { type Action, can, type Module } from "@/domain/permissions";
 
 export type NavGroup = "Genel" | "Satış" | "Üretim" | "Stok" | "Yönetim";
-export type NavItem = { href: string; label: string; module: Module; group: NavGroup };
+/** `action`: maddeyi görmek için gereken işlem; verilmezse görüntüleme. Atölye ekranı yalnızca işlem yapanlara gösterilir. */
+export type NavItem = { href: string; label: string; module: Module; group: NavGroup; action?: Action };
 
 /** Yan menü. Yalnızca çalışan ekranlar yer alır; yeni modüller hazır olduklarında buraya eklenir. */
 export const NAV: NavItem[] = [
@@ -11,6 +12,7 @@ export const NAV: NavItem[] = [
   { href: "/satis/musteriler", label: "Müşteriler", module: "sales", group: "Satış" },
   { href: "/uretim/urunler", label: "Ürünler", module: "planning", group: "Üretim" },
   { href: "/uretim/is-emirleri", label: "İş emirleri", module: "planning", group: "Üretim" },
+  { href: "/atolye", label: "Atölye", module: "shopfloor", group: "Üretim", action: "execute" },
   { href: "/stok/malzemeler", label: "Malzemeler", module: "inventory", group: "Stok" },
   { href: "/stok/hareketler", label: "Stok hareketleri", module: "inventory", group: "Stok" },
   { href: "/stok/sayim", label: "Sayım", module: "inventory", group: "Stok" },
@@ -21,7 +23,7 @@ export const NAV_GROUPS: NavGroup[] = ["Genel", "Satış", "Üretim", "Stok", "Y
 
 /** Kullanıcının görme yetkisi olan menü maddeleri. */
 export function visibleNav(user: SessionUser): NavItem[] {
-  return NAV.filter((item) => can(user, item.module, "view"));
+  return NAV.filter((item) => can(user, item.module, item.action ?? "view"));
 }
 
 function hasControlChar(value: string): boolean {
