@@ -84,6 +84,9 @@ test("ürün çekmecesinde reçete ve rota görünür; ahşap üründe cila sat�
   await expect(drawer).toBeVisible();
   await expect(drawer).toContainText(wood.code);
   await expect(drawer).toContainText(`KDV %`);
+  // Birim maliyet katalogdaki gibi işçilik ve genel gideri içerir; malzeme maliyeti ayrıca görünür.
+  await expect(drawer).toContainText("Birim maliyet");
+  await expect(drawer).toContainText("Malzeme maliyeti");
   await expect(drawer).toContainText(`${wood.width.toLocaleString("tr-TR")} ×`);
   const bom = drawer.getByRole("table", { name: "Reçete" });
   await expect(bom.locator("tbody tr")).toHaveCount(wood.bom);

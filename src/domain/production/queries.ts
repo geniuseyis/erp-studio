@@ -5,31 +5,52 @@ import { bomLines, materials, products, routings, salesOrderLines, salesOrders, 
 import { isUuid } from "../context";
 import type { MaterialCategory } from "../inventory/types";
 import { matchesSearch } from "../text";
+import { laborCostKurus } from "./costing";
 import type { Unit } from "../units";
 import { asProduct, asWorkOrder, type Product, type ProductFinish, type Shortage, type Station, type WorkOrderStatus } from "./types";
 import { findShortages, materialNeeds, reservedForWorkOrder } from "./workOrders";
 
-export type ProductRow = Product & { availableMilli: number; unitCostKurus: number };
+/** `unitCostKurus`: malzeme + işçilik ve genel gider (katalog fiyatının dayanağı); `materialCostKurus`: yalnızca malzeme. */
+export type ProductRow = Product & { availableMilli: number; unitCostKurus: number; materialCostKurus: number };
 export type ProductFilter = { search?: string; collection?: string; finish?: ProductFinish };
 
-/** Birim maliyet: Σ reçete × (1000 + fire) / 1000 × ortalama maliyet / 1000; kuruşa bir kez yuvarlanır. */
-async function unitCosts(db: Db, productIds?: string[]): Promise<Map<string, number>> {
+type Cost = { unitCostKurus: number; materialCostKurus: number };
+
+/**
+ * Birim maliyet, katalogdaki gibi: malzeme Σ reçete × (1000 + fire) / 1000 × ortalama maliyet / 1000, artı rota
+ * dakikaları × işçilik × genel gider çarpanı (laborCostKurus). Toplam kuruşa bir kez yuvarlanır; malzeme maliyeti
+ * ayrıca kendi başına yuvarlanır.
+ */
+async function unitCosts(db: Db, productIds?: string[]): Promise<Map<string, Cost>> {
   if (productIds && productIds.length === 0) return new Map();
-  const rows = await db
-    .select({ productId: bomLines.productId, qtyMilli: bomLines.qtyMilli, scrapPermille: bomLines.scrapPermille, avgCostKurus: materials.avgCostKurus })
-    .from(bomLines)
-    .innerJoin(materials, eq(materials.id, bomLines.materialId))
-    .where(productIds ? inArray(bomLines.productId, productIds) : undefined);
-  const raw = new Map<string, number>();
-  for (const r of rows) {
-    raw.set(r.productId, (raw.get(r.productId) ?? 0) + (r.qtyMilli * (1000 + r.scrapPermille) * r.avgCostKurus) / 1_000_000);
+  const [bom, route] = await Promise.all([
+    db
+      .select({ productId: bomLines.productId, qtyMilli: bomLines.qtyMilli, scrapPermille: bomLines.scrapPermille, avgCostKurus: materials.avgCostKurus })
+      .from(bomLines)
+      .innerJoin(materials, eq(materials.id, bomLines.materialId))
+      .where(productIds ? inArray(bomLines.productId, productIds) : undefined),
+    db
+      .select({ productId: routings.productId, minutesPerUnit: routings.minutesPerUnit })
+      .from(routings)
+      .where(productIds ? inArray(routings.productId, productIds) : undefined),
+  ]);
+  const material = new Map<string, number>();
+  for (const r of bom) {
+    material.set(r.productId, (material.get(r.productId) ?? 0) + (r.qtyMilli * (1000 + r.scrapPermille) * r.avgCostKurus) / 1_000_000);
   }
-  return new Map([...raw].map(([id, v]) => [id, Math.round(v)]));
+  const minutes = new Map<string, number>();
+  for (const r of route) minutes.set(r.productId, (minutes.get(r.productId) ?? 0) + r.minutesPerUnit);
+  const out = new Map<string, Cost>();
+  for (const id of new Set([...material.keys(), ...minutes.keys()])) {
+    const m = material.get(id) ?? 0;
+    out.set(id, { unitCostKurus: Math.round(m + laborCostKurus(minutes.get(id) ?? 0)), materialCostKurus: Math.round(m) });
+  }
+  return out;
 }
 
-function toProductRow(record: typeof products.$inferSelect, cost: number | undefined): ProductRow {
+function toProductRow(record: typeof products.$inferSelect, cost: Cost | undefined): ProductRow {
   const p = asProduct(record);
-  return { ...p, availableMilli: p.onHandMilli - p.reservedMilli, unitCostKurus: cost ?? 0 };
+  return { ...p, availableMilli: p.onHandMilli - p.reservedMilli, unitCostKurus: cost?.unitCostKurus ?? 0, materialCostKurus: cost?.materialCostKurus ?? 0 };
 }
 
 /** Ürünler, kod sırasıyla. Arama kod, ad ve kategoride, Türkçe harf duyarsızdır. */

@@ -64,16 +64,31 @@ test("ürün araması kategoride de çalışır; koleksiyon ve kaplama süzer", 
   expect((await listProducts(db, { finish: "ahsap" })).map((p) => p.name)).toEqual(["Diğer"]);
 });
 
-test("ürün maliyeti reçete × ortalama maliyet, fire dahil, kuruşa bir kez yuvarlanır", async () => {
+test("birim maliyet = malzeme (ortalama maliyet, fire dahil) + rota dakikası × 2,91 TL × 2; kuruşa bir kez yuvarlanır", async () => {
   const p = await addProduct(db, { name: "Maliyet" });
   const m1 = await addMaterial(db, { unit: "plaka", avgCostKurus: 10_000 });
   const m2 = await addMaterial(db, { unit: "adet", avgCostKurus: 333 });
+  const m3 = await addMaterial(db, { unit: "adet", avgCostKurus: 1 });
   await addBomLine(db, { productId: p.id, materialId: m1.id, qtyMilli: 2500, scrapPermille: 100 });
   await addBomLine(db, { productId: p.id, materialId: m2.id, qtyMilli: 3000 });
-  // 2,5 x 1,1 x 10000 = 27500; 3 x 333 = 999
-  expect((await getProduct(db, p.id))?.unitCostKurus).toBe(28_499);
-  expect((await listProducts(db, { search: "Maliyet" }))[0]?.unitCostKurus).toBe(28_499);
-  expect((await listProducts(db)).find((x) => x.id === productId)?.unitCostKurus).toBe(200);
+  await addBomLine(db, { productId: p.id, materialId: m3.id, qtyMilli: 400 });
+  await addRouting(db, { productId: p.id, seq: 1, stationId: (await addStation(db)).id, minutesPerUnit: 12 });
+  await addRouting(db, { productId: p.id, seq: 2, stationId: (await addStation(db)).id, minutesPerUnit: 3 });
+  // Malzeme: 2,5 x 1,1 x 10000 = 27500; 3 x 333 = 999; 0,4 x 1 = 0,4 → 28499,4 → 28499
+  // İşçilik ve genel gider: 15 dk x 291 x 2 = 8730 → toplam 28499,4 + 8730 = 37229,4 → 37229
+  const detail = await getProduct(db, p.id);
+  expect(detail?.materialCostKurus).toBe(28_499);
+  expect(detail?.unitCostKurus).toBe(37_229);
+  expect((await listProducts(db, { search: "Maliyet" }))[0]).toMatchObject({ materialCostKurus: 28_499, unitCostKurus: 37_229 });
+  // Ortak ürün: 2 x 100 = 200 malzeme; 3 x 20 dk x 582 = 34920
+  expect((await listProducts(db)).find((x) => x.id === productId)).toMatchObject({ materialCostKurus: 200, unitCostKurus: 35_120 });
+});
+
+test("reçetesi ya da rotası olmayan üründe ilgili maliyet sıfırdır", async () => {
+  const bare = await addProduct(db, { name: "Boş" });
+  expect(await getProduct(db, bare.id)).toMatchObject({ materialCostKurus: 0, unitCostKurus: 0 });
+  await addRouting(db, { productId: bare.id, seq: 1, stationId: (await addStation(db)).id, minutesPerUnit: 10 });
+  expect(await getProduct(db, bare.id)).toMatchObject({ materialCostKurus: 0, unitCostKurus: 5_820 });
 });
 
 test("ürün detayı: reçete, rota ve kullanılabilir miktar", async () => {

@@ -1,6 +1,7 @@
 // Örnek mamul kataloğu. Ürünler mobilya sitesinin kitabındaki 20 modeldir; her biri beyaz ve ahşap kaplamayla.
 // Parça özetleri catalog.generated.json'dan (npm run catalog:export) gelir; reçete, rota, maliyet ve fiyat
 // buradaki kurallarla türetilir. Kuralların dayanağı ve varsayımlar: docs/DATA_SOURCES.md.
+import { laborCostKurus } from "../../domain/production/costing";
 import { searchKey } from "../../domain/text";
 import catalog from "./catalog.generated.json";
 import { SEED_MATERIALS } from "./materials";
@@ -51,13 +52,8 @@ export const STATIONS: { code: string; name: string; seq: number; dailyCapacityM
   { code: "PKT", name: "Paketleme", seq: 6, dailyCapacityMin: 480 },
 ];
 
-/**
- * İşçilik dakikası, kuruş. 2026 brüt asgari ücret 33.030,00 TL; imalatta 5 puanlık SGK teşvikiyle işverene aylık
- * maliyet 39.223,13 TL. ÷ 225 saat ÷ 60 dk = 2,905 TL/dk.
- */
-export const LABOR_KURUS_PER_MINUTE = 291;
-/** Varsayım: atölye genel gideri işçilik kadar; dakika maliyeti işçiliğin iki katı. */
-const OVERHEAD_FACTOR = 2;
+// İşçilik dakikası ve genel gider çarpanı ürün ekranlarıyla ortaktır: src/domain/production/costing.ts.
+export { LABOR_KURUS_PER_MINUTE } from "../../domain/production/costing";
 /** Varsayım: satış fiyatı maliyetin 1,8 katı (oran 18/10 olarak tamsayıyla hesaplanır). */
 const MARKUP_TENTHS = 18;
 const PRICE_STEP_KURUS = 5_000;
@@ -207,7 +203,7 @@ export function unitCostKurus(bom: SeedBomLine[], routing: SeedRoutingStep[]): n
     material += (price * 100 * line.qtyMilli * (1000 + line.scrapPermille)) / 1e6;
   }
   const minutes = routing.reduce((sum, s) => sum + s.minutesPerUnit, 0);
-  return Math.round(material) + minutes * LABOR_KURUS_PER_MINUTE * OVERHEAD_FACTOR;
+  return Math.round(material) + laborCostKurus(minutes);
 }
 
 /** KDV hariç satış fiyatı: maliyet × 1,8, 50 TL'ye yukarı yuvarlanır. */

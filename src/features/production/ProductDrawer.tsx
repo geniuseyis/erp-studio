@@ -81,6 +81,7 @@ export function ProductDrawer({ id, onClose }: { id: string; onClose: () => void
   );
 }
 
+/** Birim maliyet katalogdaki gibi malzeme + işçilik ve genel giderdir; brüt kâr bu tam maliyetle hesaplanır. */
 function ProductHero({ product: p }: { product: ProductDetail }) {
   const margin = p.priceKurus > 0 ? Math.round(((p.priceKurus - p.unitCostKurus) / p.priceKurus) * 100) : 0;
   return (
@@ -93,6 +94,7 @@ function ProductHero({ product: p }: { product: ProductDetail }) {
         <p className="text-sm text-hero-fg-muted">Birim maliyet</p>
         <p className="tabular font-display text-xl font-semibold">{formatMoney(p.unitCostKurus)}</p>
         <p className="tabular text-sm text-hero-fg-muted">Brüt kâr %{margin}</p>
+        <p className="tabular text-sm text-hero-fg-muted">Malzeme maliyeti {formatMoney(p.materialCostKurus)}</p>
       </div>
     </div>
   );

@@ -57,7 +57,7 @@ const COLUMNS: Column<ProductRow>[] = [
   },
   {
     id: "cost",
-    header: "Maliyet",
+    header: "Birim maliyet",
     align: "right",
     cell: (p) => <span className="tabular whitespace-nowrap text-fg-muted">{formatMoney(p.unitCostKurus)}</span>,
     sortValue: (p) => p.unitCostKurus,
