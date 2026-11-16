@@ -51,7 +51,7 @@ Ayrıca örnek veriyi tarayıcıda servislerle üretmek (2.000'den fazla sorgu) 
 - Ölçümler yerel sunucuda ve yalnızca Chrome'da yapıldı. Yayında dosyalar sıkıştırılmış gelir ve önbellekte kalır, ama ilk ziyarette yaklaşık 15 MB'lık indirme bağlantı hızına göre süre ekler. Yayın sonrası gerçek ağda yeniden ölçülmeli.
 - **Firefox ve Safari'de denenmedi.** `memfs2opfs` bir Worker içinde OPFS eşzamanlı dosya erişimi ister; bu tarayıcılarda çalışmazsa uygulama bellekte açılır ve uyarı gösterir.
 - Her tam sayfa yenilemesinde veritabanı yeniden başlatılır (1,4–2,5 sn açılış ekranı). Uygulama içi gezinme sayfayı yenilemez.
-- Malzeme fiyatlarının çoğu tahmindir: 42 kalemden 9'u bir ilana dayanır. Ayrıntı: `docs/DATA_SOURCES.md`.
+- Malzeme fiyatları 2026-11-16'da Türkiye'deki kaynaklardan toplandı ve KDV hariç tutulur: 42 kalemin 14'ü sayfadan okundu, 18'i arama özetinden (Koçtaş, Cimri ve Hepsiburada otomatik okumayı engelliyor), 10'u dayanağı yazılı tahmin. Kereste fiyatları Bakanlığın Ocak 2026 rayicinden. Ayrıntı: `docs/DATA_SOURCES.md`.
 - Örnek verinin tarihleri tam gün kaydırılır; hafta içi ve hafta sonu düzeni korunmaz.
 - Kaydedilmiş veritabanı bozulursa kendiliğinden onarım yolu yok; Ayarlar → Veriyi sıfırla ya da site verisini silmek gerekir.
 - "Parolamı unuttum" yok: parolayı bilgi işlem ya da yönetim sıfırlar (vitrinde e-posta gönderilmez).
