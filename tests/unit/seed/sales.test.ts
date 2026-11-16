@@ -162,10 +162,16 @@ test("aynı tohum aynı veriyi üretir", async () => {
         m.refType,
         ms(m.createdAt),
       ]),
-      // Bir iş emrinin tüketim satırları aynı anda yazılır ve aralarındaki sıra sabit değildir; anla, türle ve malzemeyle sıralanır.
-      stockMovements: (await db.select().from(stockMovements))
-        .map((m) => [ms(m.createdAt), m.type, materialCode.get(m.materialId), m.deltaOnHandMilli, m.deltaReservedMilli, m.unitCostKurus, m.note])
-        .sort((x, y) => Number(x[0]) - Number(y[0]) || String(x[1]).localeCompare(String(y[1])) || String(x[2]).localeCompare(String(y[2]))),
+      // Sıra numarasıyla: aynı anda yazılan tüketim satırlarının sırası da sabit olmalı.
+      stockMovements: (await db.select().from(stockMovements).orderBy(asc(stockMovements.seq))).map((m) => [
+        ms(m.createdAt),
+        m.type,
+        materialCode.get(m.materialId),
+        m.deltaOnHandMilli,
+        m.deltaReservedMilli,
+        m.unitCostKurus,
+        m.note,
+      ]),
     };
   };
   expect(await projection(a)).toEqual(await projection(b));
