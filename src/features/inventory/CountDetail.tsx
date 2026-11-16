@@ -16,7 +16,8 @@ import { Skeleton } from "@/ui/Skeleton";
 import { StatusChip } from "@/ui/StatusChip";
 import { useToast } from "@/ui/Toast";
 import { useApproveCount, useCancelCount, useCount, useSetCountLine } from "./hooks";
-import { COUNT_STATUS, errorMessage } from "./labels";
+import { errorMessage } from "@/shell/useAction";
+import { COUNT_STATUS } from "./labels";
 
 const toText = (milli: number | null) => (milli === null ? "" : formatNumber(milli / 1000).replace(/\./g, ""));
 

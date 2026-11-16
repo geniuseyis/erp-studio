@@ -10,7 +10,8 @@ import { Dialog } from "@/ui/Dialog";
 import { Input, NumberField, Select } from "@/ui/Field";
 import { useToast } from "@/ui/Toast";
 import { useCreateMaterial, useUpdateMaterial } from "./hooks";
-import { CATEGORY_LABEL, errorMessage } from "./labels";
+import { errorMessage } from "@/shell/useAction";
+import { CATEGORY_LABEL } from "./labels";
 
 type Props = {
   /** Verilirse düzenleme, verilmezse yeni kayıt. */

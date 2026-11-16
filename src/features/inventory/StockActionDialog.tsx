@@ -9,7 +9,7 @@ import { Dialog } from "@/ui/Dialog";
 import { NumberField, Textarea } from "@/ui/Field";
 import { useToast } from "@/ui/Toast";
 import { useIssueStock, useReceiveStock } from "./hooks";
-import { errorMessage } from "./labels";
+import { errorMessage } from "@/shell/useAction";
 
 type Props = { kind: "receipt" | "issue"; material: MaterialRow; onClose: () => void };
 

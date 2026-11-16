@@ -1,4 +1,3 @@
-import { isDomainError } from "@/domain/errors";
 import type { CountStatus, MaterialCategory, MovementType } from "@/domain/inventory/types";
 import type { Tone } from "@/ui/StatusChip";
 
@@ -35,16 +34,6 @@ export const COUNT_STATUS: Record<CountStatus, { label: string; tone: Tone }> = 
   approved: { label: "Onaylandı", tone: "ok" },
   cancelled: { label: "İptal", tone: "neutral" },
 };
-
-const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`);
-
-/** Hatayı kullanıcıya gösterilecek Türkçe iletiye çevirir. İş kuralı iletileri olduğu gibi, diğerleri genel iletiyle gösterilir. */
-export function errorMessage(error: unknown): string {
-  if (!isDomainError(error)) return "Beklenmeyen bir hata oluştu.";
-  if (error.code === "FORBIDDEN") return "Bu işlem için yetkiniz yok.";
-  if (error.code === "LOGIN_FAILED") return "E-posta ya da parola hatalı.";
-  return sentence(error.message);
-}
 
 /** Stok düzeyinin rengi: sipariş noktasının altı kritik, %25 yakını uyarı, gerisi yeterli. */
 export function stockTone(m: { isCritical: boolean; availableMilli: number; reorderPointMilli: number }): Tone {

@@ -1,20 +1,14 @@
 "use client";
 
-import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { Ctx } from "@/domain/context";
 import { createUser, listUsers, resetPassword, setUserActive, updateUser, type UserPatch } from "@/domain/users";
-import { announceChange, useDb } from "@/shell/db-context";
-import { useCtx } from "@/shell/useCtx";
+import { useDb } from "@/shell/db-context";
+import { useAction } from "@/shell/useAction";
 
 export function useUsers() {
   const { db } = useDb();
   return useQuery({ queryKey: ["users", "list"], queryFn: () => listUsers(db), placeholderData: keepPreviousData });
-}
-
-/** Bir kullanıcı servisini çağırır; başarıda bütün sorgular yenilenir ve diğer sekmelere haber verilir. */
-function useAction<I, O>(run: (ctx: Ctx, input: I) => Promise<O>) {
-  const ctx = useCtx();
-  return useMutation({ mutationFn: (input: I) => run(ctx(), input), onSuccess: announceChange });
 }
 
 export const useCreateUser = () => useAction(createUser);

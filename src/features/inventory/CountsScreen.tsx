@@ -24,7 +24,8 @@ import { useToast } from "@/ui/Toast";
 import { CategorySwatch } from "./CategorySwatch";
 import { CountDetail } from "./CountDetail";
 import { useCounts, useCreateCount, useMaterials } from "./hooks";
-import { CATEGORY_LABEL, COUNT_STATUS, errorMessage } from "./labels";
+import { errorMessage } from "@/shell/useAction";
+import { CATEGORY_LABEL, COUNT_STATUS } from "./labels";
 
 const COLUMNS: Column<StockCountSummary>[] = [
   {

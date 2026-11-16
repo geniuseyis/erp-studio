@@ -1,7 +1,8 @@
 import { expect, test } from "vitest";
 import { COUNT_STATUSES, MATERIAL_CATEGORIES, MOVEMENT_TYPES } from "@/db/schema";
 import { DomainError, type DomainErrorCode } from "@/domain/errors";
-import { CATEGORY_LABEL, COUNT_STATUS, errorMessage, MOVEMENT_LABEL, stockScale, stockTone } from "@/features/inventory/labels";
+import { CATEGORY_LABEL, COUNT_STATUS, MOVEMENT_LABEL, stockScale, stockTone } from "@/features/inventory/labels";
+import { errorMessage } from "@/shell/useAction";
 
 const CODES: DomainErrorCode[] = ["FORBIDDEN", "NOT_FOUND", "VALIDATION", "INSUFFICIENT_STOCK", "INVALID_STATE", "LOGIN_FAILED", "DUPLICATE"];
 

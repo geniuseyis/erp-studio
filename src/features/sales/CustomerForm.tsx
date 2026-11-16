@@ -8,7 +8,7 @@ import { Button } from "@/ui/Button";
 import { Dialog } from "@/ui/Dialog";
 import { Input, NumberField, Select } from "@/ui/Field";
 import { useToast } from "@/ui/Toast";
-import { errorMessage } from "../inventory/labels";
+import { errorMessage } from "@/shell/useAction";
 import { useCreateCustomer, useUpdateCustomer } from "./hooks";
 import { CUSTOMER_KIND_LABEL } from "./labels";
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { Ctx } from "@/domain/context";
 import { approveCount, cancelCount, createCount, setCountLine } from "@/domain/inventory/counts";
 import { issueStock, receiveStock } from "@/domain/inventory/ledger";
@@ -15,8 +15,8 @@ import {
   type MaterialFilter,
   type MovementFilter,
 } from "@/domain/inventory/queries";
-import { announceChange, useDb } from "@/shell/db-context";
-import { useCtx } from "@/shell/useCtx";
+import { useDb } from "@/shell/db-context";
+import { useAction } from "@/shell/useAction";
 
 const KEY = "inventory";
 
@@ -48,12 +48,6 @@ export function useCount(id: string | null) {
 export function useInventorySummary() {
   const { db } = useDb();
   return useQuery({ queryKey: [KEY, "summary"], queryFn: () => inventorySummary(db) });
-}
-
-/** Bir iş kuralını çağırır; başarıda bütün sorgular yenilenir ve diğer sekmelere haber verilir. */
-function useAction<I, O>(run: (ctx: Ctx, input: I) => Promise<O>) {
-  const ctx = useCtx();
-  return useMutation({ mutationFn: (input: I) => run(ctx(), input), onSuccess: announceChange });
 }
 
 export const useReceiveStock = () => useAction(receiveStock);

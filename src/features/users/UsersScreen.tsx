@@ -6,7 +6,7 @@ import { DEPARTMENT_NAMES, type DepartmentCode, LEVEL_NAMES } from "@/domain/con
 import { can } from "@/domain/permissions";
 import { matchesSearch } from "@/domain/text";
 import type { UserRow } from "@/domain/users";
-import { errorMessage } from "@/features/inventory/labels";
+import { errorMessage } from "@/shell/useAction";
 import { HeroStat, Page, PageHeader } from "@/shell/AppGuard";
 import { Avatar } from "@/shell/LoginScreen";
 import { useSession } from "@/shell/session";

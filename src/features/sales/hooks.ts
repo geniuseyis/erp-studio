@@ -1,13 +1,13 @@
 "use client";
 
-import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { Ctx } from "@/domain/context";
 import { listProducts } from "@/domain/production/queries";
 import { createCustomer, type NewCustomer, updateCustomer } from "@/domain/sales/customers";
 import { addLine, cancelOrder, confirmOrder, createOrder, removeLine, shipOrder } from "@/domain/sales/orders";
 import { type CustomerFilter, getCustomer, getOrder, listCustomers, listOrders, type OrderFilter, salesSummary } from "@/domain/sales/queries";
-import { announceChange, useDb } from "@/shell/db-context";
-import { useCtx } from "@/shell/useCtx";
+import { useDb } from "@/shell/db-context";
+import { useAction } from "@/shell/useAction";
 
 const KEY = "sales";
 
@@ -44,12 +44,6 @@ export function useSellableProducts(enabled = true) {
     queryFn: async () => (await listProducts(db)).filter((p) => p.active),
     enabled,
   });
-}
-
-/** Bir iş kuralını çağırır; başarıda bütün sorgular yenilenir ve diğer sekmelere haber verilir (stoktaki desenle aynı). */
-function useAction<I, O>(run: (ctx: Ctx, input: I) => Promise<O>) {
-  const ctx = useCtx();
-  return useMutation({ mutationFn: (input: I) => run(ctx(), input), onSuccess: announceChange });
 }
 
 export const useCreateOrder = () => useAction(createOrder);

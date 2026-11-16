@@ -9,7 +9,7 @@ import { NumberField } from "@/ui/Field";
 import { PlusIcon } from "@/ui/icons";
 import { PickList } from "@/ui/PickList";
 import { useToast } from "@/ui/Toast";
-import { errorMessage } from "../inventory/labels";
+import { errorMessage } from "@/shell/useAction";
 import { useAddLine, useSellableProducts } from "./hooks";
 import { FINISH_LABEL, parseDiscount, parseOrderQty } from "./labels";
 

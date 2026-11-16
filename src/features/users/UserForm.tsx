@@ -4,7 +4,7 @@ import { type FormEvent, useRef, useState } from "react";
 import { DEPARTMENT_NAMES, type DepartmentCode, LEVEL_NAMES, type Level } from "@/domain/context";
 import { isDomainError } from "@/domain/errors";
 import { MIN_PASSWORD_LENGTH, type UserRow } from "@/domain/users";
-import { errorMessage } from "@/features/inventory/labels";
+import { errorMessage } from "@/shell/useAction";
 import { useSession } from "@/shell/session";
 import { Button } from "@/ui/Button";
 import { Dialog } from "@/ui/Dialog";

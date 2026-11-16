@@ -17,7 +17,7 @@ import { AlertIcon, ArrowRightIcon, CheckIcon, CloseIcon, ReceiptIcon, TrashIcon
 import { Skeleton } from "@/ui/Skeleton";
 import { StatusChip, type Tone } from "@/ui/StatusChip";
 import { useToast } from "@/ui/Toast";
-import { errorMessage } from "../inventory/labels";
+import { errorMessage } from "@/shell/useAction";
 import { useCancelOrder, useConfirmOrder, useOrder, useRemoveLine, useShipOrder } from "./hooks";
 import { formatDiscount, formatShortage, LINE_STATUS_LABEL, LINE_STATUS_TONE, orderTone } from "./labels";
 import { LineForm } from "./LineForm";

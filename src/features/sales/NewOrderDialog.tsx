@@ -8,7 +8,7 @@ import { Dialog } from "@/ui/Dialog";
 import { Input, Textarea } from "@/ui/Field";
 import { PickList } from "@/ui/PickList";
 import { useToast } from "@/ui/Toast";
-import { errorMessage } from "../inventory/labels";
+import { errorMessage } from "@/shell/useAction";
 import { useCreateOrder, useCustomers } from "./hooks";
 import { CUSTOMER_KIND_LABEL, defaultDueInput, dueFromInput } from "./labels";
 
