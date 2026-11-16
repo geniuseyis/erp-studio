@@ -26,6 +26,11 @@ function checkQty(qtyMilli: number): void {
   }
 }
 
+/** Binde iskontoyu denetim özeti için yüzde yazar: 125 → "%12,5". */
+function discountText(permille: number): string {
+  return `%${String(permille / 10).replace(".", ",")}`;
+}
+
 function checkDiscount(discountPermille: number): void {
   if (!Number.isInteger(discountPermille) || discountPermille < 0 || discountPermille > 500) {
     throw invalid("İskonto 0 ile 500 binde arasında olmalı");
@@ -69,11 +74,14 @@ export async function createOrder(ctx: Ctx, i: { customerId: string; dueAt: Date
   });
 }
 
-/** Ürünün o anki fiyatı ve KDV oranı satıra kopyalanır. Aynı ürün varsa adet artar. */
+/**
+ * Ürünün o anki fiyatı ve KDV oranı satıra kopyalanır. Aynı ürün varsa adet artar (`merged: true`);
+ * iskonto verilmediyse satırın eski iskontosu korunur, verildiyse yerine geçer.
+ */
 export async function addLine(
   ctx: Ctx,
   i: { orderId: string; productId: string; qtyMilli: number; discountPermille?: number },
-): Promise<SalesOrderLine> {
+): Promise<SalesOrderLine & { merged: boolean }> {
   assertCan(ctx.user, "sales", "write");
   checkQty(i.qtyMilli);
   if (i.discountPermille !== undefined) checkDiscount(i.discountPermille);
@@ -97,13 +105,17 @@ export async function addLine(
         .where(eq(salesOrderLines.id, same.id))
         .returning();
       if (!row) throw new Error("satır güncellenemedi");
+      const discountChange =
+        i.discountPermille !== undefined && i.discountPermille !== same.discountPermille
+          ? `, iskonto ${discountText(same.discountPermille)} → ${discountText(i.discountPermille)}`
+          : "";
       await logAudit(tx, {
         entity: "sales_order",
         entityId: order.id,
         action: "update_line",
-        summary: `${order.code}: ${product.code} adedi ${same.qtyMilli / 1000} → ${qtyMilli / 1000}`,
+        summary: `${order.code}: ${product.code} adedi ${same.qtyMilli / 1000} → ${qtyMilli / 1000}${discountChange}`,
       });
-      return asOrderLine(row);
+      return { ...asOrderLine(row), merged: true };
     }
 
     const [row] = await tx.db
@@ -125,7 +137,7 @@ export async function addLine(
       action: "add_line",
       summary: `${order.code}: ${product.code} × ${i.qtyMilli / 1000} eklendi`,
     });
-    return asOrderLine(row);
+    return { ...asOrderLine(row), merged: false };
   });
 }
 

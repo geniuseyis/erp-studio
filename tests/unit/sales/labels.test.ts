@@ -67,8 +67,11 @@ test("geçerli adet milli olarak döner", () => {
   expect(parseOrderQty("3,0")).toEqual({ qtyMilli: 3000 });
 });
 
-test("iskonto yüzde olarak yazılır, binde olarak döner; boş sıfırdır", () => {
-  expect(parseDiscount("")).toEqual({ permille: 0 });
+test("iskonto yüzde olarak yazılır, binde olarak döner; boş verilmemiş sayılır", () => {
+  // Boş kutu "iskonto verilmedi" demektir: yeni satırda 0, birleşen satırda eskisi korunur.
+  expect(parseDiscount("")).toEqual({ permille: undefined });
+  expect(parseDiscount("  ")).toEqual({ permille: undefined });
+  expect(parseDiscount("0")).toEqual({ permille: 0 });
   expect(parseDiscount("10")).toEqual({ permille: 100 });
   expect(parseDiscount("12,5")).toEqual({ permille: 125 });
   expect(parseDiscount("50")).toEqual({ permille: 500 });

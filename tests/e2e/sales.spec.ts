@@ -108,6 +108,22 @@ test("satış uzmanı sipariş açar, iki satır ekler, toplam KDV ayrı görün
   expect(await count(page, `select count(*)::int as n from sales_order_lines where order_id = '${id}'`)).toBe(1);
 });
 
+test("aynı ürün iskontosuz yeniden eklenince adet artar, iskonto korunur", async ({ page }) => {
+  await loginAs(page, "Elif Karaca");
+  await openOrders(page);
+  const p = await product(page, "true");
+  const { drawer, id } = await newDraft(page);
+  const line = () => sql<{ qty: number; discount: number }>(page, `select qty_milli as qty, discount_permille as discount from sales_order_lines where order_id = '${id}'`);
+
+  await addLine(drawer, p.code, "2", "10");
+  await expect(page.getByRole("status").filter({ hasText: `${p.code} eklendi` })).toBeVisible();
+  await expect.poll(line).toEqual([{ qty: 2000, discount: 100 }]);
+
+  await addLine(drawer, p.code, "1");
+  await expect.poll(line).toEqual([{ qty: 3000, discount: 100 }]);
+  await expect(page.getByRole("status").filter({ hasText: `${p.code} adet artırıldı` })).toBeVisible();
+});
+
 for (const bad of ["1,5", "0", "abc", "10000"]) {
   test(`adet ${bad} alan hatası verir`, async ({ page }) => {
     await loginAs(page, "Elif Karaca");

@@ -79,6 +79,29 @@ test("aynı ürün ikinci kez eklenince adet artar", async () => {
   expect(all[0]?.qtyMilli).toBe(5000);
 });
 
+test("aynı ürün iskontosuz yeniden eklenince iskonto korunur; yeni satır merged=false, birleşen merged=true", async () => {
+  const o = await createOrder(satis, { customerId, dueAt: DUE });
+  const first = await addLine(satis, { orderId: o.id, productId, qtyMilli: 2000, discountPermille: 100 });
+  expect(first.merged).toBe(false);
+  const second = await addLine(satis, { orderId: o.id, productId, qtyMilli: 1000 });
+  expect(second).toMatchObject({ id: first.id, qtyMilli: 3000, discountPermille: 100, merged: true });
+  const all = await lines(o.id);
+  expect(all).toHaveLength(1);
+  expect(all[0]).toMatchObject({ qtyMilli: 3000, discountPermille: 100 });
+  const summaries = (await db.select().from(auditLog)).filter((r) => r.action === "update_line").map((r) => r.summary);
+  expect(summaries).toHaveLength(1);
+  expect(summaries[0]).not.toContain("iskonto");
+});
+
+test("birleşirken açıkça verilen iskonto eskisinin yerine geçer ve denetimde yazılır", async () => {
+  const o = await createOrder(satis, { customerId, dueAt: DUE });
+  await addLine(satis, { orderId: o.id, productId, qtyMilli: 2000, discountPermille: 100 });
+  const merged = await addLine(satis, { orderId: o.id, productId, qtyMilli: 1000, discountPermille: 125 });
+  expect(merged).toMatchObject({ qtyMilli: 3000, discountPermille: 125, merged: true });
+  const [summary] = (await db.select().from(auditLog)).filter((r) => r.action === "update_line").map((r) => r.summary);
+  expect(summary).toMatch(/adedi 2 → 3, iskonto %10 → %12,5$/);
+});
+
 test("birleşen adet 9999'u aşarsa reddedilir", async () => {
   const o = await createOrder(satis, { customerId, dueAt: DUE });
   await addLine(satis, { orderId: o.id, productId, qtyMilli: 9_000_000 });

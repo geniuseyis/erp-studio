@@ -67,9 +67,12 @@ export function parseOrderQty(input: string): { qtyMilli: number } | { error: st
 
 const DISCOUNT_ERROR = "İskonto 0 ile 50 arasında, en çok bir ondalıkla yazılmalı";
 
-/** İskonto yüzde olarak yazılır (12,5), binde olarak saklanır (125). Boş giriş sıfırdır. */
-export function parseDiscount(input: string): { permille: number } | { error: string } {
-  if (input.trim() === "") return { permille: 0 };
+/**
+ * İskonto yüzde olarak yazılır (12,5), binde olarak saklanır (125). Boş giriş "verilmedi"dir
+ * (undefined): yeni satır iskontosuz açılır, aynı ürün yeniden eklenince eski iskonto korunur.
+ */
+export function parseDiscount(input: string): { permille: number | undefined } | { error: string } {
+  if (input.trim() === "") return { permille: undefined };
   const n = parseDecimal(input);
   if (n === null) return { error: DISCOUNT_ERROR };
   const permille = Math.round(n * 10);

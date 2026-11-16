@@ -54,8 +54,10 @@ export function LineForm({ orderId }: { orderId: string }) {
     submitting.current = true;
     setBusy(true);
     try {
-      await add.mutateAsync({ orderId, productId, qtyMilli: q.qtyMilli, discountPermille: d.permille });
-      toast.success(`${selected?.code ?? "Satır"} eklendi`);
+      // Boş iskonto undefined gider: aynı ürün yeniden eklenirse satırın iskontosu korunur.
+      const line = await add.mutateAsync({ orderId, productId, qtyMilli: q.qtyMilli, discountPermille: d.permille });
+      const code = selected?.code ?? "Satır";
+      toast.success(line.merged ? `${code} adet artırıldı` : `${code} eklendi`);
       setProductId(null);
       setQuery("");
       setQty("1");
