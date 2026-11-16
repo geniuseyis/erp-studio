@@ -14,7 +14,8 @@
     "test:e2e": "playwright test",
     "db:generate": "node scripts/db-generate.mjs && npm run seed:snapshot",
     "verify": "npm run typecheck && npm run lint && npm run test && npm run build",
-    "seed:snapshot": "vitest run --config vitest.gen.config.mts"
+    "seed:snapshot": "vitest run --config vitest.gen.config.mts scripts/gen/snapshot.gen.ts",
+    "catalog:export": "vitest run --config vitest.gen.config.mts scripts/gen/catalog.gen.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.16",
