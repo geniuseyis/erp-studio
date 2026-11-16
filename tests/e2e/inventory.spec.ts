@@ -255,11 +255,15 @@ test("stok hareketleri türe göre süzülür", async ({ page }) => {
   const rows = page.getByRole("table", { name: "Stok hareketleri" }).locator("tbody tr");
   await expect(rows.first()).toBeVisible();
   await page.getByLabel("Tür").selectOption("issue");
-  // Tablo yenilenene kadar bekle: giriş satırı kalmamalı.
-  await expect(rows.filter({ hasText: "Giriş" })).toHaveCount(0);
-  await expect(rows.first()).toContainText("Çıkış");
   await expect(page).toHaveURL(/tur=issue/);
-  for (const text of (await rows.allTextContents()).slice(0, 30)) expect(text).toContain("Çıkış");
+  // Süzülmüş liste yerine oturana kadar bekle. Tek bir anlık okuma yavaş makinede (CI) yenilenme arasına
+  // denk gelip eski listeyi görebiliyor; ilk satırın tesadüfen "Çıkış" olması da yenilendiğini kanıtlamaz.
+  await expect
+    .poll(async () => {
+      const texts = (await rows.allTextContents()).slice(0, 30);
+      return texts.length > 0 && texts.every((t) => t.includes("Çıkış"));
+    })
+    .toBe(true);
 });
 
 test("telefonda stok ekranları yatay taşmaz", async ({ page }) => {
