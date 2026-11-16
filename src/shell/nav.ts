@@ -1,19 +1,20 @@
 import type { SessionUser } from "@/domain/context";
 import { can, type Module } from "@/domain/permissions";
 
-export type NavGroup = "Genel" | "Stok" | "Yönetim";
+export type NavGroup = "Genel" | "Satış" | "Stok" | "Yönetim";
 export type NavItem = { href: string; label: string; module: Module; group: NavGroup };
 
 /** Yan menü. Yalnızca çalışan ekranlar yer alır; yeni modüller hazır olduklarında buraya eklenir. */
 export const NAV: NavItem[] = [
   { href: "/", label: "Ana panel", module: "reports", group: "Genel" },
+  { href: "/satis/siparisler", label: "Siparişler", module: "sales", group: "Satış" },
   { href: "/stok/malzemeler", label: "Malzemeler", module: "inventory", group: "Stok" },
   { href: "/stok/hareketler", label: "Stok hareketleri", module: "inventory", group: "Stok" },
   { href: "/stok/sayim", label: "Sayım", module: "inventory", group: "Stok" },
   { href: "/yonetim/kullanicilar", label: "Kullanıcılar", module: "users", group: "Yönetim" },
 ];
 
-export const NAV_GROUPS: NavGroup[] = ["Genel", "Stok", "Yönetim"];
+export const NAV_GROUPS: NavGroup[] = ["Genel", "Satış", "Stok", "Yönetim"];
 
 /** Kullanıcının görme yetkisi olan menü maddeleri. */
 export function visibleNav(user: SessionUser): NavItem[] {

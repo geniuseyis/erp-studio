@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { DepartmentCode, Level, SessionUser } from "@/domain/context";
-import { NAV, safeNextPath, visibleNav } from "@/shell/nav";
+import { NAV, NAV_GROUPS, safeNextPath, visibleNav } from "@/shell/nav";
 
 const user = (departmentCode: DepartmentCode, level: Level): SessionUser => ({
   id: "x",
@@ -18,6 +18,13 @@ test("satış uzmanı stok sayfalarını görür, kullanıcı yönetimini görme
   expect(seen).toContain("Stok hareketleri");
   expect(seen).toContain("Sayım");
   expect(seen).not.toContain("Kullanıcılar");
+});
+
+test("satış ekranları 'Satış' grubunda, ana panelin hemen ardından", () => {
+  const sales = NAV.filter((n) => n.group === "Satış").map((n) => n.href);
+  expect(sales).toEqual(["/satis/siparisler"]);
+  expect(NAV_GROUPS.slice(0, 2)).toEqual(["Genel", "Satış"]);
+  expect(labels(user("depo", "uzman"))).toContain("Siparişler");
 });
 
 test("bilgi işlem ve yönetim kullanıcı yönetimini görür", () => {
