@@ -10,6 +10,7 @@ export const NAV: NavItem[] = [
   { href: "/satis/siparisler", label: "Siparişler", module: "sales", group: "Satış" },
   { href: "/satis/musteriler", label: "Müşteriler", module: "sales", group: "Satış" },
   { href: "/uretim/urunler", label: "Ürünler", module: "planning", group: "Üretim" },
+  { href: "/uretim/is-emirleri", label: "İş emirleri", module: "planning", group: "Üretim" },
   { href: "/stok/malzemeler", label: "Malzemeler", module: "inventory", group: "Stok" },
   { href: "/stok/hareketler", label: "Stok hareketleri", module: "inventory", group: "Stok" },
   { href: "/stok/sayim", label: "Sayım", module: "inventory", group: "Stok" },
