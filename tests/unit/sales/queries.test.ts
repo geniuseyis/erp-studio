@@ -46,6 +46,9 @@ test("sipariş toplamı satırların toplamına eşit, iptal satır hariç", asy
   await db.update(salesOrderLines).set({ status: "cancelled" }).where(eq(salesOrderLines.productId, p2.id));
   const after = await getOrder(db, order.id);
   expect(after?.netKurus).toBe(200_000);
+  expect(after?.lineCount).toBe(1);
+  expect(after?.lines).toHaveLength(2);
+  expect((await listOrders(db))[0]?.lineCount).toBe(1);
   expect(after?.totalKurus).toBe(220_000);
   expect(after?.totals.totalKurus).toBe(after?.totalKurus);
   expect(after?.lines.map((l) => l.netKurus).sort((a, b) => a - b)).toEqual([50_000, 200_000]);
@@ -59,6 +62,9 @@ test("geciken sipariş: termin geçmiş ve sevk edilmemiş", async () => {
   const now = day("2026-12-16");
   expect((await listOrders(db, { now }))[0]?.overdue).toBe(true);
   expect((await listOrders(db, { now: day("2026-12-14") }))[0]?.overdue).toBe(false);
+  await db.update(salesOrders).set({ status: "draft" }).where(eq(salesOrders.id, order.id));
+  expect((await listOrders(db, { now }))[0]?.overdue).toBe(false);
+  await db.update(salesOrders).set({ status: "confirmed" }).where(eq(salesOrders.id, order.id));
   await db.update(salesOrders).set({ status: "shipped" }).where(eq(salesOrders.id, order.id));
   expect((await listOrders(db, { now }))[0]?.overdue).toBe(false);
   await db.update(salesOrders).set({ status: "cancelled" }).where(eq(salesOrders.id, order.id));
@@ -131,5 +137,6 @@ test("salesSummary sayıları listOrders ile sayılanlara eşit", async () => {
     openTotalKurus: open.reduce((s, o) => s + o.totalKurus, 0),
   });
   expect(summary.openOrders).toBe(2);
-  expect(summary.overdue).toBe(2);
+  expect(summary.overdue).toBe(1);
+  expect(rows.find((o) => o.status === "draft")?.overdue).toBe(false);
 });
