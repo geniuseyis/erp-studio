@@ -1,4 +1,4 @@
-import { addWorkdays, istanbulDayStart } from "@/domain/production/calendar";
+import { addWorkdays, istanbulDayStart, isWorkday } from "@/domain/production/calendar";
 import type { WorkOrderDetail } from "@/domain/production/queries";
 import type { WorkOrderStatus } from "@/domain/production/types";
 import { formatNumber, roundUpToStep, type Unit } from "@/domain/units";
@@ -37,9 +37,12 @@ export function todayInput(now: Date): string {
   return dayInput(now);
 }
 
-/** Planlama tarihinin varsayılanı: bugünden bir iş günü sonrası (İstanbul). */
+/**
+ * Planlama tarihinin varsayılanı: bir sonraki iş günü (İstanbul). İş gününde ertesi iş günü (cuma → pazartesi);
+ * hafta sonunda pazartesi (addWorkdays hafta sonundan önce sonraki iş gününe geçer).
+ */
 export function nextWorkdayInput(now: Date): string {
-  return dayInput(addWorkdays(now, 1));
+  return dayInput(isWorkday(now) ? addWorkdays(now, 1) : addWorkdays(now, 0));
 }
 
 /** 1240 → "1.240 dk" */

@@ -19,12 +19,15 @@ test("malzeme durumu: planlıyken ayrıldı ya da bekliyor, başladıysa tüketi
 test("planlama tarihinin varsayılanı İstanbul'a göre bir sonraki iş günü", () => {
   // Pazartesi 10:00 İstanbul → salı.
   expect(nextWorkdayInput(new Date("2026-11-16T07:00:00Z"))).toBe("2026-11-17");
-  // Cuma → pazartesi.
+  // Cuma → pazartesi (sabah ve akşam).
   expect(nextWorkdayInput(new Date("2026-11-20T07:00:00Z"))).toBe("2026-11-23");
+  expect(nextWorkdayInput(new Date("2026-11-20T20:30:00Z"))).toBe("2026-11-23");
   // Pazartesi 23:30 UTC, İstanbul'da salı 02:30 → çarşamba.
   expect(nextWorkdayInput(new Date("2026-11-16T23:30:00Z"))).toBe("2026-11-18");
-  // Cumartesi → pazartesiden bir iş günü sonrası.
-  expect(nextWorkdayInput(new Date("2026-11-21T07:00:00Z"))).toBe("2026-11-24");
+  // Hafta sonu → pazartesi: cumartesi, pazar ve cuma 22:30 UTC (İstanbul'da cumartesi 01:30).
+  expect(nextWorkdayInput(new Date("2026-11-21T07:00:00Z"))).toBe("2026-11-23");
+  expect(nextWorkdayInput(new Date("2026-11-22T15:00:00Z"))).toBe("2026-11-23");
+  expect(nextWorkdayInput(new Date("2026-11-20T22:30:00Z"))).toBe("2026-11-23");
   expect(todayInput(new Date("2026-11-16T22:30:00Z"))).toBe("2026-11-17");
   expect(dayInput(new Date("2026-11-16T21:00:00Z"))).toBe("2026-11-17");
 });

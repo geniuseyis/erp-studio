@@ -3,8 +3,18 @@ import { addWorkdays } from "../../src/domain/production/calendar";
 import { leave, loginAs, navTo, one, signOut, sql } from "./helpers";
 
 const ISTANBUL_OFFSET_MS = 3 * 60 * 60 * 1000;
-/** İstanbul gününün başlangıcı → "YYYY-AA-GG". */
-const dayInput = (d: Date) => new Date(d.getTime() + ISTANBUL_OFFSET_MS).toISOString().slice(0, 10);
+/** "YYYY-AA-GG" → o İstanbul gününün başlangıç anı. */
+const istanbulDay = (input: string) => new Date(Date.parse(`${input}T00:00:00Z`) - ISTANBUL_OFFSET_MS);
+/**
+ * Beklenen planlama varsayılanı, uygulamanın takvim kodundan bağımsız hesapla: İstanbul'da bir sonraki iş günü.
+ * Cuma (+3), cumartesi (+2) ve pazar (+1) pazartesiye; diğer günler ertesi güne.
+ */
+function nextWorkdayIstanbul(now: Date): string {
+  const wall = new Date(now.getTime() + ISTANBUL_OFFSET_MS);
+  const skip = ({ 5: 3, 6: 2 } as Record<number, number>)[wall.getUTCDay()] ?? 1;
+  wall.setUTCDate(wall.getUTCDate() + skip);
+  return wall.toISOString().slice(0, 10);
+}
 const auditCount = async (page: Page, id: string, action: string) =>
   (await one<{ n: number }>(page, `select count(*)::int as n from audit_log where entity = 'work_order' and entity_id = '${id}' and action = '${action}'`)).n;
 const trDay = (d: Date) => new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Istanbul" }).format(d);
@@ -78,9 +88,9 @@ test("planlama uzmanı iş emrini planlar; adımlara günler yazılır", async (
   );
   const drawer = await openWorkOrder(page, wo.code);
 
-  const start = addWorkdays(new Date(), 1);
-  const input = drawer.getByLabel("Başlangıç günü");
-  await expect(input).toHaveValue(dayInput(start));
+  const defaultDay = nextWorkdayIstanbul(new Date());
+  await expect(drawer.getByLabel("Başlangıç günü")).toHaveValue(defaultDay);
+  const start = istanbulDay(defaultDay);
   await drawer.getByRole("button", { name: "Planla" }).click();
   await expect(page.getByRole("status").filter({ hasText: `${wo.code} planlandı` })).toBeVisible();
 
