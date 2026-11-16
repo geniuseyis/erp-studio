@@ -1,6 +1,6 @@
 "use client";
 
-import { QueryClient } from "@tanstack/react-query";
+import { notifyManager, QueryClient } from "@tanstack/react-query";
 import { createContext, useContext } from "react";
 import type { DbHandle } from "@/db/client";
 
@@ -18,9 +18,18 @@ export function useDb(): DbHandle {
 
 const CHANNEL = "erp-studio";
 
-/** Veri değişti: bu sekmedeki sorguları yeniler ve açık diğer sekmelere haber verir. */
-export function announceChange(): void {
-  void queryClient.invalidateQueries();
+/**
+ * Veri değişti: açık diğer sekmelere haber verir, bu sekmedeki sorguları yeniler. Dönen söz, yenileme bitip
+ * yeni veri bileşenlere iletildiğinde çözülür; böylece düğme eski veriyle yeniden açılmaz (çift tıklama).
+ */
+export async function announceChange(): Promise<void> {
+  broadcastChange();
+  await queryClient.invalidateQueries();
+  // Gözlemciler kendi sıralarıyla haberdar edilir; bu sıraya eklenen söz onlardan sonra çözülür.
+  await new Promise<void>((resolve) => notifyManager.schedule(resolve));
+}
+
+function broadcastChange(): void {
   try {
     const channel = new BroadcastChannel(CHANNEL);
     channel.postMessage("changed");

@@ -32,3 +32,23 @@ export async function signOut(page: Page): Promise<void> {
   await page.getByRole("menuitem", { name: "Çıkış yap" }).click();
   await expect(page).toHaveURL(/\/giris/);
 }
+
+/** Ana menüden bir sayfaya gider ve başlığını bekler. */
+export async function navTo(page: Page, label: string, heading = label): Promise<void> {
+  await page.getByRole("navigation", { name: "Ana menü" }).getByRole("link", { name: label, exact: true }).click();
+  await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
+}
+
+/** Açık çekmeceyi kapatıp çıkar: çekmece açıkken sayfanın geri kalanı (hesap menüsü dahil) erişilebilirlik ağacından gizlidir. */
+export async function leave(page: Page): Promise<void> {
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await signOut(page);
+}
+
+/** Tek satır dönmesi beklenen sorgu; satır yoksa test anlaşılır bir hatayla düşer. */
+export async function one<T>(page: Page, query: string): Promise<T> {
+  const [row] = await sql<T>(page, query);
+  if (!row) throw new Error(`satır yok: ${query}`);
+  return row;
+}

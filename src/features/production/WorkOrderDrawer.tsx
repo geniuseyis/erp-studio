@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { type FormEvent, type ReactNode, useRef, useState } from "react";
+import { type FormEvent, type MouseEvent, useState } from "react";
 import { can } from "@/domain/permissions";
 import { istanbulDayStart } from "@/domain/production/calendar";
 import type { WorkOrderDetail, WorkOrderRow } from "@/domain/production/queries";
@@ -9,10 +9,11 @@ import type { WorkOrderStatus } from "@/domain/production/types";
 import { formatNumber, formatQty } from "@/domain/units";
 import { dueFromInput, formatDue, formatShortage } from "@/features/sales/labels";
 import { useSession } from "@/shell/session";
-import { errorMessage } from "@/shell/useAction";
+import { useGuardedRun } from "@/shell/useAction";
 import { Button } from "@/ui/Button";
 import { cn } from "@/ui/cn";
 import { Drawer } from "@/ui/Drawer";
+import { DetailItem, DrawerBadge } from "@/ui/DrawerParts";
 import { Input } from "@/ui/Field";
 import { formatDateTime } from "@/ui/format";
 import { AlertIcon, ArrowRightIcon, CheckIcon, ClockIcon, RefreshIcon, SawIcon } from "@/ui/icons";
@@ -22,14 +23,6 @@ import { StatusChip, type Tone } from "@/ui/StatusChip";
 import { useToast } from "@/ui/Toast";
 import { useFinishStep, usePlanWorkOrder, useRetryMaterials, useStartStep, useWorkOrder } from "./hooks";
 import { formatMinutes, materialStateLabel, nextWorkdayInput, stepControls, todayInput, WO_STATUS_LABEL, WO_STATUS_TONE } from "./labels";
-
-const BADGE: Record<Tone, string> = {
-  neutral: "bg-surface-2 text-fg",
-  ok: "bg-ok-bg text-ok",
-  warn: "bg-warn-bg text-warn",
-  danger: "bg-danger-bg text-danger",
-  info: "bg-info-bg text-info",
-};
 
 export function WorkOrderStatusChips({ status }: { status: WorkOrderStatus }) {
   return <StatusChip tone={WO_STATUS_TONE[status]}>{WO_STATUS_LABEL[status]}</StatusChip>;
@@ -42,7 +35,7 @@ export function MaterialState({ workOrder: w }: { workOrder: Pick<WorkOrderRow, 
   return <StatusChip tone={w.materialsReserved ? "ok" : "warn"}>{label}</StatusChip>;
 }
 
-type Busy = "plan" | "retry" | "start" | "finish" | null;
+type Kind = "plan" | "retry" | "start" | "finish";
 
 /** İş emri ayrıntısı: adım çizelgesi, malzemeler, eksikler; yetkiye göre planlama, yeniden deneme ve adım başlatma/bitirme. */
 export function WorkOrderDrawer({ id, onClose }: { id: string; onClose: () => void }) {
@@ -53,8 +46,7 @@ export function WorkOrderDrawer({ id, onClose }: { id: string; onClose: () => vo
   const retry = useRetryMaterials();
   const start = useStartStep();
   const finish = useFinishStep();
-  const running = useRef(false);
-  const [busy, setBusy] = useState<Busy>(null);
+  const { busy, run: guarded } = useGuardedRun<Kind>();
   const [day, setDay] = useState(() => nextWorkdayInput(new Date()));
   const [dayError, setDayError] = useState<string | null>(null);
   const w = query.data;
@@ -65,21 +57,6 @@ export function WorkOrderDrawer({ id, onClose }: { id: string; onClose: () => vo
   const isPlanned = w?.status === "planned";
   const waitingMaterial = isPlanned && !w.materialsReserved;
   const controls = w ? stepControls(w) : null;
-
-  /** Çift tıklama: ilk istek bitmeden ikincisi başlamaz. */
-  async function guarded(kind: Exclude<Busy, null>, work: () => Promise<void>) {
-    if (running.current) return;
-    running.current = true;
-    setBusy(kind);
-    try {
-      await work();
-    } catch (error) {
-      toast.error(errorMessage(error));
-    } finally {
-      running.current = false;
-      setBusy(null);
-    }
-  }
 
   function onPlan(e: FormEvent) {
     e.preventDefault();
@@ -100,29 +77,30 @@ export function WorkOrderDrawer({ id, onClose }: { id: string; onClose: () => vo
     });
   }
 
-  const onRetry = () =>
+  // Çift tıklama ve yenileme bitmeden gelen ikinci istek ortak kancada yok sayılır (Adımı bitir → Sıradaki adımı başlat).
+  const onRetry = (e: MouseEvent) =>
     w &&
     void guarded("retry", async () => {
       const result = await retry.mutateAsync(w.id);
       if (result.shortages.length > 0) toast.error(`${w.code}: malzeme hâlâ eksik`);
       else toast.success(`${w.code}: malzemeler ayrıldı`);
-    });
+    }, e);
 
-  const onStart = () =>
+  const onStart = (e: MouseEvent) =>
     w &&
     controls?.start &&
     void guarded("start", async () => {
       await start.mutateAsync(w.id);
       toast.success(`${w.code} ${controls.start} başladı`);
-    });
+    }, e);
 
-  const onFinish = () =>
+  const onFinish = (e: MouseEvent) =>
     w &&
     controls?.finish &&
     void guarded("finish", async () => {
       const result = await finish.mutateAsync(w.id);
       toast.success(result.completed ? `${w.code} tamamlandı` : `${w.code} ${controls.finish} bitti`);
-    });
+    }, e);
 
   const showRetry = canRetry && waitingMaterial;
   const showFloor = canFloor && controls && (controls.start || controls.finish || controls.reason);
@@ -134,9 +112,9 @@ export function WorkOrderDrawer({ id, onClose }: { id: string; onClose: () => vo
       title={w?.code ?? (query.isPending ? "Yükleniyor" : "İş emri bulunamadı")}
       badge={
         w ? (
-          <span aria-hidden="true" className={cn("grid size-11 place-items-center rounded-2xl", BADGE[waitingMaterial ? "warn" : WO_STATUS_TONE[w.status]])}>
+          <DrawerBadge tone={waitingMaterial ? "warn" : WO_STATUS_TONE[w.status]}>
             <SawIcon size={22} />
-          </span>
+          </DrawerBadge>
         ) : undefined
       }
       subtitle={
@@ -177,15 +155,15 @@ export function WorkOrderDrawer({ id, onClose }: { id: string; onClose: () => vo
           {w.shortages.length > 0 ? <Shortages workOrder={w} /> : null}
 
           <dl className="grid grid-cols-2 gap-2.5">
-            <Item label="Ürün" wide>
+            <DetailItem label="Ürün" wide>
               <Link href={`/uretim/urunler?ac=${w.productId}`} className="group inline-flex items-center gap-1 text-accent underline-offset-4 hover:underline">
                 {w.productName}
                 <ArrowRightIcon size={14} className="transition-transform group-hover:translate-x-0.5" />
               </Link>
               <span className="tabular block text-sm font-normal text-fg-muted">{w.productCode}</span>
-            </Item>
-            <Item label="Adet">{formatNumber(w.qtyMilli / 1000)}</Item>
-            <Item label="Sipariş">
+            </DetailItem>
+            <DetailItem label="Adet">{formatNumber(w.qtyMilli / 1000)}</DetailItem>
+            <DetailItem label="Sipariş">
               {w.orderCode ? (
                 <Link
                   href={`/satis/siparisler?q=${encodeURIComponent(w.orderCode)}`}
@@ -197,9 +175,9 @@ export function WorkOrderDrawer({ id, onClose }: { id: string; onClose: () => vo
               ) : (
                 "Stok için"
               )}
-            </Item>
-            <Item label="Planlanan başlangıç">{w.plannedStart ? formatDue(w.plannedStart) : "Planlanmadı"}</Item>
-            <Item label="Şu anki istasyon">{w.currentStation ?? "—"}</Item>
+            </DetailItem>
+            <DetailItem label="Planlanan başlangıç">{w.plannedStart ? formatDue(w.plannedStart) : "Planlanmadı"}</DetailItem>
+            <DetailItem label="Şu anki istasyon">{w.currentStation ?? "—"}</DetailItem>
           </dl>
 
           {canPlan && isPlanned ? (
@@ -405,14 +383,5 @@ function Materials({ workOrder: w }: { workOrder: WorkOrderDetail }) {
         </div>
       )}
     </section>
-  );
-}
-
-function Item({ label, wide = false, children }: { label: string; wide?: boolean; children: ReactNode }) {
-  return (
-    <div className={cn("grid min-w-0 gap-0.5 rounded-2xl bg-surface-2/70 px-3.5 py-3 ring-1 ring-line ring-inset", wide && "col-span-2")}>
-      <dt className="text-xs text-fg-muted">{label}</dt>
-      <dd className="min-w-0 font-semibold">{children}</dd>
-    </div>
   );
 }

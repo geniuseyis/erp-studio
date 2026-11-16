@@ -1,6 +1,5 @@
 "use client";
 
-import type { ReactNode } from "react";
 import type { ProductDetail } from "@/domain/production/queries";
 import type { ProductFinish } from "@/domain/production/types";
 import { formatMoney, formatNumber, formatQty } from "@/domain/units";
@@ -8,6 +7,7 @@ import { CategorySwatch } from "@/features/inventory/CategorySwatch";
 import { FINISH_LABEL } from "@/features/sales/labels";
 import { cn } from "@/ui/cn";
 import { Drawer } from "@/ui/Drawer";
+import { DetailItem, DrawerBadge } from "@/ui/DrawerParts";
 import { BoxIcon } from "@/ui/icons";
 import { Skeleton } from "@/ui/Skeleton";
 import { useProduct } from "./hooks";
@@ -37,9 +37,9 @@ export function ProductDrawer({ id, onClose }: { id: string; onClose: () => void
       title={p?.name ?? (product.isPending ? "Yükleniyor" : "Ürün bulunamadı")}
       badge={
         p ? (
-          <span aria-hidden="true" className="grid size-11 place-items-center rounded-2xl bg-surface-2 text-fg">
+          <DrawerBadge tone="neutral">
             <BoxIcon size={22} />
-          </span>
+          </DrawerBadge>
         ) : undefined
       }
       subtitle={
@@ -57,13 +57,13 @@ export function ProductDrawer({ id, onClose }: { id: string; onClose: () => void
       {p ? (
         <div className="grid gap-6">
           <dl className="grid grid-cols-2 gap-2.5">
-            <Item label="Ölçüler (G × D × Y)" wide>
+            <DetailItem label="Ölçüler (G × D × Y)" wide>
               {mm(p.widthMm)} × {mm(p.depthMm)} × {mm(p.heightMm)} mm
-            </Item>
-            <Item label="Kategori">{p.category}</Item>
-            <Item label="KDV oranı">KDV %{p.vatRate}</Item>
-            <Item label="Mamul eldeki">{formatNumber(p.onHandMilli / 1000)} adet</Item>
-            <Item label="Ayrılmış">{formatNumber(p.reservedMilli / 1000)} adet</Item>
+            </DetailItem>
+            <DetailItem label="Kategori">{p.category}</DetailItem>
+            <DetailItem label="KDV oranı">KDV %{p.vatRate}</DetailItem>
+            <DetailItem label="Mamul eldeki">{formatNumber(p.onHandMilli / 1000)} adet</DetailItem>
+            <DetailItem label="Ayrılmış">{formatNumber(p.reservedMilli / 1000)} adet</DetailItem>
           </dl>
           <Bom product={p} />
           <Routing product={p} />
@@ -190,14 +190,5 @@ function Routing({ product: p }: { product: ProductDetail }) {
         </ol>
       )}
     </section>
-  );
-}
-
-function Item({ label, wide = false, children }: { label: string; wide?: boolean; children: ReactNode }) {
-  return (
-    <div className={cn("grid min-w-0 gap-0.5 rounded-2xl bg-surface-2/70 px-3.5 py-3 ring-1 ring-line ring-inset", wide && "col-span-2")}>
-      <dt className="text-xs text-fg-muted">{label}</dt>
-      <dd className="tabular min-w-0 font-semibold">{children}</dd>
-    </div>
   );
 }

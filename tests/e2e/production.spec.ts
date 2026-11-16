@@ -1,16 +1,13 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { addWorkdays } from "../../src/domain/production/calendar";
-import { loginAs, signOut, sql } from "./helpers";
+import { leave, loginAs, navTo, one, signOut, sql } from "./helpers";
 
 const ISTANBUL_OFFSET_MS = 3 * 60 * 60 * 1000;
 /** İstanbul gününün başlangıcı → "YYYY-AA-GG". */
 const dayInput = (d: Date) => new Date(d.getTime() + ISTANBUL_OFFSET_MS).toISOString().slice(0, 10);
+const auditCount = async (page: Page, id: string, action: string) =>
+  (await one<{ n: number }>(page, `select count(*)::int as n from audit_log where entity = 'work_order' and entity_id = '${id}' and action = '${action}'`)).n;
 const trDay = (d: Date) => new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Istanbul" }).format(d);
-
-async function navTo(page: Page, label: string, heading = label): Promise<void> {
-  await page.getByRole("navigation", { name: "Ana menü" }).getByRole("link", { name: label, exact: true }).click();
-  await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
-}
 
 /** İş emirleri ekranında koda göre arar ve çekmeceyi açar. */
 async function openWorkOrder(page: Page, code: string): Promise<Locator> {
@@ -24,19 +21,6 @@ async function openWorkOrder(page: Page, code: string): Promise<Locator> {
   await expect(drawer).toBeVisible();
   return drawer;
 }
-
-/** Açık çekmeceyi kapatıp çıkar: çekmece açıkken sayfanın geri kalanı (hesap menüsü dahil) erişilebilirlik ağacından gizlidir. */
-async function leave(page: Page): Promise<void> {
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await signOut(page);
-}
-
-const one = async <T>(page: Page, query: string): Promise<T> => {
-  const [row] = await sql<T>(page, query);
-  if (!row) throw new Error(`satır yok: ${query}`);
-  return row;
-};
 
 test("ürün çekmecesinde reçete ve rota görünür; ahşap üründe cila satırı var", async ({ page }) => {
   await loginAs(page, "Zeynep Arıkan");
@@ -228,6 +212,99 @@ test("atölye ekranında Başla sonra Bitti; kart sonraki istasyona geçer", asy
   await expect(page.getByRole("group", { name: "İstasyon" }).getByRole("button", { name: "Kesim", exact: true })).toHaveAttribute("aria-pressed", "true", {
     timeout: 45_000,
   });
+});
+
+test("atölyede Başla'ya çift dokunmak adımı yalnızca başlatır, bitirmez", async ({ page }) => {
+  await loginAs(page, "Cem Doğru");
+  const pick = await one<{ id: string; code: string; seq: number; station: string }>(
+    page,
+    `select w.id, w.code, s.seq, st.code as station
+       from work_orders w
+       join work_order_steps s on s.work_order_id = w.id
+       join stations st on st.id = s.station_id
+      where w.status = 'in_progress' and s.started_at is null
+        and not exists (select 1 from work_order_steps p where p.work_order_id = w.id and p.seq < s.seq and p.finished_at is null)
+      order by w.code limit 1`,
+  );
+  const before = await auditCount(page, pick.id, "step_start");
+  const finishes = await auditCount(page, pick.id, "step_finish");
+  await page.goto(`/atolye?istasyon=${pick.station}`);
+  const card = page.getByRole("article", { name: pick.code });
+  await expect(card.getByRole("button", { name: "Başla" })).toBeVisible({ timeout: 45_000 });
+  await card.getByRole("button", { name: "Başla" }).dblclick();
+
+  // Yenileme bitince aynı yerdeki düğme Bitti olur; adım çalışıyor kalır.
+  await expect(card.getByRole("button", { name: "Bitti" })).toBeEnabled();
+  await expect(card).toContainText("Çalışıyor");
+  const step = await one<{ started: boolean; finished: boolean }>(
+    page,
+    `select started_at is not null as started, finished_at is not null as finished from work_order_steps where work_order_id = '${pick.id}' and seq = ${pick.seq}`,
+  );
+  expect(step).toEqual({ started: true, finished: false });
+  expect(await auditCount(page, pick.id, "step_start")).toBe(before + 1);
+  expect(await auditCount(page, pick.id, "step_finish")).toBe(finishes);
+});
+
+test("atölyede düğme ancak yeni veriyle yeniden açılır: Başla'dan sonra ilk açılan düğme Bitti", async ({ page }) => {
+  await loginAs(page, "Cem Doğru");
+  const pick = await one<{ code: string; station: string }>(
+    page,
+    `select w.code, st.code as station
+       from work_orders w
+       join work_order_steps s on s.work_order_id = w.id
+       join stations st on st.id = s.station_id
+      where w.status = 'in_progress' and s.started_at is null
+        and not exists (select 1 from work_order_steps p where p.work_order_id = w.id and p.seq < s.seq and p.finished_at is null)
+      order by w.code limit 1`,
+  );
+  await page.goto(`/atolye?istasyon=${pick.station}`);
+  const start = page.getByRole("article", { name: pick.code }).getByRole("button", { name: "Başla" });
+  await expect(start).toBeVisible({ timeout: 45_000 });
+  // Tıkla ve kart içindeki düğme yeniden etkin olduğu ilk anı DOM değişikliğiyle yakala: o anki yazısı ne?
+  // Yenileme beklenmeden açılırsa eski "Başla" görünür ve ikinci dokunuş eski veriyle işlem yapar.
+  const firstEnabledLabel = await start.evaluate(
+    (button) =>
+      new Promise<string>((resolve) => {
+        const card = button.closest("article");
+        if (!card) throw new Error("kart yok");
+        const observer = new MutationObserver(() => {
+          const current = card.querySelector("button");
+          if (current && !current.disabled) {
+            observer.disconnect();
+            resolve(current.textContent?.trim() ?? "");
+          }
+        });
+        observer.observe(card, { attributes: true, childList: true, subtree: true, characterData: true });
+        (button as HTMLButtonElement).click();
+      }),
+  );
+  expect(firstEnabledLabel).toBe("Bitti");
+});
+
+test("çekmecede Adımı bitir'e çift tıklamak sıradaki adımı başlatmaz", async ({ page }) => {
+  await loginAs(page, "Cem Doğru");
+  const pick = await one<{ id: string; code: string; seq: number }>(
+    page,
+    `select w.id, w.code, s.seq from work_orders w join work_order_steps s on s.work_order_id = w.id
+      where w.status = 'in_progress' and s.started_at is not null and s.finished_at is null
+        and exists (select 1 from work_order_steps n where n.work_order_id = w.id and n.seq > s.seq)
+      order by w.code limit 1`,
+  );
+  const starts = await auditCount(page, pick.id, "step_start");
+  const drawer = await openWorkOrder(page, pick.code);
+  await drawer.getByRole("button", { name: "Adımı bitir" }).dblclick();
+
+  await expect(drawer.getByRole("button", { name: "Sıradaki adımı başlat" })).toBeEnabled();
+  await expect(drawer.getByRole("button", { name: "Adımı bitir" })).toHaveCount(0);
+  const steps = await sql<{ seq: number; started: boolean; finished: boolean }>(
+    page,
+    `select seq, started_at is not null as started, finished_at is not null as finished from work_order_steps where work_order_id = '${pick.id}' and seq >= ${pick.seq} order by seq limit 2`,
+  );
+  expect(steps).toEqual([
+    { seq: pick.seq, started: true, finished: true },
+    { seq: expect.any(Number), started: false, finished: false },
+  ]);
+  expect(await auditCount(page, pick.id, "step_start")).toBe(starts);
 });
 
 test("satış hesabında Başla ve Planla görünmez", async ({ page }) => {

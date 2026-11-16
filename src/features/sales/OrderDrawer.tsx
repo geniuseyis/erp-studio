@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { type FormEvent, type ReactNode, useRef, useState } from "react";
+import { type FormEvent, useState } from "react";
 import { can } from "@/domain/permissions";
 import type { Shortage } from "@/domain/production/types";
 import type { OrderDetail, OrderLineRow } from "@/domain/sales/queries";
@@ -11,25 +11,18 @@ import { Button, IconButton } from "@/ui/Button";
 import { cn } from "@/ui/cn";
 import { Dialog } from "@/ui/Dialog";
 import { Drawer } from "@/ui/Drawer";
+import { DetailItem, DrawerBadge } from "@/ui/DrawerParts";
 import { Textarea } from "@/ui/Field";
 import { formatDateTime } from "@/ui/format";
 import { AlertIcon, ArrowRightIcon, CheckIcon, CloseIcon, ReceiptIcon, TrashIcon, TruckIcon } from "@/ui/icons";
 import { Skeleton } from "@/ui/Skeleton";
-import { StatusChip, type Tone } from "@/ui/StatusChip";
+import { StatusChip } from "@/ui/StatusChip";
 import { useToast } from "@/ui/Toast";
-import { errorMessage } from "@/shell/useAction";
+import { errorMessage, useGuardedRun } from "@/shell/useAction";
 import { useCancelOrder, useConfirmOrder, useOrder, useRemoveLine, useShipOrder } from "./hooks";
 import { formatDiscount, formatShortage, LINE_STATUS_LABEL, LINE_STATUS_TONE, orderTone } from "./labels";
 import { LineForm } from "./LineForm";
 import { DueDate, OrderStatusChips } from "./OrderStatus";
-
-const BADGE: Record<Tone, string> = {
-  neutral: "bg-surface-2 text-fg",
-  ok: "bg-ok-bg text-ok",
-  warn: "bg-warn-bg text-warn",
-  danger: "bg-danger-bg text-danger",
-  info: "bg-info-bg text-info",
-};
 
 /** Sipariş ayrıntısı: satırlar, tutar özeti ve duruma ve yetkiye göre onay, sevk ve iptal. */
 export function OrderDrawer({ id, onClose }: { id: string; onClose: () => void }) {
@@ -38,8 +31,7 @@ export function OrderDrawer({ id, onClose }: { id: string; onClose: () => void }
   const order = useOrder(id);
   const confirm = useConfirmOrder();
   const ship = useShipOrder();
-  const running = useRef(false);
-  const [busy, setBusy] = useState<"confirm" | "ship" | null>(null);
+  const { busy, run: guarded } = useGuardedRun<"confirm" | "ship">();
   const [cancelling, setCancelling] = useState(false);
   // Onayda dönen eksikler çekmece kapanana dek kalır; sonraki sorgular onları geri getirmez.
   const [shortages, setShortages] = useState<Shortage[]>([]);
@@ -53,27 +45,24 @@ export function OrderDrawer({ id, onClose }: { id: string; onClose: () => void }
   const canShipNow = o?.status === "ready" && canShip;
   const canCancel = o ? (isDraft ? canWrite : (o.status === "confirmed" || o.status === "in_production" || o.status === "ready") && canApprove) : false;
 
-  async function run(kind: "confirm" | "ship") {
-    // Çift tıklama: ilk istek bitmeden ikincisi başlamaz.
-    if (running.current || !o) return;
-    running.current = true;
-    setBusy(kind);
-    try {
-      if (kind === "confirm") {
-        const result = await confirm.mutateAsync(o.id);
-        setShortages(result.shortages);
-        if (result.shortages.length > 0) toast.error(`${o.code} onaylandı; bazı iş emirleri malzeme bekliyor`);
-        else toast.success(`${o.code} onaylandı`);
-      } else {
-        await ship.mutateAsync(o.id);
-        toast.success(`${o.code} sevk edildi`);
-      }
-    } catch (error) {
-      toast.error(errorMessage(error));
-    } finally {
-      running.current = false;
-      setBusy(null);
-    }
+  /** Çift tıklama ve yenileme bitmeden ikinci istek ortak kancada engellenir. */
+  function run(kind: "confirm" | "ship", event: { detail: number }) {
+    if (!o) return;
+    void guarded(
+      kind,
+      async () => {
+        if (kind === "confirm") {
+          const result = await confirm.mutateAsync(o.id);
+          setShortages(result.shortages);
+          if (result.shortages.length > 0) toast.error(`${o.code} onaylandı; bazı iş emirleri malzeme bekliyor`);
+          else toast.success(`${o.code} onaylandı`);
+        } else {
+          await ship.mutateAsync(o.id);
+          toast.success(`${o.code} sevk edildi`);
+        }
+      },
+      event,
+    );
   }
 
   const actions = o && (canConfirm || canShipNow || canCancel);
@@ -86,9 +75,9 @@ export function OrderDrawer({ id, onClose }: { id: string; onClose: () => void }
         title={o?.code ?? (order.isPending ? "Yükleniyor" : "Sipariş bulunamadı")}
         badge={
           o ? (
-            <span aria-hidden="true" className={cn("grid size-11 place-items-center rounded-2xl", BADGE[orderTone(o.status, o.waitingMaterial)])}>
+            <DrawerBadge tone={orderTone(o.status, o.waitingMaterial)}>
               <ReceiptIcon size={22} />
-            </span>
+            </DrawerBadge>
           ) : undefined
         }
         subtitle={
@@ -104,12 +93,12 @@ export function OrderDrawer({ id, onClose }: { id: string; onClose: () => void }
           actions ? (
             <>
               {canConfirm ? (
-                <Button variant="primary" icon={<CheckIcon />} loading={busy === "confirm"} disabled={busy !== null || o.lines.length === 0} onClick={() => void run("confirm")}>
+                <Button variant="primary" icon={<CheckIcon />} loading={busy === "confirm"} disabled={busy !== null || o.lines.length === 0} onClick={(e) => run("confirm", e)}>
                   Onayla
                 </Button>
               ) : null}
               {canShipNow ? (
-                <Button variant="primary" icon={<TruckIcon />} loading={busy === "ship"} disabled={busy !== null} onClick={() => void run("ship")}>
+                <Button variant="primary" icon={<TruckIcon />} loading={busy === "ship"} disabled={busy !== null} onClick={(e) => run("ship", e)}>
                   Sevk et
                 </Button>
               ) : null}
@@ -127,7 +116,7 @@ export function OrderDrawer({ id, onClose }: { id: string; onClose: () => void }
             {shortages.length > 0 ? <ShortageBox shortages={shortages} /> : null}
 
             <dl className="grid grid-cols-2 gap-2.5">
-              <Item label="Müşteri" wide>
+              <DetailItem label="Müşteri" wide>
                 <Link
                   href={`/satis/musteriler?ac=${o.customerId}`}
                   className="group inline-flex items-center gap-1 text-accent underline-offset-4 hover:underline"
@@ -138,17 +127,17 @@ export function OrderDrawer({ id, onClose }: { id: string; onClose: () => void }
                 <span className="block text-sm font-normal text-fg-muted">
                   {o.customer.code} · {o.customer.city} / {o.customer.district}
                 </span>
-              </Item>
-              <Item label="Termin">
+              </DetailItem>
+              <DetailItem label="Termin">
                 <DueDate order={o} />
-              </Item>
-              <Item label="Ödeme vadesi">{o.customer.paymentTermDays} gün</Item>
-              <Item label="Açan">{o.createdByName}</Item>
-              <Item label="Açılış">{formatDateTime(o.createdAt)}</Item>
+              </DetailItem>
+              <DetailItem label="Ödeme vadesi">{o.customer.paymentTermDays} gün</DetailItem>
+              <DetailItem label="Açan">{o.createdByName}</DetailItem>
+              <DetailItem label="Açılış">{formatDateTime(o.createdAt)}</DetailItem>
               {o.note ? (
-                <Item label="Not" wide>
+                <DetailItem label="Not" wide>
                   <span className="font-normal break-words">{o.note}</span>
-                </Item>
+                </DetailItem>
               ) : null}
             </dl>
 
@@ -304,41 +293,26 @@ function SumRow({ label, value, strong = false, total = false }: { label: string
   );
 }
 
-function Item({ label, wide = false, children }: { label: string; wide?: boolean; children: ReactNode }) {
-  return (
-    <div className={cn("grid min-w-0 gap-0.5 rounded-2xl bg-surface-2/70 px-3.5 py-3 ring-1 ring-line ring-inset", wide && "col-span-2")}>
-      <dt className="text-xs text-fg-muted">{label}</dt>
-      <dd className="min-w-0 font-semibold">{children}</dd>
-    </div>
-  );
-}
-
 function CancelDialog({ order, onClose }: { order: OrderDetail; onClose: () => void }) {
   const toast = useToast();
   const cancel = useCancelOrder();
-  const submitting = useRef(false);
-  const [busy, setBusy] = useState(false);
+  const { busy: running, run } = useGuardedRun<"cancel">();
+  const busy = running !== null;
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  async function onSubmit(e: FormEvent) {
+  function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (submitting.current) return;
+    if (busy) return;
     if (!reason.trim()) {
       setError("Gerekçe girin");
       return;
     }
-    submitting.current = true;
-    setBusy(true);
-    try {
+    void run("cancel", async () => {
       await cancel.mutateAsync({ orderId: order.id, reason });
       toast.success(`${order.code} iptal edildi`);
       onClose();
-    } catch (err) {
-      toast.error(errorMessage(err));
-      submitting.current = false;
-      setBusy(false);
-    }
+    });
   }
 
   return (

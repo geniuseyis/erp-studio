@@ -19,7 +19,8 @@ export function SettingsScreen() {
     try {
       await handle.reset();
       toast.success("Veri sıfırlandı, örnek veri yeniden yüklendi");
-      announceChange();
+      // Oturum hemen kapanır; yenilemenin bitmesi beklenmez.
+      void announceChange();
       endSession();
     } catch (e) {
       console.error(e);

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import type { MaterialRow } from "@/domain/inventory/queries";
 import { can } from "@/domain/permissions";
 import { formatMoney, formatNumber, formatQty, unitLabel } from "@/domain/units";
@@ -9,6 +9,7 @@ import { useSession } from "@/shell/session";
 import { Button } from "@/ui/Button";
 import { cn } from "@/ui/cn";
 import { Drawer } from "@/ui/Drawer";
+import { DetailItem } from "@/ui/DrawerParts";
 import { formatDateTime, formatSignedQty } from "@/ui/format";
 import { ArrowRightIcon, ClockIcon, EditIcon, MinusIcon, PlusIcon, ShelfIcon, TagIcon } from "@/ui/icons";
 import { Meter } from "@/ui/Meter";
@@ -76,20 +77,20 @@ export function MaterialDrawer({ id, onClose }: { id: string; onClose: () => voi
         {m ? (
           <div className="grid gap-6">
             <dl className="grid grid-cols-2 gap-2.5">
-              <Item label="Eldeki">{formatQty(m.onHandMilli, m.unit)}</Item>
-              <Item label="Ayrılmış">{formatQty(m.reservedMilli, m.unit)}</Item>
-              <Item label="Yeniden sipariş noktası">{formatQty(m.reorderPointMilli, m.unit)}</Item>
-              <Item label="Güvenlik stoğu">{formatQty(m.safetyStockMilli, m.unit)}</Item>
-              <Item label="Ortalama maliyet" icon={<TagIcon size={14} />}>
+              <DetailItem label="Eldeki">{formatQty(m.onHandMilli, m.unit)}</DetailItem>
+              <DetailItem label="Ayrılmış">{formatQty(m.reservedMilli, m.unit)}</DetailItem>
+              <DetailItem label="Yeniden sipariş noktası">{formatQty(m.reorderPointMilli, m.unit)}</DetailItem>
+              <DetailItem label="Güvenlik stoğu">{formatQty(m.safetyStockMilli, m.unit)}</DetailItem>
+              <DetailItem label="Ortalama maliyet" icon={<TagIcon size={14} />}>
                 {formatMoney(m.avgCostKurus)}
-              </Item>
-              <Item label="Tedarik süresi" icon={<ClockIcon size={14} />}>
+              </DetailItem>
+              <DetailItem label="Tedarik süresi" icon={<ClockIcon size={14} />}>
                 {m.leadTimeDays} gün
-              </Item>
-              <Item label="Raf" icon={<ShelfIcon size={14} />}>
+              </DetailItem>
+              <DetailItem label="Raf" icon={<ShelfIcon size={14} />}>
                 {m.shelf || "Belirtilmemiş"}
-              </Item>
-              <Item label="Kullanılabilir">{formatQty(m.availableMilli, m.unit)}</Item>
+              </DetailItem>
+              <DetailItem label="Kullanılabilir">{formatQty(m.availableMilli, m.unit)}</DetailItem>
             </dl>
 
             <section className="grid gap-3">
@@ -144,18 +145,6 @@ export function MaterialDrawer({ id, onClose }: { id: string; onClose: () => voi
       {m && (action === "receipt" || action === "issue") ? <StockActionDialog kind={action} material={m} onClose={() => setAction(null)} /> : null}
       {m && action === "edit" ? <MaterialForm material={m} onClose={() => setAction(null)} /> : null}
     </>
-  );
-}
-
-function Item({ label, icon, children }: { label: string; icon?: ReactNode; children: ReactNode }) {
-  return (
-    <div className="grid gap-0.5 rounded-2xl bg-surface-2/70 px-3.5 py-3 ring-1 ring-line ring-inset">
-      <dt className="flex items-center gap-1.5 text-xs text-fg-muted">
-        {icon}
-        {label}
-      </dt>
-      <dd className="tabular font-semibold">{children}</dd>
-    </div>
   );
 }
 

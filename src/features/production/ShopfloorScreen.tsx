@@ -1,13 +1,13 @@
 "use client";
 
-import { type ReactNode, useRef, useState } from "react";
+import { type MouseEvent, type ReactNode, useState } from "react";
 import { can } from "@/domain/permissions";
 import type { QueueItem } from "@/domain/production/queries";
 import { formatNumber } from "@/domain/units";
 import { formatDue } from "@/features/sales/labels";
 import { HeroStat, Page, PageHeader } from "@/shell/AppGuard";
 import { useSession } from "@/shell/session";
-import { errorMessage } from "@/shell/useAction";
+import { useGuardedRun } from "@/shell/useAction";
 import { useUrlState } from "@/shell/useUrlState";
 import { Button } from "@/ui/Button";
 import { FilterChip } from "@/ui/Chip";
@@ -55,8 +55,7 @@ export function ShopfloorScreen() {
   const queues = useStationQueues(codes);
   const start = useStartStep();
   const finish = useFinishStep();
-  const running = useRef(false);
-  const [busy, setBusy] = useState<string | null>(null);
+  const { busy, run } = useGuardedRun<string>();
 
   const fromUrl = params.get("istasyon");
   const selected = [fromUrl, stored].find((c) => c && codes.includes(c)) ?? codes[0] ?? null;
@@ -75,25 +74,22 @@ export function ShopfloorScreen() {
     }
   }
 
-  async function act(item: QueueItem) {
-    // Çift dokunma: ilk istek bitmeden ikincisi başlamaz.
-    if (running.current || !station) return;
-    running.current = true;
-    setBusy(item.workOrderId);
-    try {
-      if (item.state === "waiting") {
-        await start.mutateAsync(item.workOrderId);
-        toast.success(`${item.code} ${station.name} başladı`);
-      } else {
-        const result = await finish.mutateAsync(item.workOrderId);
-        toast.success(result.completed ? `${item.code} tamamlandı` : `${item.code} ${station.name} bitti`);
-      }
-    } catch (error) {
-      toast.error(errorMessage(error));
-    } finally {
-      running.current = false;
-      setBusy(null);
-    }
+  // Aynı düğme Başla'dan Bitti'ye döner: çift dokunma ve yenileme bitmeden gelen ikinci dokunma ortak kancada yok sayılır.
+  function act(item: QueueItem, event: MouseEvent) {
+    if (!station) return;
+    void run(
+      item.workOrderId,
+      async () => {
+        if (item.state === "waiting") {
+          await start.mutateAsync(item.workOrderId);
+          toast.success(`${item.code} ${station.name} başladı`);
+        } else {
+          const result = await finish.mutateAsync(item.workOrderId);
+          toast.success(result.completed ? `${item.code} tamamlandı` : `${item.code} ${station.name} bitti`);
+        }
+      },
+      event,
+    );
   }
 
   return (
@@ -135,7 +131,7 @@ export function ShopfloorScreen() {
           <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {queue.map((item) => (
               <li key={item.workOrderId} className="min-w-0">
-                <QueueCard item={item} canExecute={canExecute} busy={busy} onAct={() => void act(item)} />
+                <QueueCard item={item} canExecute={canExecute} busy={busy} onAct={(e) => act(item, e)} />
               </li>
             ))}
           </ul>
@@ -145,7 +141,7 @@ export function ShopfloorScreen() {
   );
 }
 
-function QueueCard({ item, canExecute, busy, onAct }: { item: QueueItem; canExecute: boolean; busy: string | null; onAct: () => void }) {
+function QueueCard({ item, canExecute, busy, onAct }: { item: QueueItem; canExecute: boolean; busy: string | null; onAct: (event: MouseEvent) => void }) {
   const headingId = `queue-${item.workOrderId}`;
   const isRunning = item.state === "running";
   return (

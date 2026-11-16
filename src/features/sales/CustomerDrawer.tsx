@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import { can } from "@/domain/permissions";
 import { formatMoney } from "@/domain/units";
 import { useSession } from "@/shell/session";
 import { Button } from "@/ui/Button";
 import { Drawer } from "@/ui/Drawer";
+import { DetailItem } from "@/ui/DrawerParts";
 import { formatDate } from "@/ui/format";
 import { ArrowRightIcon, ClockIcon, ContactIcon, EditIcon } from "@/ui/icons";
 import { Skeleton } from "@/ui/Skeleton";
@@ -71,18 +72,18 @@ export function CustomerDrawer({ id, onClose }: { id: string; onClose: () => voi
         {c ? (
           <div className="grid gap-6">
             <dl className="grid grid-cols-2 gap-2.5">
-              <Item label="İl / İlçe">
+              <DetailItem label="İl / İlçe">
                 {c.city} / {c.district}
-              </Item>
-              <Item label="Telefon">
+              </DetailItem>
+              <DetailItem label="Telefon">
                 <a href={`tel:${c.phone.replace(/\s/g, "")}`} className="text-accent underline-offset-4 hover:underline">
                   {c.phone}
                 </a>
-              </Item>
-              <Item label="Ödeme vadesi" icon={<ClockIcon size={14} />}>
+              </DetailItem>
+              <DetailItem label="Ödeme vadesi" icon={<ClockIcon size={14} />}>
                 {c.paymentTermDays} gün
-              </Item>
-              <Item label="Son sipariş">{c.lastOrderAt ? formatDate(c.lastOrderAt) : "Yok"}</Item>
+              </DetailItem>
+              <DetailItem label="Son sipariş">{c.lastOrderAt ? formatDate(c.lastOrderAt) : "Yok"}</DetailItem>
             </dl>
 
             <section className="grid gap-3" aria-labelledby={`orders-${c.id}`}>
@@ -125,17 +126,5 @@ export function CustomerDrawer({ id, onClose }: { id: string; onClose: () => voi
 
       {c && editing ? <CustomerForm customer={c} onClose={() => setEditing(false)} /> : null}
     </>
-  );
-}
-
-function Item({ label, icon, children }: { label: string; icon?: ReactNode; children: ReactNode }) {
-  return (
-    <div className="grid min-w-0 gap-0.5 rounded-2xl bg-surface-2/70 px-3.5 py-3 ring-1 ring-line ring-inset">
-      <dt className="flex items-center gap-1.5 text-xs text-fg-muted">
-        {icon}
-        {label}
-      </dt>
-      <dd className="tabular min-w-0 font-semibold break-words">{children}</dd>
-    </div>
   );
 }
