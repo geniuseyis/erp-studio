@@ -10,6 +10,15 @@ export function unitLabel(unit: Unit): string {
   return UNIT_LABEL[unit];
 }
 
+/** Birimin en küçük anlamlı adımı (milli): adet, plaka ve metre tam; litre, kilo ve m² onda bir; m³ yüzde bir. */
+export const UNIT_STEP_MILLI: Record<Unit, number> = { adet: 1000, plaka: 1000, m: 1000, L: 100, kg: 100, m2: 100, m3: 10 };
+
+/** Miktarı birimin adımının katına yukarı yuvarlar: 782, "plaka" → 1000. */
+export function roundUpToStep(milli: number, unit: Unit): number {
+  const step = UNIT_STEP_MILLI[unit];
+  return Math.ceil(milli / step) * step;
+}
+
 /**
  * Kullanıcının yazdığı sayıyı okur. Virgül varsa ondalık ayracıdır ve noktalar binlik ayracı sayılır
  * ("1.250,75" → 1250.75); virgül yoksa tek nokta ondalık ayracıdır ("1.5" → 1.5).

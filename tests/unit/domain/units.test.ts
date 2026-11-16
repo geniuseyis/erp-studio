@@ -1,5 +1,16 @@
 import { expect, test } from "vitest";
-import { decimalError, formatMoney, formatQty, isAmbiguousDecimal, lineValueKurus, parseDecimal, toKurus, toMilli } from "@/domain/units";
+import {
+  decimalError,
+  formatMoney,
+  formatQty,
+  isAmbiguousDecimal,
+  lineValueKurus,
+  parseDecimal,
+  roundUpToStep,
+  toKurus,
+  toMilli,
+  UNIT_STEP_MILLI,
+} from "@/domain/units";
 
 test.each([
   ["1,5", 1.5],
@@ -53,4 +64,23 @@ test("satır değeri: miktar × birim maliyet, kuruşa yuvarlanır", () => {
   expect(lineValueKurus(1500, 20000)).toBe(30000);
   expect(lineValueKurus(333, 1000)).toBe(333);
   expect(lineValueKurus(1, 1499)).toBe(1);
+});
+
+test("birim adımı: adet, plaka ve metre tam; litre, kilo ve m² onda bir; m³ yüzde bir", () => {
+  expect(UNIT_STEP_MILLI).toEqual({ adet: 1000, plaka: 1000, m: 1000, L: 100, kg: 100, m2: 100, m3: 10 });
+});
+
+test.each([
+  [782, "plaka", 1000],
+  [1000, "plaka", 1000],
+  [1001, "adet", 2000],
+  [0, "adet", 0],
+  [1, "m", 1000],
+  [1250, "kg", 1300],
+  [1300, "L", 1300],
+  [101, "m2", 200],
+  [1251, "m3", 1260],
+  [1250, "m3", 1250],
+] as const)("roundUpToStep(%s, %s) = %s", (milli, unit, expected) => {
+  expect(roundUpToStep(milli, unit)).toBe(expected);
 });

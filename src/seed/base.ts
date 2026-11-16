@@ -11,7 +11,7 @@ import { issueStock, receiveStock } from "@/domain/inventory/ledger";
 import { createMaterial } from "@/domain/inventory/materials";
 import { getMaterial } from "@/domain/inventory/queries";
 import { hashPassword } from "@/domain/password";
-import { toKurus } from "@/domain/units";
+import { toKurus, UNIT_STEP_MILLI } from "@/domain/units";
 import { SEED_MATERIALS, type SeedMaterial, type SeedUnit } from "./data/materials";
 import { DEMO_PASSWORD, demoEmail, SEED_USERS } from "./data/users";
 import { mulberry32 } from "./rng";
@@ -36,14 +36,11 @@ const SHELF_LETTER: Record<SeedMaterial["category"], string> = {
   ambalaj: "G",
 };
 
-/** Birimin en küçük anlamlı adımı (milli): adet, plaka ve metre tam; litre, kilo ve m² onda bir; m³ yüzde bir. */
-const STEP: Record<SeedUnit, number> = { adet: 1000, plaka: 1000, m: 1000, L: 100, kg: 100, m2: 100, m3: 10 };
-
 const ISSUE_NOTES = ["Üretime çıkış", "Atölyeye sevk", "İş emri hazırlığı"];
 
 /** Birim cinsinden miktarı milli tam sayıya çevirir ve birimin adımına yuvarlar. En az bir adım döner. */
 function qty(unit: SeedUnit, amount: number): number {
-  const step = STEP[unit];
+  const step = UNIT_STEP_MILLI[unit];
   return Math.max(1, Math.round((amount * 1000) / step)) * step;
 }
 
@@ -93,7 +90,7 @@ export async function seedBase(db: Db, opts: { now: Date; seed?: number }): Prom
 
     for (const [i, spec] of SEED_MATERIALS.entries()) {
       const n = (shelfIndex[spec.category] = (shelfIndex[spec.category] ?? 0) + 1);
-      const step = STEP[spec.unit];
+      const step = UNIT_STEP_MILLI[spec.unit];
       const reorderMilli = qty(spec.unit, spec.reorder);
       const cost = toKurus(spec.price);
       const opened = at(29, WORKDAY_START_HOUR, i);
