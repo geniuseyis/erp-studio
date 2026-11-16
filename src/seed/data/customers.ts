@@ -30,10 +30,10 @@ const COMPANIES: Spec[] = [
   ["Lacivert Kum Otelcilik", "Antalya", "Konyaaltı", 530, 60],
   ["Dört Kanat Ofis Mobilyaları", "Ankara", "Çankaya", 541, 45],
   ["Çınar Avlu Otelcilik", "Muğla", "Bodrum", 553, 60],
-  ["Sekizgen Mimarlık", "İzmir", "Konak", 539, 30],
+  ["Yamuk Pergel Mimarlık", "İzmir", "Konak", 539, 30],
   ["Ardıç Tepe Ofis Mobilyaları", "Bursa", "Osmangazi", 549, 45],
   ["Kırk Basamak İç Mimarlık", "İstanbul", "Beyoğlu", 534, 30],
-  ["Mor Salkım Pansiyonculuk", "Çanakkale", "Ayvacık", 545, 30],
+  ["Kekik Yokuşu Otelcilik", "Çanakkale", "Ayvacık", 545, 30],
   ["Ölçü ve Oran Mimarlık", "Eskişehir", "Odunpazarı", 537, 45],
   ["Dokuz Raf Ofis Mobilyaları", "Gaziantep", "Şahinbey", 554, 60],
 ];
