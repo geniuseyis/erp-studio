@@ -2,7 +2,7 @@
 // Bağımlılık yönü: sales/orders → production/workOrders → sales/status.
 import { and, asc, eq, inArray, like, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
-import { bomLines, materials, products, routings, salesOrderLines, stations, stockMovements, workOrders, workOrderSteps } from "@/db/schema";
+import { bomLines, materials, products, routings, salesOrderLines, salesOrders, stations, stockMovements, workOrders, workOrderSteps } from "@/db/schema";
 import { logAudit } from "../audit";
 import { type Ctx, inTx, isUuid } from "../context";
 import { DomainError } from "../errors";
@@ -172,6 +172,11 @@ async function reservedForWorkOrder(db: Db, workOrderId: string): Promise<Materi
   return rows.filter((r) => Number(r.sum) > 0).map((r) => ({ materialId: r.materialId, neededMilli: Number(r.sum) }));
 }
 
+async function stationName(db: Db, step: WorkOrderStep): Promise<string> {
+  const [station] = await db.select({ name: stations.name }).from(stations).where(eq(stations.id, step.stationId));
+  return station?.name ?? `${step.seq}. istasyon`;
+}
+
 async function missingMaterialMessage(db: Db, wo: typeof workOrders.$inferSelect): Promise<string> {
   const shortages = await findShortages(db, await materialNeeds(db, wo.productId, wo.qtyMilli));
   if (shortages.length === 0) return "Malzeme ayrılmadı: planlama 'Malzemeyi yeniden dene' ile ayırmalı";
@@ -192,8 +197,7 @@ export async function startNextStep(ctx: Ctx, workOrderId: string): Promise<Work
     const steps = await tx.db.select().from(workOrderSteps).where(eq(workOrderSteps.workOrderId, wo.id)).orderBy(asc(workOrderSteps.seq));
     const open = steps.find((s) => s.startedAt !== null && s.finishedAt === null);
     if (open) {
-      const [station] = await tx.db.select({ name: stations.name }).from(stations).where(eq(stations.id, open.stationId));
-      throw new DomainError("INVALID_STATE", `Önce ${station?.name ?? `${open.seq}. istasyon`} adımını bitirin`);
+      throw new DomainError("INVALID_STATE", `Önce ${await stationName(tx.db, open)} adımını bitirin`);
     }
     const next = steps.find((s) => s.startedAt === null);
     if (!next) throw new DomainError("INVALID_STATE", "Başlatılacak adım kalmadı");
@@ -204,7 +208,7 @@ export async function startNextStep(ctx: Ctx, workOrderId: string): Promise<Work
         await consumeStock(tx, { materialId: r.materialId, qtyMilli: r.neededMilli, ref: { type: "work_order", id: wo.id } });
       }
       await tx.db.update(workOrders).set({ status: "in_progress", startedAt: tx.now }).where(eq(workOrders.id, wo.id));
-      await logAudit(tx, { entity: "work_order", entityId: wo.id, action: "start", summary: `${wo.code} başladı: malzemeler tüketildi` });
+      await logAudit(tx, { entity: "work_order", entityId: wo.id, action: "start", summary: `${wo.code} üretime başladı: ayrılan malzemeler tüketildi` });
     }
     const [started] = await tx.db
       .update(workOrderSteps)
@@ -212,6 +216,12 @@ export async function startNextStep(ctx: Ctx, workOrderId: string): Promise<Work
       .where(eq(workOrderSteps.id, next.id))
       .returning();
     if (!started) throw new Error("adım başlatılamadı");
+    await logAudit(tx, {
+      entity: "work_order",
+      entityId: wo.id,
+      action: "step_start",
+      summary: `${wo.code} ${await stationName(tx.db, next)} başladı`,
+    });
     return started;
   });
 }
@@ -231,23 +241,35 @@ export async function finishCurrentStep(ctx: Ctx, workOrderId: string): Promise<
       .where(eq(workOrderSteps.id, open.id))
       .returning();
     if (!step) throw new Error("adım bitirilemedi");
+    await logAudit(tx, {
+      entity: "work_order",
+      entityId: wo.id,
+      action: "step_finish",
+      summary: `${wo.code} ${await stationName(tx.db, open)} bitti`,
+    });
     const completed = steps.every((s) => s.id === open.id || s.finishedAt !== null);
     if (!completed) return { step, completed: false };
 
     await tx.db.update(workOrders).set({ status: "completed", completedAt: tx.now }).where(eq(workOrders.id, wo.id));
     const ref = { type: "work_order", id: wo.id } as const;
     await produceIn(tx, { productId: wo.productId, qtyMilli: wo.qtyMilli, ref });
-    await logAudit(tx, { entity: "work_order", entityId: wo.id, action: "complete", summary: `${wo.code} tamamlandı` });
-
+    let lineNote = "";
     if (wo.salesOrderLineId) {
       const [line] = await tx.db.select().from(salesOrderLines).where(eq(salesOrderLines.id, wo.salesOrderLineId)).for("update");
+      const [order] = line ? await tx.db.select({ code: salesOrders.code }).from(salesOrders).where(eq(salesOrders.id, line.orderId)) : [];
       if (line && line.status !== "cancelled") {
         await reserveProduct(tx, { productId: wo.productId, qtyMilli: wo.qtyMilli, ref });
         const reserved = line.reservedMilli + wo.qtyMilli;
-        await setLineStatus(tx, line.id, reserved >= line.qtyMilli ? "ready" : (line.status as LineStatus), reserved);
+        const ready = reserved >= line.qtyMilli;
+        // Satır hâlâ eksikse (kısmi ayırma) durumu olduğu gibi kalır; yalnızca ayrılan miktar yazılır.
+        await setLineStatus(tx, line.id, ready ? "ready" : (line.status as LineStatus), reserved);
         await refreshOrderStatus(tx, line.orderId);
+        lineNote = `; ${wo.qtyMilli / 1000} adet ${order?.code ?? "sipariş"} satırına ayrıldı${ready ? ", satır hazır" : ""}`;
+      } else if (line) {
+        lineNote = "; satır iptal, mamul serbest stokta";
       }
     }
+    await logAudit(tx, { entity: "work_order", entityId: wo.id, action: "complete", summary: `${wo.code} tamamlandı${lineNote}` });
     return { step, completed: true };
   });
 }
