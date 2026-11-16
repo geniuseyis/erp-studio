@@ -1,5 +1,6 @@
 // Örnek verinin anlık görüntüsü.
-// seedBase gerçek servisleri çağırarak veriyi üretir (binlerce sorgu); bu Node'da 3 saniye, tarayıcıda dakikalar sürer.
+// seedBase ve seedSales gerçek servisleri çağırarak veriyi üretir (on binlerce sorgu); bu Node'da yaklaşık 25 saniye,
+// tarayıcıda dakikalar sürer.
 // Bu yüzden veri derleme sırasında bir kez üretilip JSON'a yazılır (npm run seed:snapshot) ve tarayıcıda
 // tablo başına birkaç toplu INSERT ile yüklenir. Tarihler yükleme anına kaydırılır; vitrin hiç eskimiş görünmez.
 import { getTableColumns, getTableName, sql } from "drizzle-orm";
@@ -52,11 +53,21 @@ const TABLES: PgTable[] = [
 ];
 const CHUNK = 400;
 
+/**
+ * Sıkıştırılmış ama kayıpsız biçim (1 MB sınırı için): her tablo sütun adları ve değer dizileri olarak durur,
+ * tarihler epoch milisaniyesidir, uuid değerleri `ids` listesine bir kez yazılır ve satırlarda sıra
+ * numarasıyla geçer. `uuidColumns`: sayı değeri `ids` sıra numarası olan sütunlar (metin sütunlarında
+ * uuid olmayan değerler metin olarak kalır).
+ */
+export type SnapshotTable = { columns: string[]; uuidColumns: string[]; rows: unknown[][] };
 export type Snapshot = {
   /** ISO tarih: verinin üretildiği an. */
   takenAt: string;
-  tables: Record<string, Record<string, unknown>[]>;
+  ids: string[];
+  tables: Record<string, SnapshotTable>;
 };
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function dateColumns(table: PgTable): string[] {
   return Object.entries(getTableColumns(table))
@@ -64,19 +75,52 @@ function dateColumns(table: PgTable): string[] {
     .map(([key]) => key);
 }
 
-/** Veritabanındaki bütün örnek veriyi düz JSON'a çevirir. */
+/** Veritabanındaki bütün örnek veriyi sıkıştırılmış JSON'a çevirir. */
 export async function exportSnapshot(db: Db, takenAt: Date): Promise<Snapshot> {
+  const ids: string[] = [];
+  const index = new Map<string, number>();
   const tables: Snapshot["tables"] = {};
   for (const table of TABLES) {
-    const rows = (await db.select().from(table)) as Record<string, unknown>[];
-    const dates = dateColumns(table);
-    tables[getTableName(table)] = rows.map((row) => {
-      const out = { ...row };
-      for (const key of dates) if (out[key] instanceof Date) out[key] = (out[key] as Date).toISOString();
-      return out;
-    });
+    const columns = Object.keys(getTableColumns(table));
+    const uuidColumns = new Set<string>();
+    const rows = ((await db.select().from(table)) as Record<string, unknown>[]).map((row) =>
+      columns.map((key) => {
+        const value = row[key];
+        if (value instanceof Date) return value.getTime();
+        if (typeof value === "string" && UUID.test(value)) {
+          uuidColumns.add(key);
+          let i = index.get(value);
+          if (i === undefined) {
+            i = ids.length;
+            ids.push(value);
+            index.set(value, i);
+          }
+          return i;
+        }
+        return value;
+      }),
+    );
+    tables[getTableName(table)] = { columns, uuidColumns: columns.filter((c) => uuidColumns.has(c)), rows };
   }
-  return { takenAt: takenAt.toISOString(), tables };
+  return { takenAt: takenAt.toISOString(), ids, tables };
+}
+
+/** Bir tablonun satırlarını nesneye çevirir: uuid sıra numaraları çözülür, tarihlere `shift` eklenir. */
+function decodeRows(snapshot: Snapshot, table: PgTable, shift: number): Record<string, unknown>[] {
+  const data = snapshot.tables[getTableName(table)];
+  if (!data) return [];
+  const dates = new Set(dateColumns(table));
+  const uuids = new Set(data.uuidColumns);
+  return data.rows.map((values) => {
+    const out: Record<string, unknown> = {};
+    data.columns.forEach((key, i) => {
+      const value = values[i];
+      if (dates.has(key) && typeof value === "number") out[key] = new Date(value + shift);
+      else if (uuids.has(key) && typeof value === "number") out[key] = snapshot.ids[value];
+      else out[key] = value;
+    });
+    return out;
+  });
 }
 
 /**
@@ -88,13 +132,7 @@ export async function loadSnapshot(db: Db, snapshot: Snapshot, now: Date): Promi
   const shift = Math.floor((now.getTime() - new Date(snapshot.takenAt).getTime()) / DAY) * DAY;
   await db.transaction(async (tx) => {
     for (const table of TABLES) {
-      const rows = snapshot.tables[getTableName(table)] ?? [];
-      const dates = dateColumns(table);
-      const shifted = rows.map((row) => {
-        const out = { ...row };
-        for (const key of dates) if (typeof out[key] === "string") out[key] = new Date(new Date(out[key] as string).getTime() + shift);
-        return out;
-      });
+      const shifted = decodeRows(snapshot, table, shift);
       for (let i = 0; i < shifted.length; i += CHUNK) {
         await tx.insert(table).values(shifted.slice(i, i + CHUNK) as never);
       }

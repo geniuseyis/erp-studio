@@ -1,11 +1,28 @@
-import { desc } from "drizzle-orm";
+import { statSync } from "node:fs";
+import { asc, desc } from "drizzle-orm";
 import { beforeAll, expect, test } from "vitest";
 import type { Db } from "@/db/client";
-import { auditLog, departments, stockCountLines, stockCounts, stockMovements, users } from "@/db/schema";
+import {
+  auditLog,
+  customers,
+  departments,
+  productMovements,
+  products,
+  salesOrderLines,
+  salesOrders,
+  stockCountLines,
+  stockCounts,
+  stockMovements,
+  users,
+  workOrders,
+  workOrderSteps,
+} from "@/db/schema";
 import { login } from "@/domain/auth";
 import { receiveStock, verifyLedger } from "@/domain/inventory/ledger";
 import { listCounts, listMaterials } from "@/domain/inventory/queries";
+import { verifyProductLedger } from "@/domain/production/productLedger";
 import { DEMO_PASSWORD, seedBase } from "@/seed/base";
+import { seedSales } from "@/seed/sales";
 import { exportSnapshot, loadSnapshot, type Snapshot, SNAPSHOT_NOW } from "@/seed/snapshot";
 import committed from "@/seed/snapshot.generated.json";
 import { ctxFor } from "../../helpers/fixtures";
@@ -20,11 +37,18 @@ let generated: Db;
 const projection = async (db: Db) => ({
   materials: (await listMaterials(db)).map((m) => [m.code, m.name, m.onHandMilli, m.reservedMilli, m.avgCostKurus, m.reorderPointMilli, m.shelf]),
   users: (await db.select().from(users)).map((u) => [u.email, u.name, u.departmentCode, u.level, u.title]).sort(),
+  products: (await db.select().from(products).orderBy(asc(products.code))).map((p) => [p.code, p.name, p.onHandMilli, p.reservedMilli]),
+  customers: (await db.select().from(customers).orderBy(asc(customers.code))).map((c) => [c.code, c.name, c.phone]),
+  orders: (await db.select().from(salesOrders).orderBy(asc(salesOrders.code))).map((o) => [o.code, o.status]),
+  workOrders: (await db.select().from(workOrders).orderBy(asc(workOrders.code))).map((w) => [w.code, w.status, w.materialsReserved, w.qtyMilli]),
   counts: {
     departments: (await db.select().from(departments)).length,
     movements: (await db.select().from(stockMovements)).length,
+    productMovements: (await db.select().from(productMovements)).length,
     stockCounts: (await db.select().from(stockCounts)).length,
     countLines: (await db.select().from(stockCountLines)).length,
+    lines: (await db.select().from(salesOrderLines)).length,
+    steps: (await db.select().from(workOrderSteps)).length,
     audit: (await db.select().from(auditLog)).length,
   },
 });
@@ -34,16 +58,22 @@ beforeAll(async () => {
   await loadSnapshot(loaded, snapshot, now);
   generated = await createTestDb({ fresh: true });
   await seedBase(generated, { now: SNAPSHOT_NOW });
-}, 120_000);
+  await seedSales(generated, { now: SNAPSHOT_NOW });
+}, 300_000);
 
-test("depodaki anlık görüntü güncel: seedBase çıktısıyla aynı veriyi taşır", async () => {
+test("depodaki anlık görüntü güncel: seedBase ve seedSales çıktısıyla aynı veriyi taşır", async () => {
   // Bu test kırılırsa: npm run seed:snapshot
   expect(await projection(loaded)).toEqual(await projection(generated));
   expect(snapshot.takenAt).toBe(SNAPSHOT_NOW.toISOString());
 });
 
-test("yüklenen veri tutarlı: defter toplamları tutar, demo girişi çalışır", async () => {
+test("anlık görüntü dosyası 1 MB'ı aşmaz", () => {
+  expect(statSync("src/seed/snapshot.generated.json").size).toBeLessThan(1_000_000);
+});
+
+test("yüklenen veri tutarlı: iki defter de tutar, demo girişi çalışır", async () => {
   expect(await verifyLedger(loaded)).toEqual([]);
+  expect(await verifyProductLedger(loaded)).toEqual([]);
   expect((await login(loaded, "onur.tekin@baltacioglus.example", DEMO_PASSWORD)).departmentCode).toBe("depo");
   expect(await listCounts(loaded)).toHaveLength(1);
 });
@@ -78,7 +108,13 @@ test("dışa aktarma ve yükleme aynı veriyi geri verir", async () => {
   const copy = await createTestDb({ fresh: true });
   await loadSnapshot(copy, await exportSnapshot(generated, SNAPSHOT_NOW), SNAPSHOT_NOW);
   expect(await projection(copy)).toEqual(await projection(generated));
-  const original = await generated.select().from(stockMovements).orderBy(stockMovements.seq);
-  const copied = await copy.select().from(stockMovements).orderBy(stockMovements.seq);
-  expect(copied).toEqual(original);
+  for (const table of [stockMovements, productMovements] as const) {
+    const original = await generated.select().from(table).orderBy(table.seq);
+    const copied = await copy.select().from(table).orderBy(table.seq);
+    expect(copied).toEqual(original);
+  }
+  const byId = <T extends { id: string }>(rows: T[]) => rows.sort((x, y) => x.id.localeCompare(y.id));
+  expect(byId(await copy.select().from(salesOrders))).toEqual(byId(await generated.select().from(salesOrders)));
+  expect(byId(await copy.select().from(workOrderSteps))).toEqual(byId(await generated.select().from(workOrderSteps)));
+  expect(byId(await copy.select().from(auditLog))).toEqual(byId(await generated.select().from(auditLog)));
 });
