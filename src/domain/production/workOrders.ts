@@ -6,7 +6,7 @@ import { bomLines, materials, products, routings, salesOrderLines, salesOrders, 
 import { logAudit } from "../audit";
 import { type Ctx, inTx, isUuid } from "../context";
 import { DomainError } from "../errors";
-import { consumeStock, reserveStock } from "../inventory/ledger";
+import { consumeStock, releaseStock, reserveStock } from "../inventory/ledger";
 import { assertCan } from "../permissions";
 import { refreshOrderStatus, setLineStatus } from "../sales/status";
 import type { LineStatus } from "../sales/types";
@@ -170,6 +170,32 @@ async function reservedForWorkOrder(db: Db, workOrderId: string): Promise<Materi
     )
     .groupBy(stockMovements.materialId);
   return rows.filter((r) => Number(r.sum) > 0).map((r) => ({ materialId: r.materialId, neededMilli: Number(r.sum) }));
+}
+
+/**
+ * Modül içi (cancelOrder çağırır, yetki denetlemez): satıra bağlı iş emirlerini durumuna göre ele alır.
+ * Planlı iş emri iptal olur ve ayrılmış net malzemesi serbest kalır; üretimdeki ve tamamlanmış dokunulmaz.
+ */
+export async function cancelWorkOrderForLine(ctx: Ctx, lineId: string, reason: string): Promise<void> {
+  await inTx(ctx, async (tx) => {
+    const linked = await tx.db.select().from(workOrders).where(eq(workOrders.salesOrderLineId, lineId)).orderBy(asc(workOrders.code));
+    for (const found of linked) {
+      const wo = await mustFindWorkOrder(tx.db, found.id);
+      if (wo.status !== "planned") continue;
+      if (wo.materialsReserved) {
+        for (const r of await reservedForWorkOrder(tx.db, wo.id)) {
+          await releaseStock(tx, { materialId: r.materialId, qtyMilli: r.neededMilli, ref: { type: "work_order", id: wo.id } });
+        }
+      }
+      await tx.db.update(workOrders).set({ status: "cancelled" }).where(eq(workOrders.id, wo.id));
+      await logAudit(tx, {
+        entity: "work_order",
+        entityId: wo.id,
+        action: "cancel",
+        summary: `${wo.code} iptal edildi: ${reason}${wo.materialsReserved ? "; ayrılan malzemeler serbest" : ""}`,
+      });
+    }
+  });
 }
 
 async function stationName(db: Db, step: WorkOrderStep): Promise<string> {

@@ -6,9 +6,9 @@ import { type Ctx, inTx, isUuid } from "../context";
 import { DomainError } from "../errors";
 import { assertCan } from "../permissions";
 import { istanbulDayStart, istanbulYear } from "../production/calendar";
-import { reserveProduct, shipProduct } from "../production/productLedger";
+import { releaseProduct, reserveProduct, shipProduct } from "../production/productLedger";
 import type { Shortage } from "../production/types";
-import { findShortages, materialNeeds, type MaterialNeed, openWorkOrder } from "../production/workOrders";
+import { cancelWorkOrderForLine, findShortages, materialNeeds, type MaterialNeed, openWorkOrder } from "../production/workOrders";
 import { refreshOrderStatus, setLineStatus } from "./status";
 import { asOrder, asOrderLine, type LineStatus, type SalesOrder, type SalesOrderLine } from "./types";
 
@@ -229,6 +229,44 @@ export async function shipOrder(ctx: Ctx, orderId: string): Promise<SalesOrder> 
     }
     await tx.db.update(salesOrders).set({ status: "shipped", shippedAt: tx.now }).where(eq(salesOrders.id, order.id));
     await logAudit(tx, { entity: "sales_order", entityId: order.id, action: "ship", summary: `${order.code} sevk edildi` });
+    const [row] = await tx.db.select().from(salesOrders).where(eq(salesOrders.id, order.id));
+    if (!row) throw new Error("sipariş okunamadı");
+    return asOrder(row);
+  });
+}
+
+/**
+ * Siparişi iptal eder. Taslağı satış uzmanı, onaylı siparişi müdür iptal eder. Her satırın ayrılmış mamulü
+ * serbest kalır; planlı iş emirleri iptal olur ve malzemeleri serbest kalır, üretimdeki iş emri sürer.
+ */
+export async function cancelOrder(ctx: Ctx, i: { orderId: string; reason: string }): Promise<SalesOrder> {
+  assertCan(ctx.user, "sales", "write");
+  const reason = i.reason?.trim() ?? "";
+  if (reason === "") throw invalid("İptal gerekçesi boş olamaz");
+
+  return inTx(ctx, async (tx) => {
+    const [order] = isUuid(i.orderId) ? await tx.db.select().from(salesOrders).where(eq(salesOrders.id, i.orderId)).for("update") : [];
+    if (!order) throw new DomainError("NOT_FOUND", "Sipariş bulunamadı");
+    if (order.status !== "draft") assertCan(tx.user, "sales", "approve");
+    if (order.status === "shipped" || order.status === "cancelled") {
+      throw new DomainError("INVALID_STATE", order.status === "shipped" ? "Sevk edilmiş sipariş iptal edilemez" : "Sipariş zaten iptal edilmiş");
+    }
+
+    const lines = await tx.db
+      .select()
+      .from(salesOrderLines)
+      .where(eq(salesOrderLines.orderId, order.id))
+      .orderBy(asc(salesOrderLines.createdAt), asc(salesOrderLines.id));
+    for (const line of lines) {
+      if (line.reservedMilli > 0) {
+        await releaseProduct(tx, { productId: line.productId, qtyMilli: line.reservedMilli, ref: { type: "sales_order_line", id: line.id } });
+      }
+      await setLineStatus(tx, line.id, "cancelled", 0);
+      await cancelWorkOrderForLine(tx, line.id, `${order.code} iptal edildi`);
+    }
+
+    await tx.db.update(salesOrders).set({ status: "cancelled", cancelledAt: tx.now }).where(eq(salesOrders.id, order.id));
+    await logAudit(tx, { entity: "sales_order", entityId: order.id, action: "cancel", summary: `${order.code} iptal edildi: ${reason}` });
     const [row] = await tx.db.select().from(salesOrders).where(eq(salesOrders.id, order.id));
     if (!row) throw new Error("sipariş okunamadı");
     return asOrder(row);
