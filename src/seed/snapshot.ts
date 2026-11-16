@@ -2,7 +2,8 @@
 // seedBase ve seedSales gerçek servisleri çağırarak veriyi üretir (on binlerce sorgu); bu Node'da yaklaşık 25 saniye,
 // tarayıcıda dakikalar sürer.
 // Bu yüzden veri derleme sırasında bir kez üretilip JSON'a yazılır (npm run seed:snapshot) ve tarayıcıda
-// tablo başına birkaç toplu INSERT ile yüklenir. Tarihler yükleme anına kaydırılır; vitrin hiç eskimiş görünmez.
+// tablo başına birkaç toplu INSERT ile yüklenir. Tarihler yükleme anına iş günü olarak kaydırılır; vitrin hiç eskimiş
+// görünmez ve hiçbir kayıt hafta sonuna düşmez.
 import { getTableColumns, getTableName, sql } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import type { Db } from "@/db/client";
@@ -26,8 +27,9 @@ import {
   workOrderSteps,
   workOrders,
 } from "@/db/schema";
+import { istanbulDayStart, isWorkday, prevWorkday, shiftWorkdays, workdaysBetween } from "@/domain/production/calendar";
 
-/** Anlık görüntünün üretildiği "şimdi". Yüklemede bütün tarihler (yükleme anı − bu an) kadar, tam gün olarak kaydırılır. */
+/** Anlık görüntünün üretildiği "şimdi" (pazar). Yüklemede tarihler bu andan yükleme anına iş günü olarak kaydırılır (makeDateShift). */
 export const SNAPSHOT_NOW = new Date("2026-11-15T09:00:00+03:00");
 
 /** Yabancı anahtar sırasıyla: önce başvurulan tablolar. */
@@ -111,8 +113,41 @@ export async function exportSnapshot(db: Db, takenAt: Date): Promise<Snapshot> {
   return { takenAt: takenAt.toISOString(), ids, tables };
 }
 
-/** Bir tablonun satırlarını nesneye çevirir: uuid sıra numaraları çözülür, tarihlere `shift` eklenir. */
-function decodeRows(snapshot: Snapshot, table: PgTable, shift: number): Record<string, unknown>[] {
+/**
+ * Anlık görüntü tarihini yükleme anına taşıyan işlev (epoch ms → epoch ms). `n`, anlık görüntünün son iş günü
+ * (`prevWorkday(takenAt)`) ile yüklemenin son iş günü (`prevWorkday(now)`) arasındaki iş günü sayısıdır (geri
+ * saatte negatif). Her değerin İstanbul günü n iş günü kaydırılır, günün saati korunur:
+ * - Hafta sonu günü önce sonraki iş gününe geçer (Plan 1 stok verisinde hafta sonu hareketleri var).
+ * - Anlık görüntü anında geçmiş olan bir değer, anlık görüntünün son iş gününü aşamaz; o günden sonraki hafta
+ *   sonu (ör. cumartesi sayımı) o güne çekilir. Böylece geçmiş kayıtlar yüklemede dünden ileri düşmez.
+ * Böylece hiçbir kayıt hafta sonuna düşmez, iş günü aralıkları (ardışık plan günleri, terminler) korunur, gelecekteki
+ * plan ve termin günleri gelecekte kalır.
+ */
+export function makeDateShift(takenAt: Date, now: Date): (ms: number) => number {
+  const anchor = prevWorkday(takenAt);
+  const n = workdaysBetween(anchor, prevWorkday(now));
+  const takenMs = takenAt.getTime();
+  // Aynı gün binlerce kez geçer; gün başına bir kez hesaplanır.
+  const pastDays = new Map<number, number>();
+  const futureDays = new Map<number, number>();
+  return (ms) => {
+    const dayStart = istanbulDayStart(new Date(ms)).getTime();
+    const past = ms <= takenMs;
+    const days = past ? pastDays : futureDays;
+    let target = days.get(dayStart);
+    if (target === undefined) {
+      let day = new Date(dayStart);
+      if (!isWorkday(day)) day = shiftWorkdays(day, 0);
+      if (past && day.getTime() > anchor.getTime()) day = anchor;
+      target = shiftWorkdays(day, n).getTime();
+      days.set(dayStart, target);
+    }
+    return target + (ms - dayStart);
+  };
+}
+
+/** Bir tablonun satırlarını nesneye çevirir: uuid sıra numaraları çözülür, tarihler `shift` ile taşınır. */
+function decodeRows(snapshot: Snapshot, table: PgTable, shift: (ms: number) => number): Record<string, unknown>[] {
   const data = snapshot.tables[getTableName(table)];
   if (!data) return [];
   const dates = new Set(dateColumns(table));
@@ -121,7 +156,7 @@ function decodeRows(snapshot: Snapshot, table: PgTable, shift: number): Record<s
     const out: Record<string, unknown> = {};
     data.columns.forEach((key, i) => {
       const value = values[i];
-      if (dates.has(key) && typeof value === "number") out[key] = new Date(value + shift);
+      if (dates.has(key) && typeof value === "number") out[key] = new Date(shift(value));
       else if (uuids.has(key) && typeof value === "number") out[key] = snapshot.ids[value];
       else out[key] = value;
     });
@@ -130,12 +165,12 @@ function decodeRows(snapshot: Snapshot, table: PgTable, shift: number): Record<s
 }
 
 /**
- * Anlık görüntüyü boş bir veritabanına yükler. Tarihler tam gün olarak kaydırılır: saatler (mesai içi) korunur
- * ve hiçbir kayıt `now`'dan ileri düşmez. Tek transaction içinde çalışır.
+ * Anlık görüntüyü boş bir veritabanına yükler. Tarihler iş günü olarak kaydırılır (makeDateShift): saatler (mesai
+ * içi) korunur, hiçbir kayıt hafta sonuna ve (plan ve termin günleri dışında) `now`'dan ileri düşmez.
+ * Tek transaction içinde çalışır.
  */
 export async function loadSnapshot(db: Db, snapshot: Snapshot, now: Date): Promise<void> {
-  const DAY = 86_400_000;
-  const shift = Math.floor((now.getTime() - new Date(snapshot.takenAt).getTime()) / DAY) * DAY;
+  const shift = makeDateShift(new Date(snapshot.takenAt), now);
   await db.transaction(async (tx) => {
     for (const table of TABLES) {
       const shifted = decodeRows(snapshot, table, shift);

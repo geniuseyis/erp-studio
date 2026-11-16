@@ -23,7 +23,7 @@ import { listCounts, listMaterials } from "@/domain/inventory/queries";
 import { verifyProductLedger } from "@/domain/production/productLedger";
 import { DEMO_PASSWORD, seedBase } from "@/seed/base";
 import { seedSales } from "@/seed/sales";
-import { exportSnapshot, loadSnapshot, type Snapshot, SNAPSHOT_NOW } from "@/seed/snapshot";
+import { exportSnapshot, loadSnapshot, makeDateShift, type Snapshot, SNAPSHOT_NOW } from "@/seed/snapshot";
 import committed from "@/seed/snapshot.generated.json";
 import { ctxFor } from "../../helpers/fixtures";
 import { createTestDb } from "../../helpers/testDb";
@@ -78,7 +78,7 @@ test("yüklenen veri tutarlı: iki defter de tutar, demo girişi çalışır", a
   expect(await listCounts(loaded)).toHaveLength(1);
 });
 
-test("tarihler yükleme gününe tam gün kaydırılır: saatler korunur, hiçbiri gelecekte değil", async () => {
+test("tarihler yükleme gününe iş günü olarak kaydırılır: saatler korunur, hiçbiri gelecekte değil", async () => {
   const istanbulHour = (d: Date) => (d.getUTCHours() + 3) % 24;
   const movements = await loaded.select().from(stockMovements);
   const newest = Math.max(...movements.map((m) => m.createdAt.getTime()));
@@ -104,17 +104,24 @@ test("yüklemeden sonra yeni hareketin sıra numarası en büyüğün üstünde 
   expect(await verifyLedger(loaded)).toEqual([]);
 });
 
-test("dışa aktarma ve yükleme aynı veriyi geri verir", async () => {
+test("dışa aktarma ve yükleme aynı veriyi geri verir; tarihler yalnızca makeDateShift kadar değişir", async () => {
   const copy = await createTestDb({ fresh: true });
   await loadSnapshot(copy, await exportSnapshot(generated, SNAPSHOT_NOW), SNAPSHOT_NOW);
   expect(await projection(copy)).toEqual(await projection(generated));
+  // Aynı anda yüklense de hafta sonu kayıtları iş gününe taşınır; beklenen satırlar aynı işlevden geçirilir.
+  const shift = makeDateShift(SNAPSHOT_NOW, SNAPSHOT_NOW);
+  const shifted = <T extends object>(rows: T[]): T[] =>
+    rows.map((row) => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, v instanceof Date ? new Date(shift(v.getTime())) : v])) as T);
   for (const table of [stockMovements, productMovements] as const) {
     const original = await generated.select().from(table).orderBy(table.seq);
     const copied = await copy.select().from(table).orderBy(table.seq);
-    expect(copied).toEqual(original);
+    expect(copied).toEqual(shifted(original));
   }
   const byId = <T extends { id: string }>(rows: T[]) => rows.sort((x, y) => x.id.localeCompare(y.id));
-  expect(byId(await copy.select().from(salesOrders))).toEqual(byId(await generated.select().from(salesOrders)));
-  expect(byId(await copy.select().from(workOrderSteps))).toEqual(byId(await generated.select().from(workOrderSteps)));
-  expect(byId(await copy.select().from(auditLog))).toEqual(byId(await generated.select().from(auditLog)));
+  expect(byId(await copy.select().from(salesOrders))).toEqual(byId(shifted(await generated.select().from(salesOrders))));
+  expect(byId(await copy.select().from(workOrderSteps))).toEqual(byId(shifted(await generated.select().from(workOrderSteps))));
+  expect(byId(await copy.select().from(auditLog))).toEqual(byId(shifted(await generated.select().from(auditLog))));
+  // Hafta içi kayıtlar aynı anda yüklenince hiç değişmez.
+  const weekday = (await generated.select().from(salesOrders)).map((o) => o.createdAt.getTime());
+  expect(weekday.map(shift)).toEqual(weekday);
 });

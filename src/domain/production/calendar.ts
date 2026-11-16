@@ -40,3 +40,38 @@ export function addWorkdays(day: Date, n: number): Date {
   }
   return current;
 }
+
+// İş günü sıra numarası: hafta başına beş gün. Gün numarası = 1970-01-01'den bu yana İstanbul günü (perşembe).
+const mod = (a: number, b: number) => ((a % b) + b) % b;
+const dayNumber = (d: Date) => Math.round((istanbulDayStart(d).getTime() + ISTANBUL_OFFSET_MS) / DAY_MS);
+const fromDayNumber = (e: number) => new Date(e * DAY_MS - ISTANBUL_OFFSET_MS);
+
+/** Gün numarasının iş günü sırası; hafta sonu sonraki pazartesinin sırasını alır. */
+function workdayIndex(d: Date): number {
+  const e = dayNumber(d);
+  const weekday = mod(e + 3, 7); // 0 pazartesi … 6 pazar
+  const week = Math.floor((e + 3) / 7);
+  return weekday < 5 ? week * 5 + weekday : (week + 1) * 5;
+}
+
+/**
+ * Günden `n` iş günü ileri (n < 0 ise geri). Hafta sonundan başlanırsa önce sonraki iş gününe geçilir;
+ * n ≥ 0 için addWorkdays ile aynıdır. Saat atılır, gün başlangıcı döner.
+ */
+export function shiftWorkdays(day: Date, n: number): Date {
+  if (!Number.isInteger(n)) throw new RangeError("n tam sayı olmalı");
+  const i = workdayIndex(day) + n;
+  return fromDayNumber(Math.floor(i / 5) * 7 + mod(i, 5) - 3);
+}
+
+/** `from`dan `to`ya kaç iş günü (işaretli). Hafta sonu günleri sonraki iş günü sayılır: shiftWorkdays(from, sonuç) = to. */
+export function workdaysBetween(from: Date, to: Date): number {
+  return workdayIndex(to) - workdayIndex(from);
+}
+
+/** Verilen anın İstanbul gününden kesinlikle önceki son iş günü (gün başlangıcı). */
+export function prevWorkday(d: Date): Date {
+  let e = dayNumber(d) - 1;
+  while (mod(e + 3, 7) >= 5) e -= 1;
+  return fromDayNumber(e);
+}

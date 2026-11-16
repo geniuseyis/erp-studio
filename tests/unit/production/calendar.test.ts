@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { addWorkdays, istanbulDayStart, istanbulYear, isWorkday } from "@/domain/production/calendar";
+import { addWorkdays, istanbulDayStart, istanbulYear, isWorkday, prevWorkday, shiftWorkdays, workdaysBetween } from "@/domain/production/calendar";
 
 const day = (ymd: string) => new Date(`${ymd}T00:00:00+03:00`);
 
@@ -40,4 +40,47 @@ test.each([
   ["2026-12-31", 1, "2027-01-01"], // perşembe + 1 → cuma, yıl dönümü
 ])("addWorkdays(%s, %s) = %s", (from, n, expected) => {
   expect(addWorkdays(day(from), n)).toEqual(day(expected));
+});
+
+test.each([
+  ["2026-11-13", 0, "2026-11-13"], // cuma + 0
+  ["2026-11-14", 0, "2026-11-16"], // cumartesi önce pazartesiye geçer
+  ["2026-11-13", 1, "2026-11-16"], // cuma + 1 → pazartesi
+  ["2026-11-16", -1, "2026-11-13"], // pazartesi − 1 → cuma
+  ["2026-11-14", -1, "2026-11-13"], // cumartesi → pazartesi − 1 → cuma
+  ["2026-11-18", -3, "2026-11-13"], // çarşamba − 3 → geçen cuma
+  ["2026-11-18", -12, "2026-11-02"], // iki hafta geri
+  ["2027-01-01", -1, "2026-12-31"], // yıl dönümü geri
+  ["2026-11-16", 260, "2027-11-15"], // bir yıl ileri: 52 hafta
+])("shiftWorkdays(%s, %s) = %s", (from, n, expected) => {
+  expect(shiftWorkdays(day(from), n)).toEqual(day(expected));
+});
+
+test("shiftWorkdays sıfır ve pozitif n için addWorkdays ile aynıdır; gün içindeki saat atılır", () => {
+  for (let d = 0; d < 21; d += 1) {
+    const from = new Date(day("2026-11-09").getTime() + d * 86_400_000 + 13 * 3_600_000);
+    for (const n of [0, 1, 4, 7]) expect(shiftWorkdays(from, n)).toEqual(addWorkdays(from, n));
+  }
+});
+
+test.each([
+  ["2026-11-13", "2026-11-13", 0],
+  ["2026-11-13", "2026-11-16", 1], // cuma → pazartesi
+  ["2026-11-16", "2026-11-13", -1],
+  ["2026-11-02", "2026-11-18", 12],
+  ["2026-11-18", "2026-11-02", -12],
+  ["2026-12-31", "2027-01-04", 2],
+])("workdaysBetween(%s, %s) = %s", (from, to, expected) => {
+  expect(workdaysBetween(day(from), day(to))).toBe(expected);
+  expect(shiftWorkdays(day(from), expected)).toEqual(day(to));
+});
+
+test.each([
+  ["2026-11-15T09:00:00+03:00", "2026-11-13"], // pazar → cuma
+  ["2026-11-14T23:00:00+03:00", "2026-11-13"], // cumartesi → cuma
+  ["2026-11-16T10:00:00+03:00", "2026-11-13"], // pazartesi → cuma (aynı gün sayılmaz)
+  ["2026-11-18T00:00:00+03:00", "2026-11-17"], // çarşamba → salı
+  ["2026-11-16T21:30:00Z", "2026-11-16"], // UTC'de pazartesi, İstanbul'da salı 00:30 → pazartesi
+])("prevWorkday(%s) = %s", (at, expected) => {
+  expect(prevWorkday(new Date(at))).toEqual(day(expected));
 });
