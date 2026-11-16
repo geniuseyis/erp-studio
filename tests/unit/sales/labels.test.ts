@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { CUSTOMER_KINDS, LINE_STATUSES, ORDER_STATUSES } from "@/db/schema";
+import { DomainError } from "@/domain/errors";
 import {
   CUSTOMER_KIND_LABEL,
   defaultDueInput,
@@ -7,6 +8,8 @@ import {
   formatDue,
   formatShortage,
   LINE_STATUS_LABEL,
+  lineErrorField,
+  orderErrorField,
   LINE_STATUS_TONE,
   ORDER_STATUS_LABEL,
   ORDER_STATUS_TONE,
@@ -81,6 +84,27 @@ test("termin: varsayılan İstanbul'a göre bugün + 14 gün; giriş İstanbul g
   expect(dueFromInput("")).toBeNull();
   expect(dueFromInput("2026-02-30")).toBeNull();
   expect(formatDue(new Date("2026-11-29T21:00:00.000Z"))).toBe("30.11.2026");
+});
+
+test("satır formu hatası doğru alana gider; adetle ilgisi olmayan hata Adet'in altına düşmez", () => {
+  const v = (message: string) => new DomainError("VALIDATION", message);
+  expect(lineErrorField(v("Adet 1 ile 9999 arasında tam sayı olmalı"))).toBe("qty");
+  expect(lineErrorField(v("İskonto 0 ile 500 binde arasında olmalı"))).toBe("discount");
+  expect(lineErrorField(v("Pasif ürün siparişe eklenemez"))).toBe("product");
+  expect(lineErrorField(new DomainError("NOT_FOUND", "Ürün bulunamadı"))).toBe("product");
+  // Başka her şey bildirime gider.
+  expect(lineErrorField(v("Yalnızca taslak siparişin satırları değiştirilebilir"))).toBeNull();
+  expect(lineErrorField(new DomainError("INVALID_STATE", "Yalnızca taslak siparişin satırları değiştirilebilir"))).toBeNull();
+  expect(lineErrorField(new DomainError("FORBIDDEN", "x: sales:write yetkisi yok"))).toBeNull();
+  expect(lineErrorField(new Error("Adet"))).toBeNull();
+});
+
+test("yeni sipariş hatası: yalnızca termin iletileri Termin alanına gider", () => {
+  expect(orderErrorField(new DomainError("VALIDATION", "Termin geçmiş bir gün olamaz"))).toBe("due");
+  expect(orderErrorField(new DomainError("VALIDATION", "Termin geçersiz"))).toBe("due");
+  expect(orderErrorField(new DomainError("NOT_FOUND", "Müşteri bulunamadı"))).toBeNull();
+  expect(orderErrorField(new DomainError("VALIDATION", "Başka bir kural"))).toBeNull();
+  expect(orderErrorField(new Error("Termin"))).toBeNull();
 });
 
 test("eksik malzeme satırı birimleriyle yazılır", () => {

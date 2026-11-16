@@ -78,6 +78,13 @@ test("satış uzmanı sipariş açar, iki satır ekler, toplam KDV ayrı görün
   const general = await product(page, "vat_rate = 20");
 
   const { drawer, id } = await newDraft(page);
+  // Seçili ürün aramayla listeden gizlense de görünür kalır.
+  await drawer.getByRole("searchbox", { name: "Ürün ara" }).fill(furniture.code);
+  await drawer.getByRole("radio", { name: new RegExp(furniture.code) }).check();
+  await drawer.getByRole("searchbox", { name: "Ürün ara" }).fill("zzzyok");
+  await expect(drawer.getByRole("radio")).toHaveCount(0);
+  await expect(drawer.getByText(`Seçili: ${furniture.code}`)).toBeVisible();
+
   await addLine(drawer, furniture.code, "2", "10");
   await expect(drawer.getByRole("listitem").filter({ hasText: furniture.code })).toBeVisible();
   await addLine(drawer, general.code, "1");

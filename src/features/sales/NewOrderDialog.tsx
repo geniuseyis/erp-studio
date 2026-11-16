@@ -1,7 +1,6 @@
 "use client";
 
 import { type FormEvent, useRef, useState } from "react";
-import { isDomainError } from "@/domain/errors";
 import { matchesSearch } from "@/domain/text";
 import { Button } from "@/ui/Button";
 import { Dialog } from "@/ui/Dialog";
@@ -10,7 +9,7 @@ import { PickList } from "@/ui/PickList";
 import { useToast } from "@/ui/Toast";
 import { errorMessage } from "@/shell/useAction";
 import { useCreateOrder, useCustomers } from "./hooks";
-import { CUSTOMER_KIND_LABEL, defaultDueInput, dueFromInput } from "./labels";
+import { CUSTOMER_KIND_LABEL, defaultDueInput, dueFromInput, orderErrorField } from "./labels";
 
 type Props = {
   onClose: () => void;
@@ -54,7 +53,7 @@ export function NewOrderDialog({ onClose, onCreated }: Props) {
       toast.success(`${order.code} taslağı açıldı`);
       onCreated(order.id);
     } catch (error) {
-      if (isDomainError(error) && error.code === "VALIDATION") setErrors({ due: errorMessage(error) });
+      if (orderErrorField(error) === "due") setErrors({ due: errorMessage(error) });
       else toast.error(errorMessage(error));
       submitting.current = false;
       setBusy(false);

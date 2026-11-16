@@ -1,7 +1,6 @@
 "use client";
 
 import { type FormEvent, useRef, useState } from "react";
-import { isDomainError } from "@/domain/errors";
 import { matchesSearch } from "@/domain/text";
 import { formatMoney } from "@/domain/units";
 import { Button } from "@/ui/Button";
@@ -11,7 +10,7 @@ import { PickList } from "@/ui/PickList";
 import { useToast } from "@/ui/Toast";
 import { errorMessage } from "@/shell/useAction";
 import { useAddLine, useSellableProducts } from "./hooks";
-import { FINISH_LABEL, parseDiscount, parseOrderQty } from "./labels";
+import { FINISH_LABEL, lineErrorField, parseDiscount, parseOrderQty } from "./labels";
 
 type Errors = { product?: string; qty?: string; discount?: string };
 
@@ -38,6 +37,8 @@ export function LineForm({ orderId }: { orderId: string }) {
       trailing: formatMoney(p.priceKurus),
     }));
 
+  const selected = products.data?.find((p) => p.id === productId);
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (submitting.current) return;
@@ -54,14 +55,14 @@ export function LineForm({ orderId }: { orderId: string }) {
     setBusy(true);
     try {
       await add.mutateAsync({ orderId, productId, qtyMilli: q.qtyMilli, discountPermille: d.permille });
-      const product = products.data?.find((p) => p.id === productId);
-      toast.success(`${product?.code ?? "Satır"} eklendi`);
+      toast.success(`${selected?.code ?? "Satır"} eklendi`);
       setProductId(null);
       setQuery("");
       setQty("1");
       setDiscount("");
     } catch (error) {
-      if (isDomainError(error) && error.code === "VALIDATION") setErrors({ qty: errorMessage(error).replace(/\.$/, "") });
+      const field = lineErrorField(error);
+      if (field) setErrors({ [field]: errorMessage(error).replace(/\.$/, "") });
       else toast.error(errorMessage(error));
     } finally {
       submitting.current = false;
@@ -87,6 +88,15 @@ export function LineForm({ orderId }: { orderId: string }) {
         empty="Aramayla eşleşen etkin ürün yok."
         loading={products.isPending}
       />
+      {selected ? (
+        // Arama seçili ürünü listeden gizlese de neyin ekleneceği görünür kalır.
+        <p className="-mt-1 text-sm text-fg-muted">
+          Seçili:{" "}
+          <span className="font-semibold text-fg">
+            {selected.code} {selected.name}
+          </span>
+        </p>
+      ) : null}
       <div className="grid grid-cols-2 gap-3">
         <NumberField label="Adet" suffix="adet" value={qty} onChange={(e) => setQty(e.target.value)} error={errors.qty} inputMode="numeric" />
         <NumberField label="İskonto" suffix="%" value={discount} onChange={(e) => setDiscount(e.target.value)} error={errors.discount} placeholder="0" />

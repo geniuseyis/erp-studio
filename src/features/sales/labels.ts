@@ -1,3 +1,4 @@
+import { type DomainErrorCode, isDomainError } from "@/domain/errors";
 import type { ProductFinish, Shortage } from "@/domain/production/types";
 import type { CustomerKind, LineStatus, OrderStatus } from "@/domain/sales/types";
 import { formatQty, parseDecimal } from "@/domain/units";
@@ -106,6 +107,26 @@ export function formatDue(date: Date): string {
 /** "MLZ-0009 MDF Lam 8 mm Beyaz Arkalık: 14 plaka gerekli, 3 plaka var" */
 export function formatShortage(s: Shortage): string {
   return `${s.code} ${s.name}: ${formatQty(s.neededMilli, s.unit)} gerekli, ${formatQty(s.availableMilli, s.unit)} var`;
+}
+
+/** İş kuralı hatasını, iletisine göre bir form alanına yönlendirir; eşleşmezse null (bildirim olarak gösterilir). */
+function routeError<F extends string>(error: unknown, codes: readonly DomainErrorCode[], routes: readonly [RegExp, F][]): F | null {
+  if (!isDomainError(error) || !codes.includes(error.code)) return null;
+  return routes.find(([pattern]) => pattern.test(error.message))?.[1] ?? null;
+}
+
+/** Satır formu: adet, iskonto ve ürün hataları kendi alanına; gerisi bildirime. */
+export function lineErrorField(error: unknown): "qty" | "discount" | "product" | null {
+  return routeError(error, ["VALIDATION", "NOT_FOUND"], [
+    [/^Adet\b/, "qty"],
+    [/^İskonto\b/, "discount"],
+    [/[Üü]rün/, "product"],
+  ]);
+}
+
+/** Yeni sipariş: yalnızca termin iletileri Termin alanına; gerisi bildirime. */
+export function orderErrorField(error: unknown): "due" | null {
+  return routeError(error, ["VALIDATION"], [[/^Termin\b/, "due"]]);
 }
 
 /** İskonto binde → "%12,5". */
