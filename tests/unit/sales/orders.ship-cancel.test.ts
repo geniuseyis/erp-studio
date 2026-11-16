@@ -40,6 +40,15 @@ async function order(id: string) {
 async function linesOf(id: string) {
   return db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, id)).orderBy(asc(salesOrderLines.createdAt));
 }
+/** Açık (sevk edilmemiş, iptal olmayan) satırların ayrılmışı ürünün ayrılmışına eşit olmalı. */
+async function expectReservedInvariant() {
+  for (const p of await db.select().from(products)) {
+    const open = (await db.select().from(salesOrderLines).where(eq(salesOrderLines.productId, p.id))).filter(
+      (l) => l.status !== "shipped" && l.status !== "cancelled",
+    );
+    expect(open.reduce((n, l) => n + l.reservedMilli, 0)).toBe(p.reservedMilli);
+  }
+}
 /** Mamul stokta: onayda satır doğrudan ready olur. */
 async function readyOrder(qtyMilli = 2000) {
   await produceIn(depo, { productId, qtyMilli, ref });
@@ -81,7 +90,8 @@ test("hazır sipariş sevk edilir; mamul eldeki ve ayrılmış düşer", async (
   const shipped = await shipOrder(depo, o.id);
   expect(shipped).toMatchObject({ status: "shipped", shippedAt: depo.now });
   expect(await product()).toMatchObject({ onHandMilli: 0, reservedMilli: 0 });
-  expect((await linesOf(o.id)).map((l) => l.status)).toEqual(["shipped"]);
+  expect(await linesOf(o.id)).toMatchObject([{ status: "shipped", reservedMilli: 0 }]);
+  await expectReservedInvariant();
   const logs = await db.select().from(auditLog).where(eq(auditLog.entityId, o.id));
   expect(logs.filter((r) => r.action === "ship")).toMatchObject([{ summary: `${o.code} sevk edildi` }]);
 });
@@ -190,4 +200,29 @@ test("iptal ve sevkten sonra iki defter tutarlı", async () => {
   await cancelOrder(satisMudur, { orderId: o.id, reason: "Vazgeçildi" });
   expect(await verifyLedger(db)).toEqual([]);
   expect(await verifyProductLedger(db)).toEqual([]);
+  await expectReservedInvariant();
+});
+
+test("kısmen stoktan, kalanı tamamlanmış iş emrinden ayrılmış hazır satır iptal edilir", async () => {
+  await produceIn(depo, { productId, qtyMilli: 1000, ref });
+  const o = await createOrder(satis, { customerId, dueAt: DUE });
+  await addLine(satis, { orderId: o.id, productId, qtyMilli: 3000 });
+  await confirmOrder(satis, o.id);
+  const [wo] = await db.select().from(workOrders);
+  await receiveStock(depo, { materialId, qtyMilli: 10000, unitCostKurus: 100 });
+  await retryMaterials(planlama, wo!.id);
+  for (let i = 0; i < 2; i += 1) {
+    await startNextStep(atolye, wo!.id);
+    await finishCurrentStep(atolye, wo!.id);
+  }
+  expect(await linesOf(o.id)).toMatchObject([{ status: "ready", reservedMilli: 3000 }]);
+  expect(await product()).toMatchObject({ onHandMilli: 3000, reservedMilli: 3000 });
+  await expectReservedInvariant();
+
+  await cancelOrder(satisMudur, { orderId: o.id, reason: "Vazgeçildi" });
+  expect(await product()).toMatchObject({ onHandMilli: 3000, reservedMilli: 0 });
+  expect(await linesOf(o.id)).toMatchObject([{ status: "cancelled", reservedMilli: 0 }]);
+  expect(await verifyLedger(db)).toEqual([]);
+  expect(await verifyProductLedger(db)).toEqual([]);
+  await expectReservedInvariant();
 });

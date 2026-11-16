@@ -225,7 +225,7 @@ export async function shipOrder(ctx: Ctx, orderId: string): Promise<SalesOrder> 
     }
     for (const line of lines) {
       await shipProduct(tx, { productId: line.productId, qtyMilli: line.qtyMilli, ref: { type: "sales_order_line", id: line.id } });
-      await setLineStatus(tx, line.id, "shipped");
+      await setLineStatus(tx, line.id, "shipped", 0);
     }
     await tx.db.update(salesOrders).set({ status: "shipped", shippedAt: tx.now }).where(eq(salesOrders.id, order.id));
     await logAudit(tx, { entity: "sales_order", entityId: order.id, action: "ship", summary: `${order.code} sevk edildi` });
