@@ -1,33 +1,45 @@
 "use client";
 
-import { useState } from "react";
 import { announceChange, useDb } from "@/shell/db-context";
 import { Page, PageHeader } from "@/shell/AppGuard";
 import { endSession } from "@/shell/session";
+import { useConfirm } from "@/shell/useConfirm";
 import { Button } from "@/ui/Button";
-import { Dialog } from "@/ui/Dialog";
 import { useToast } from "@/ui/Toast";
 
 export function SettingsScreen() {
   const handle = useDb();
   const toast = useToast();
-  const [confirm, setConfirm] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const ask = useConfirm();
 
-  async function reset() {
-    setBusy(true);
+  async function reset(): Promise<boolean> {
     try {
       await handle.reset();
       toast.success("Veri sıfırlandı, örnek veri yeniden yüklendi");
       // Oturum hemen kapanır; yenilemenin bitmesi beklenmez.
       void announceChange();
       endSession();
+      return true;
     } catch (e) {
       console.error(e);
       toast.error("Veri sıfırlanamadı. Sayfayı yenileyip yeniden deneyin.");
-      setBusy(false);
-      setConfirm(false);
+      return false;
     }
+  }
+
+  function onReset() {
+    void ask.confirm({
+      title: "Veri sıfırlansın mı?",
+      body: (
+        <>
+          <p>Yaptığınız bütün değişiklikler silinecek ve başlangıçtaki örnek veri yeniden yüklenecek. Geri alınamaz.</p>
+          <p className="text-fg-muted">Oturum kapanır; sıfırlamadan sonra giriş ekranına dönersiniz.</p>
+        </>
+      ),
+      confirmLabel: "Veriyi sıfırla",
+      tone: "danger",
+      action: reset,
+    });
   }
 
   return (
@@ -40,30 +52,12 @@ export function SettingsScreen() {
           başlangıçtaki örnek veri yeniden yüklenir. {handle.persistent ? null : "Tarayıcı deposu kapalı olduğu için veriler bu sekme kapanınca zaten silinir."}
         </p>
         <div>
-          <Button variant="danger" onClick={() => setConfirm(true)}>
+          <Button variant="danger" onClick={onReset}>
             Veriyi sıfırla
           </Button>
         </div>
       </section>
-
-      <Dialog
-        open={confirm}
-        onOpenChange={(open) => !busy && setConfirm(open)}
-        title="Veri sıfırlansın mı?"
-        description="Yaptığınız bütün değişiklikler silinir. Bu işlem geri alınamaz."
-        footer={
-          <>
-            <Button variant="ghost" disabled={busy} onClick={() => setConfirm(false)}>
-              Vazgeç
-            </Button>
-            <Button variant="danger" loading={busy} onClick={() => void reset()}>
-              Veriyi sıfırla
-            </Button>
-          </>
-        }
-      >
-        <p>Sıfırlamadan sonra giriş ekranına dönersiniz.</p>
-      </Dialog>
+      {ask.element}
     </Page>
   );
 }

@@ -1,4 +1,4 @@
-// Üretim derlemesinde baştan sona elle dolaşımın başsız tekrarı (stok, sayım, sipariş → üretim → sevk, kullanıcı, sıfırlama); konsol hatası olursa başarısız biter.
+// Üretim derlemesinde baştan sona elle dolaşımın başsız tekrarı (stok, sayım, sipariş → üretim → sevk, kullanıcı, sıfırlama), her işlemin onay penceresinden geçerek; konsol hatası olursa başarısız biter.
 // Kullanım: npm run build && npx next start -p 3201  (ayrı pencerede), sonra: node scripts/walkthrough.mjs
 // Sipariş akışı örnek verideki URN-0021 ile çalışır; başka bir ürün için WALK_PRODUCT=URN-0025 verilebilir.
 import { chromium } from "@playwright/test";
@@ -32,6 +32,12 @@ const signOut = async () => {
 };
 // Sipariş akışında satılan ürün: koda göre aranır; örnek veride malzemesi yeten, mamul stoğu olmayan bir beyaz ürün (Ada Orta sehpa).
 const PRODUCT = process.env.WALK_PRODUCT ?? "URN-0021";
+// Değişiklik yapan her işlem önce onay penceresi açar: onay düğmesine basılır, pencerenin kapanması beklenir.
+const approve = async (label) => {
+  const dialog = page.getByRole("alertdialog");
+  await dialog.getByRole("button", { name: label, exact: true }).click();
+  await dialog.waitFor({ state: "detached", timeout: 60_000 });
+};
 const nav = (label) => page.getByRole("navigation", { name: "Ana menü" }).getByRole("link", { name: label }).click();
 
 await step("giriş ekranı", async () => {
@@ -50,6 +56,7 @@ await step("malzeme açılır, stok girişi yapılır", async () => {
   await d.getByLabel("Miktar").fill("5");
   await d.getByLabel("Birim maliyet").fill("1.600,00");
   await d.getByRole("button", { name: "Girişi kaydet" }).click();
+  await approve("Girişi kaydet");
   await page.getByRole("status").filter({ hasText: "giriş kaydedildi" }).waitFor();
   await page.keyboard.press("Escape");
 });
@@ -59,6 +66,7 @@ await step("sayım açılır ve satır girilir", async () => {
   const d = page.getByRole("dialog", { name: "Yeni sayım" });
   await d.getByRole("checkbox").first().check();
   await d.getByRole("button", { name: "Sayımı aç" }).click();
+  await approve("Sayımı aç");
   const fis = page.getByRole("dialog").filter({ hasText: "SYM-" });
   await fis.getByRole("textbox", { name: /^Sayılan/ }).first().fill("1");
   await fis.getByRole("textbox", { name: /^Sayılan/ }).first().press("Enter");
@@ -85,6 +93,7 @@ await step("satış uzmanı sipariş açar ve onaylar", async () => {
   const dialog = page.getByRole("dialog", { name: "Yeni sipariş" });
   await dialog.getByRole("radio").first().check();
   await dialog.getByRole("button", { name: "Taslağı aç" }).click();
+  await approve("Taslağı aç");
   await dialog.waitFor({ state: "hidden" });
   const drawer = page.getByRole("dialog").filter({ hasText: /SIP-/ });
   await drawer.waitFor();
@@ -94,7 +103,9 @@ await step("satış uzmanı sipariş açar ve onaylar", async () => {
   await drawer.getByRole("radio").first().check();
   await drawer.getByLabel("Adet", { exact: true }).fill("1");
   await drawer.getByRole("button", { name: "Satırı ekle" }).click();
+  await approve("Satırı ekle");
   await drawer.getByRole("button", { name: "Onayla" }).click();
+  await approve("Onayla");
   await page.getByRole("status").filter({ hasText: `${orderCode} onaylandı` }).waitFor();
   await drawer.getByText("Üretimde").first().waitFor();
   workOrderCode = (await drawer.getByRole("link", { name: /İş emri IE-/ }).textContent())?.match(/IE-\d{4}-\d{4}/)?.[0] ?? "";
@@ -110,6 +121,7 @@ await step("planlama iş emrini bugüne planlar", async () => {
   const drawer = page.getByRole("dialog", { name: workOrderCode });
   await drawer.getByLabel("Başlangıç günü").fill(new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 10));
   await drawer.getByRole("button", { name: "Planla" }).click();
+  await approve("Planla");
   await page.getByRole("status").filter({ hasText: `${workOrderCode} planlandı` }).waitFor();
 });
 await step("depo hazır olmayan siparişi sevk edemez", async () => {
@@ -140,7 +152,9 @@ await step("atölye her istasyonda başlar ve bitirir", async () => {
     await card.waitFor({ timeout: done === 0 ? 10_000 : 3000 }).catch(() => {});
     if ((await card.count()) === 0) continue;
     await card.getByRole("button", { name: "Başla" }).click();
+    await approve("Başlat");
     await card.getByRole("button", { name: "Bitti" }).click();
+    await approve("Bitir");
     await card.waitFor({ state: "hidden" });
     done++;
   }
@@ -154,6 +168,7 @@ await step("depo hazır siparişi sevk eder", async () => {
   await page.getByRole("table", { name: "Siparişler" }).locator("tbody tr").filter({ hasText: orderCode }).click();
   const drawer = page.getByRole("dialog", { name: orderCode });
   await drawer.getByRole("button", { name: "Sevk et" }).click();
+  await approve("Sevk et");
   await page.getByRole("status").filter({ hasText: `${orderCode} sevk edildi` }).waitFor();
   await drawer.getByText("Sevk edildi").first().waitFor();
   await closeDrawer();
@@ -168,13 +183,14 @@ await step("bilgi işlem kullanıcı ekler", async () => {
   await d.getByLabel("E-posta").fill("dolasim.deneme@baltacioglus.example");
   await d.getByLabel("Parola", { exact: true }).fill("Dolasim-2026");
   await d.getByRole("button", { name: "Kullanıcıyı ekle" }).click();
+  await approve("Kullanıcıyı ekle");
   await page.getByRole("status").filter({ hasText: "Dolaşım Deneme eklendi" }).waitFor();
 });
 await step("veri sıfırlanır", async () => {
   await page.getByRole("button", { name: /Hesap menüsü/ }).click();
   await page.getByRole("menuitem", { name: "Ayarlar" }).click();
   await page.getByRole("button", { name: "Veriyi sıfırla" }).click();
-  await page.getByRole("dialog", { name: "Veri sıfırlansın mı?" }).getByRole("button", { name: "Veriyi sıfırla" }).click();
+  await page.getByRole("alertdialog", { name: "Veri sıfırlansın mı?" }).getByRole("button", { name: "Veriyi sıfırla" }).click();
   await page.waitForURL(/\/giris/, { timeout: 60_000 });
   await page.getByRole("heading", { name: "Giriş yapın", level: 1 }).waitFor({ timeout: 60_000 });
 });

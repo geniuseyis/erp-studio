@@ -1,4 +1,5 @@
 import type { CountStatus, MaterialCategory, MovementType } from "@/domain/inventory/types";
+import { formatQty, type Unit } from "@/domain/units";
 import type { Tone } from "@/ui/StatusChip";
 
 export const MOVEMENT_LABEL: Record<MovementType, string> = {
@@ -44,4 +45,14 @@ export function stockTone(m: { isCritical: boolean; availableMilli: number; reor
 /** Cetvelin sonu: eldeki miktar ya da sipariş noktasının iki katı, hangisi büyükse. */
 export function stockScale(m: { onHandMilli: number; reorderPointMilli: number }): number {
   return Math.max(m.onHandMilli, m.reorderPointMilli * 2, 1);
+}
+
+/** Stok girişi ya da çıkışı onayı: "MLZ-0001 MDF Lam 18 mm: eldeki 120 plaka → 132,5 plaka". */
+export function stockChangeText(m: { code: string; name: string; unit: Unit; onHandMilli: number }, kind: "receipt" | "issue", qtyMilli: number): string {
+  const after = m.onHandMilli + (kind === "receipt" ? qtyMilli : -qtyMilli);
+  return `${m.code} ${m.name}: eldeki ${formatQty(m.onHandMilli, m.unit)} → ${formatQty(after, m.unit)}`;
+}
+
+export function countApproveText(differing: number): string {
+  return differing > 0 ? `${differing} satırda fark stok hareketi olarak yazılacak.` : "Sayılan miktarlar stokla aynı; stok hareketi yazılmaz.";
 }

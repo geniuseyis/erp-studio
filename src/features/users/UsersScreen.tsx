@@ -7,6 +7,7 @@ import { can } from "@/domain/permissions";
 import { matchesSearch } from "@/domain/text";
 import type { UserRow } from "@/domain/users";
 import { errorMessage } from "@/shell/useAction";
+import { useConfirm } from "@/shell/useConfirm";
 import { HeroStat, Page, PageHeader } from "@/shell/AppGuard";
 import { Avatar } from "@/shell/LoginScreen";
 import { useSession } from "@/shell/session";
@@ -14,7 +15,6 @@ import { useUrlState } from "@/shell/useUrlState";
 import { Button, IconButton } from "@/ui/Button";
 import { FilterChip, SearchBox } from "@/ui/Chip";
 import { type Column, DataTable } from "@/ui/DataTable";
-import { Dialog } from "@/ui/Dialog";
 import { EmptyState } from "@/ui/EmptyState";
 import { EditIcon, LockIcon, PlusIcon, UnlockIcon, UsersIcon } from "@/ui/icons";
 import { CountUp } from "@/ui/motion";
@@ -23,7 +23,7 @@ import { useToast } from "@/ui/Toast";
 import { useSetUserActive, useUsers } from "./hooks";
 import { ResetPasswordDialog, UserForm } from "./UserForm";
 
-type Pending = { kind: "edit" | "reset" | "deactivate"; user: UserRow } | { kind: "create" } | null;
+type Pending = { kind: "edit" | "reset"; user: UserRow } | { kind: "create" } | null;
 
 const ITEM = "flex cursor-default items-center gap-2.5 rounded-xl px-2.5 py-2 outline-none data-[highlighted]:bg-surface-2";
 const DEPARTMENTS = Object.keys(DEPARTMENT_NAMES) as DepartmentCode[];
@@ -37,6 +37,7 @@ export function UsersScreen() {
   const toast = useToast();
   const users = useUsers();
   const setActive = useSetUserActive();
+  const ask = useConfirm();
   const [params, setParams] = useUrlState();
   const [pending, setPending] = useState<Pending>(null);
 
@@ -46,14 +47,26 @@ export function UsersScreen() {
   const all = users.data ?? [];
   const rows = all.filter((u) => (!department || u.departmentCode === department) && matchesSearch([u.name, u.email, u.title], search));
 
-  async function activate(u: UserRow, active: boolean) {
-    try {
-      await setActive.mutateAsync({ id: u.id, active });
-      toast.success(active ? `${u.name} etkinleştirildi` : `${u.name} pasife alındı`);
-    } catch (error) {
-      toast.error(errorMessage(error));
-    }
-    setPending(null);
+  /** Pasife alma kırmızı, etkinleştirme birincil onayla. */
+  function activate(u: UserRow, active: boolean) {
+    void ask.confirm({
+      title: active ? `${u.name} etkinleştirilsin mi?` : `${u.name} pasife alınsın mı?`,
+      body: active
+        ? `${u.name} etkinleştirilecek (${u.title}, ${u.departmentName}); e-posta ve parolasıyla yeniden giriş yapabilir.`
+        : `${u.name} pasife alınacak (${u.title}, ${u.departmentName}): bir daha giriş yapamaz, açık oturumu bir sonraki sayfa geçişinde kapanır. Kayıtları silinmez, istediğiniz zaman etkinleştirebilirsiniz.`,
+      confirmLabel: active ? "Etkinleştir" : "Pasife al",
+      tone: active ? "primary" : "danger",
+      action: async () => {
+        try {
+          await setActive.mutateAsync({ id: u.id, active });
+          toast.success(active ? `${u.name} etkinleştirildi` : `${u.name} pasife alındı`);
+          return true;
+        } catch (error) {
+          toast.error(errorMessage(error));
+          return false;
+        }
+      },
+    });
   }
 
   const columns = useMemo<Column<UserRow>[]>(() => {
@@ -118,12 +131,12 @@ export function UsersScreen() {
                 </DropdownMenu.Item>
                 {u.active ? (
                   u.id === me?.id ? null : (
-                    <DropdownMenu.Item className={`${ITEM} text-danger`} onSelect={() => setPending({ kind: "deactivate", user: u })}>
+                    <DropdownMenu.Item className={`${ITEM} text-danger`} onSelect={() => activate(u, false)}>
                       <LockIcon /> Pasife al
                     </DropdownMenu.Item>
                   )
                 ) : (
-                  <DropdownMenu.Item className={ITEM} onSelect={() => void activate(u, true)}>
+                  <DropdownMenu.Item className={ITEM} onSelect={() => activate(u, true)}>
                     <UnlockIcon /> Etkinleştir
                   </DropdownMenu.Item>
                 )}
@@ -201,28 +214,7 @@ export function UsersScreen() {
       {pending?.kind === "create" ? <UserForm onClose={() => setPending(null)} /> : null}
       {pending?.kind === "edit" ? <UserForm user={pending.user} onClose={() => setPending(null)} /> : null}
       {pending?.kind === "reset" ? <ResetPasswordDialog user={pending.user} onClose={() => setPending(null)} /> : null}
-      {pending?.kind === "deactivate" ? (
-        <Dialog
-          open
-          onOpenChange={(open) => !open && !setActive.isPending && setPending(null)}
-          title={`${pending.user.name} pasife alınsın mı?`}
-          description="Kişi bir daha giriş yapamaz; açık oturumu bir sonraki sayfa geçişinde kapanır. Kayıtları silinmez, istediğiniz zaman etkinleştirebilirsiniz."
-          footer={
-            <>
-              <Button variant="ghost" disabled={setActive.isPending} onClick={() => setPending(null)}>
-                Vazgeç
-              </Button>
-              <Button variant="danger" loading={setActive.isPending} onClick={() => void activate(pending.user, false)}>
-                Pasife al
-              </Button>
-            </>
-          }
-        >
-          <p>
-            {pending.user.title}, {pending.user.departmentName}
-          </p>
-        </Dialog>
-      ) : null}
+      {ask.element}
     </Page>
   );
 }

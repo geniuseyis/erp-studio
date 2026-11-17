@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { loginAs, signOut, sql } from "./helpers";
+import { approve, confirmDialog, loginAs, signOut, sql } from "./helpers";
 
 const FIRST = "MLZ-0001";
 
@@ -34,6 +34,8 @@ test("depo uzmanı stok girişi yapar; stok artar ve hareket yazılır", async (
   await dialog.getByLabel("Birim maliyet").fill("1.600,00");
   await dialog.getByLabel("Not").fill("İrsaliye 4471");
   await dialog.getByRole("button", { name: "Girişi kaydet" }).click();
+  await expect(confirmDialog(page)).toContainText("Birim maliyet ₺1.600,00");
+  await approve(page, "Girişi kaydet");
 
   await expect(page.getByRole("status").filter({ hasText: "12,5 plaka giriş kaydedildi" })).toBeVisible();
   await expect(dialog).toBeHidden();
@@ -58,7 +60,10 @@ test("kaydet düğmesine çift tıklamak tek hareket yazar", async ({ page }) =>
   await drawer.getByRole("button", { name: "Stok girişi" }).click();
   const dialog = page.getByRole("dialog", { name: "Stok girişi" });
   await dialog.getByLabel("Miktar").fill("3");
-  await dialog.getByRole("button", { name: "Girişi kaydet" }).dblclick();
+  // Onay penceresinde onaya çift tıklamak da tek hareket yazar.
+  await dialog.getByRole("button", { name: "Girişi kaydet" }).click();
+  await confirmDialog(page).getByRole("button", { name: "Girişi kaydet" }).dblclick();
+  await expect(confirmDialog(page)).toBeHidden();
   await expect(dialog).toBeHidden();
   expect(await movementCount(page)).toBe(before + 1);
 });
@@ -81,10 +86,12 @@ test("kullanılabilirden fazla çıkış ve geçersiz miktar engellenir", async 
   await save.click();
   await expect(dialog.getByText(/Kullanılabilir miktardan fazla/)).toBeVisible();
   await expect(dialog).toBeVisible();
+  await expect(confirmDialog(page)).toHaveCount(0);
   expect(await movementCount(page)).toBe(before);
 
   await dialog.getByLabel("Miktar").fill("2");
   await save.click();
+  await approve(page, "Çıkışı kaydet");
   await expect(page.getByRole("status").filter({ hasText: "2 plaka çıkış kaydedildi" })).toBeVisible();
   expect(await movementCount(page)).toBe(before + 1);
 });
@@ -149,6 +156,7 @@ test("uzman yeni malzeme ekler ve düzenler", async ({ page }) => {
   await dialog.getByLabel("Yeniden sipariş noktası").fill("15");
   await dialog.getByLabel("Raf").fill("A-08");
   await dialog.getByRole("button", { name: "Malzemeyi ekle" }).click();
+  await approve(page, "Malzemeyi ekle");
   await expect(page.getByRole("status").filter({ hasText: /MLZ-\d{4} eklendi/ })).toBeVisible();
 
   await page.getByRole("searchbox", { name: "Malzeme ara" }).fill("tik kapla");
@@ -160,8 +168,11 @@ test("uzman yeni malzeme ekler ve düzenler", async ({ page }) => {
   const drawer = page.getByRole("dialog").filter({ hasText: "Tik Kaplamalı" });
   await drawer.getByRole("button", { name: "Düzenle" }).click();
   const edit = page.getByRole("dialog", { name: "Malzemeyi düzenle" });
+  await expect(edit.getByRole("button", { name: "Değişiklikleri kaydet" })).toBeDisabled();
   await edit.getByLabel("Raf").fill("A-09");
   await edit.getByRole("button", { name: "Değişiklikleri kaydet" }).click();
+  await expect(confirmDialog(page).getByRole("listitem")).toHaveText(["Raf: A-08 → A-09"]);
+  await approve(page, "Kaydet");
   await expect(drawer.getByText("A-09", { exact: true })).toBeVisible();
 });
 
@@ -183,6 +194,7 @@ test("sayım: uzman açar ve sayar, müdür onaylar, fark harekete yazılır", a
   await firstItem.getByRole("checkbox").check();
   await expect(create.getByText("2 malzeme seçildi")).toBeVisible();
   await create.getByRole("button", { name: "Sayımı aç" }).click();
+  await approve(page, "Sayımı aç");
 
   const detail = page.getByRole("dialog").filter({ hasText: "SYM-" });
   await expect(detail).toBeVisible();
@@ -206,8 +218,8 @@ test("sayım: uzman açar ve sayar, müdür onaylar, fark harekete yazılır", a
   await page.getByRole("row", { name: new RegExp(code) }).click();
   const review = page.getByRole("dialog").filter({ hasText: code });
   await review.getByRole("button", { name: "Onayla" }).click();
-  const confirm = page.getByRole("dialog", { name: "Sayım onaylansın mı?" });
-  await expect(confirm).toContainText("2 kalemde fark var");
+  const confirm = page.getByRole("alertdialog", { name: "Sayım onaylansın mı?" });
+  await expect(confirm).toContainText("2 satırda fark stok hareketi olarak yazılacak");
   await confirm.getByRole("button", { name: "Onayla" }).click();
   await expect(page.getByRole("status").filter({ hasText: `${code} onaylandı` })).toBeVisible();
   await expect(review.getByText("Onaylandı", { exact: true })).toBeVisible();

@@ -25,6 +25,7 @@ import { CategorySwatch } from "./CategorySwatch";
 import { CountDetail } from "./CountDetail";
 import { useCounts, useCreateCount, useMaterials } from "./hooks";
 import { errorMessage } from "@/shell/useAction";
+import { useConfirm } from "@/shell/useConfirm";
 import { CATEGORY_LABEL, COUNT_STATUS } from "./labels";
 
 const COLUMNS: Column<StockCountSummary>[] = [
@@ -155,6 +156,7 @@ export function CountsScreen() {
 
 function NewCountDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
   const toast = useToast();
+  const ask = useConfirm();
   const create = useCreateCount();
   const submitting = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -174,20 +176,32 @@ function NewCountDialog({ onClose, onCreated }: { onClose: () => void; onCreated
     });
   }
 
-  async function onSubmit(e: FormEvent) {
+  function onSubmit(e: FormEvent) {
     e.preventDefault();
     setSubmitted(true);
     if (submitting.current || selected.size === 0) return;
+    void ask.confirm({
+      title: "Sayım açılsın mı?",
+      body: `${selected.size} malzeme için sayım fişi açılacak; şu anki eldeki miktarlar karşılaştırma için kaydedilir. Stok onaya kadar değişmez.`,
+      confirmLabel: "Sayımı aç",
+      action: save,
+    });
+  }
+
+  async function save(): Promise<boolean> {
+    if (submitting.current) return false;
     submitting.current = true;
     setBusy(true);
     try {
       const count = await create.mutateAsync({ materialIds: [...selected], note });
       toast.success(`${count.code} açıldı`);
       onCreated(count.id);
+      return true;
     } catch (error) {
       toast.error(errorMessage(error));
       submitting.current = false;
       setBusy(false);
+      return false;
     }
   }
 
@@ -257,6 +271,7 @@ function NewCountDialog({ onClose, onCreated }: { onClose: () => void; onCreated
         </ul>
         <Textarea label="Not" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ör. ay sonu sayımı, D rafı" />
       </form>
+      {ask.element}
     </Dialog>
   );
 }

@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { DEMO_PASSWORD, loginAs, openLogin, signOut, sql } from "./helpers";
+import { approve, confirmDialog, DEMO_PASSWORD, loginAs, openLogin, signOut, sql } from "./helpers";
 
 const NEW_PASSWORD = "Atolye-2026";
 
@@ -31,6 +31,8 @@ test("bilgi işlem yeni kullanıcı ekler; yeni kullanıcı kendi parolasıyla g
   await dialog.getByLabel("Düzey").selectOption("uzman");
   await dialog.getByLabel("Unvan").fill("Satış Uzmanı");
   await dialog.getByRole("button", { name: "Kullanıcıyı ekle" }).click();
+  await expect(confirmDialog(page)).toContainText("selin.ates@baltacioglus.example");
+  await approve(page, "Kullanıcıyı ekle");
   await expect(page.getByRole("status").filter({ hasText: "Selin Ateş eklendi" })).toBeVisible();
   await expect(page.getByRole("row", { name: /Selin Ateş/ })).toBeVisible();
 
@@ -44,7 +46,7 @@ test("pasife alınan kullanıcı giremez", async ({ page }) => {
   await openUsers(page);
   await rowMenu(page, "Elif Karaca");
   await page.getByRole("menuitem", { name: "Pasife al" }).click();
-  await page.getByRole("dialog", { name: "Elif Karaca pasife alınsın mı?" }).getByRole("button", { name: "Pasife al" }).click();
+  await page.getByRole("alertdialog", { name: "Elif Karaca pasife alınsın mı?" }).getByRole("button", { name: "Pasife al" }).click();
   await expect(page.getByRole("row", { name: /Elif Karaca/ })).toContainText("Pasif");
 
   await signOut(page);
@@ -73,6 +75,7 @@ test("form doğrular: kısa parola alan hatası, kayıtlı e-posta uyarısı", a
   await dialog.getByLabel("E-posta").fill("tolga.erden@baltacioglus.example");
   await dialog.getByLabel("Parola", { exact: true }).fill("12345678");
   await dialog.getByRole("button", { name: "Kullanıcıyı ekle" }).click();
+  await approve(page, "Kullanıcıyı ekle");
   await expect(dialog.getByText("Bu e-posta zaten kayıtlı")).toBeVisible();
 });
 
@@ -95,6 +98,7 @@ test("parola sıfırlanınca kullanıcı yeni parolayla girer", async ({ page })
   const dialog = page.getByRole("dialog", { name: "Kerem Uysal için yeni parola" });
   await dialog.getByLabel("Yeni parola").fill(NEW_PASSWORD);
   await dialog.getByRole("button", { name: "Parolayı sıfırla" }).click();
+  await approve(page, "Parolayı sıfırla");
   await expect(page.getByRole("status").filter({ hasText: "Kerem Uysal parolası sıfırlandı" })).toBeVisible();
 
   await signOut(page);

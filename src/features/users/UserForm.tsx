@@ -5,8 +5,11 @@ import { DEPARTMENT_NAMES, type DepartmentCode, LEVEL_NAMES, type Level } from "
 import { isDomainError } from "@/domain/errors";
 import { MIN_PASSWORD_LENGTH, type UserRow } from "@/domain/users";
 import { errorMessage } from "@/shell/useAction";
+import { useConfirm } from "@/shell/useConfirm";
 import { useSession } from "@/shell/session";
 import { Button } from "@/ui/Button";
+import { diffFields } from "@/ui/changes";
+import { ChangeList, SummaryList } from "@/ui/ConfirmDialog";
 import { Dialog } from "@/ui/Dialog";
 import { Input, Select } from "@/ui/Field";
 import { useToast } from "@/ui/Toast";
@@ -22,6 +25,7 @@ export function UserForm({ user, onClose }: { user?: UserRow; onClose: () => voi
   // Kişi kendi departmanını ve düzeyini değiştiremez (servis de reddeder); alanlar kilitli gösterilir.
   const ownAccount = editing && user.id === me?.id;
   const toast = useToast();
+  const ask = useConfirm();
   const create = useCreateUser();
   const update = useUpdateUser();
   const submitting = useRef(false);
@@ -35,7 +39,17 @@ export function UserForm({ user, onClose }: { user?: UserRow; onClose: () => voi
   const [title, setTitle] = useState(user?.title ?? "");
   const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({});
 
-  async function onSubmit(e: FormEvent) {
+  const shown = [
+    { label: "Ad soyad", before: user?.name ?? "", after: name },
+    { label: "Departman", before: user ? DEPARTMENT_NAMES[user.departmentCode] : "", after: DEPARTMENT_NAMES[department] },
+    { label: "Düzey", before: user ? LEVEL_NAMES[user.level] : "", after: LEVEL_NAMES[level] },
+    { label: "Unvan", before: user?.title ?? "", after: title },
+  ];
+  // Düzenlemede yalnızca değişen alanlar; değişiklik yoksa kaydet pasif.
+  const changes = editing ? diffFields(shown) : [];
+  const unchanged = editing && changes.length === 0;
+
+  function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (submitting.current) return;
     const next: typeof errors = {};
@@ -43,8 +57,50 @@ export function UserForm({ user, onClose }: { user?: UserRow; onClose: () => voi
     if (!editing && !EMAIL.test(email.trim())) next.email = "Geçerli bir e-posta girin";
     if (!editing && password.length < MIN_PASSWORD_LENGTH) next.password = `Parola en az ${MIN_PASSWORD_LENGTH} karakter olmalı`;
     setErrors(next);
-    if (Object.keys(next).length > 0) return;
+    if (Object.keys(next).length > 0 || unchanged) return;
 
+    void ask.confirm(
+      user
+        ? {
+            title: "Değişiklikler kaydedilsin mi?",
+            body: (
+              <>
+                <p>
+                  {user.name}, {user.email}:
+                </p>
+                <ChangeList changes={changes} />
+                {changes.some((c) => c.label === "Departman" || c.label === "Düzey") ? (
+                  <p className="text-sm text-fg-muted">Yetkileri yeni departman ve düzeye göre değişir.</p>
+                ) : null}
+              </>
+            ),
+            confirmLabel: "Kaydet",
+            action: save,
+          }
+        : {
+            title: "Kullanıcı eklensin mi?",
+            body: (
+              <>
+                <SummaryList
+                  items={[
+                    { label: "Ad soyad", value: name.trim() },
+                    { label: "E-posta", value: email.trim() },
+                    { label: "Departman", value: DEPARTMENT_NAMES[department] },
+                    { label: "Düzey", value: LEVEL_NAMES[level] },
+                    { label: "Unvan", value: title.trim() },
+                  ]}
+                />
+                <p className="text-sm text-fg-muted">Kişi bu e-posta ve girdiğiniz parolayla hemen giriş yapabilir.</p>
+              </>
+            ),
+            confirmLabel: "Kullanıcıyı ekle",
+            action: save,
+          },
+    );
+  }
+
+  async function save(): Promise<boolean> {
+    if (submitting.current) return false;
     submitting.current = true;
     setBusy(true);
     try {
@@ -56,11 +112,13 @@ export function UserForm({ user, onClose }: { user?: UserRow; onClose: () => voi
         toast.success(`${name.trim()} eklendi`);
       }
       onClose();
+      return true;
     } catch (error) {
       if (isDomainError(error) && error.code === "DUPLICATE") setErrors({ email: error.message });
       else toast.error(errorMessage(error));
       submitting.current = false;
       setBusy(false);
+      return false;
     }
   }
 
@@ -76,7 +134,7 @@ export function UserForm({ user, onClose }: { user?: UserRow; onClose: () => voi
           <Button variant="ghost" disabled={busy} onClick={onClose}>
             Vazgeç
           </Button>
-          <Button variant="primary" type="submit" form="user-form" loading={busy}>
+          <Button variant="primary" type="submit" form="user-form" loading={busy} disabled={unchanged} title={unchanged ? "Değişiklik yok" : undefined}>
             {editing ? "Değişiklikleri kaydet" : "Kullanıcıyı ekle"}
           </Button>
         </>
@@ -126,6 +184,7 @@ export function UserForm({ user, onClose }: { user?: UserRow; onClose: () => voi
         </Select>
         <Input label="Unvan" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ör. Satış Uzmanı" wrapperClassName="sm:col-span-2" />
       </form>
+      {ask.element}
     </Dialog>
   );
 }
@@ -136,18 +195,30 @@ export function ResetPasswordDialog({ user, onClose }: { user: UserRow; onClose:
   const reset = useResetPassword();
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const ask = useConfirm();
 
-  async function onSubmit(e: FormEvent) {
+  function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (reset.isPending) return;
     if (password.length < MIN_PASSWORD_LENGTH) return setError(`Parola en az ${MIN_PASSWORD_LENGTH} karakter olmalı`);
-    try {
-      await reset.mutateAsync({ id: user.id, password });
-      toast.success(`${user.name} parolası sıfırlandı`);
-      onClose();
-    } catch (err) {
-      toast.error(errorMessage(err));
-    }
+    setError(null);
+    void ask.confirm({
+      title: "Parola sıfırlansın mı?",
+      body: `${user.name} (${user.email}) için parola değişecek; eski parola hemen geçersiz olur. Kişi bundan sonra yalnızca yeni parolayla girebilir.`,
+      confirmLabel: "Parolayı sıfırla",
+      tone: "danger",
+      action: async () => {
+        try {
+          await reset.mutateAsync({ id: user.id, password });
+          toast.success(`${user.name} parolası sıfırlandı`);
+          onClose();
+          return true;
+        } catch (err) {
+          toast.error(errorMessage(err));
+          return false;
+        }
+      },
+    });
   }
 
   return (
@@ -178,6 +249,7 @@ export function ResetPasswordDialog({ user, onClose }: { user: UserRow; onClose:
           error={error}
         />
       </form>
+      {ask.element}
     </Dialog>
   );
 }

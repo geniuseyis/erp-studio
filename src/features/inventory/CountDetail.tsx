@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { StockCountLine } from "@/domain/inventory/queries";
 import { can } from "@/domain/permissions";
 import { decimalError, formatNumber, formatQty, parseDecimal, toMilli, unitLabel } from "@/domain/units";
@@ -8,7 +8,7 @@ import { useSession } from "@/shell/session";
 import { entityHistory, useHistory } from "@/shell/useHistory";
 import { Button } from "@/ui/Button";
 import { cn } from "@/ui/cn";
-import { Dialog } from "@/ui/Dialog";
+import { ChangeList } from "@/ui/ConfirmDialog";
 import { Drawer } from "@/ui/Drawer";
 import { formatDateTime, formatSignedQty } from "@/ui/format";
 import { HistoryList } from "@/ui/HistoryList";
@@ -18,8 +18,9 @@ import { Skeleton } from "@/ui/Skeleton";
 import { StatusChip } from "@/ui/StatusChip";
 import { useToast } from "@/ui/Toast";
 import { useApproveCount, useCancelCount, useCount, useSetCountLine } from "./hooks";
-import { errorMessage } from "@/shell/useAction";
-import { COUNT_STATUS } from "./labels";
+import { errorMessage, useGuardedRun } from "@/shell/useAction";
+import { useConfirm } from "@/shell/useConfirm";
+import { COUNT_STATUS, countApproveText } from "./labels";
 
 const countHistory = entityHistory("stock_count");
 
@@ -33,7 +34,8 @@ export function CountDetail({ id, onClose }: { id: string; onClose: () => void }
   const history = useHistory("stock_count", id, countHistory);
   const approve = useApproveCount();
   const cancel = useCancelCount();
-  const [confirming, setConfirming] = useState<"approve" | "cancel" | null>(null);
+  const { run: guarded } = useGuardedRun<"approve" | "cancel">();
+  const ask = useConfirm();
   const count = query.data;
 
   const open = count?.status === "open";
@@ -43,20 +45,51 @@ export function CountDetail({ id, onClose }: { id: string; onClose: () => void }
   const allCounted = count ? count.countedCount === count.lineCount : false;
   const differing = count ? count.lines.filter((l) => l.diffMilli !== null && l.diffMilli !== 0) : [];
 
-  async function run(kind: "approve" | "cancel") {
+  function onApprove() {
     if (!count) return;
-    try {
-      if (kind === "approve") {
-        await approve.mutateAsync(count.id);
-        toast.success(`${count.code} onaylandı`);
-      } else {
-        await cancel.mutateAsync(count.id);
-        toast.success(`${count.code} iptal edildi`);
-      }
-    } catch (error) {
-      toast.error(errorMessage(error));
-    }
-    setConfirming(null);
+    void ask.confirm({
+      title: "Sayım onaylansın mı?",
+      body: (
+        <>
+          <p>
+            {count.code}: {countApproveText(differing.length)} Onaydan sonra fiş değiştirilemez.
+          </p>
+          {differing.length > 0 ? (
+            <ul aria-label="Farklar" className="grid gap-1.5 text-sm">
+              {differing.map((l) => (
+                <li key={l.materialId} className="flex justify-between gap-3">
+                  <span className="min-w-0 truncate">{l.materialName}</span>
+                  <span className={cn("tabular font-medium whitespace-nowrap", (l.diffMilli ?? 0) < 0 ? "text-danger" : "text-ok")}>
+                    {formatSignedQty(l.diffMilli ?? 0, l.unit)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      ),
+      confirmLabel: "Onayla",
+      action: () =>
+        guarded("approve", async () => {
+          await approve.mutateAsync(count.id);
+          toast.success(`${count.code} onaylandı`);
+        }),
+    });
+  }
+
+  function onCancel() {
+    if (!count) return;
+    void ask.confirm({
+      title: "Sayım iptal edilsin mi?",
+      body: `${count.code} iptal edilecek; girilen sayım miktarları kullanılmaz ve stok değişmez. İptal edilen fiş listede kalır ama yeniden açılamaz.`,
+      confirmLabel: "Sayımı iptal et",
+      tone: "danger",
+      action: () =>
+        guarded("cancel", async () => {
+          await cancel.mutateAsync(count.id);
+          toast.success(`${count.code} iptal edildi`);
+        }),
+    });
   }
 
   return (
@@ -107,12 +140,12 @@ export function CountDetail({ id, onClose }: { id: string; onClose: () => void }
           count && open && (canApprove || canWrite) ? (
             <>
               {canApprove ? (
-                <Button variant="primary" disabled={!allCounted} onClick={() => setConfirming("approve")}>
+                <Button variant="primary" disabled={!allCounted} onClick={onApprove}>
                   Onayla
                 </Button>
               ) : null}
               {canWrite ? (
-                <Button variant="danger" className="ml-auto" onClick={() => setConfirming("cancel")}>
+                <Button variant="danger" className="ml-auto" onClick={onCancel}>
                   Sayımı iptal et
                 </Button>
               ) : null}
@@ -169,60 +202,7 @@ export function CountDetail({ id, onClose }: { id: string; onClose: () => void }
         )}
       </Drawer>
 
-      {count && confirming === "approve" ? (
-        <Dialog
-          open
-          onOpenChange={(o) => !o && !approve.isPending && setConfirming(null)}
-          title="Sayım onaylansın mı?"
-          description={differing.length > 0 ? `${differing.length} kalemde fark var. Farklar stok hareketi olarak yazılır.` : "Sayılan miktarlar stokla aynı; hareket yazılmaz."}
-          footer={
-            <>
-              <Button variant="ghost" disabled={approve.isPending} onClick={() => setConfirming(null)}>
-                Vazgeç
-              </Button>
-              <Button variant="primary" loading={approve.isPending} onClick={() => void run("approve")}>
-                Onayla
-              </Button>
-            </>
-          }
-        >
-          {differing.length > 0 ? (
-            <ul className="grid gap-1.5 text-sm">
-              {differing.map((l) => (
-                <li key={l.materialId} className="flex justify-between gap-3">
-                  <span className="min-w-0 truncate">{l.materialName}</span>
-                  <span className={cn("tabular font-medium whitespace-nowrap", (l.diffMilli ?? 0) < 0 ? "text-danger" : "text-ok")}>
-                    {formatSignedQty(l.diffMilli ?? 0, l.unit)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p>Onaydan sonra fiş değiştirilemez.</p>
-          )}
-        </Dialog>
-      ) : null}
-
-      {count && confirming === "cancel" ? (
-        <Dialog
-          open
-          onOpenChange={(o) => !o && !cancel.isPending && setConfirming(null)}
-          title="Sayım iptal edilsin mi?"
-          description="Girilen sayım miktarları kullanılmaz ve stok değişmez."
-          footer={
-            <>
-              <Button variant="ghost" disabled={cancel.isPending} onClick={() => setConfirming(null)}>
-                Vazgeç
-              </Button>
-              <Button variant="danger" loading={cancel.isPending} onClick={() => void run("cancel")}>
-                Sayımı iptal et
-              </Button>
-            </>
-          }
-        >
-          <p>İptal edilen fiş listede kalır ama yeniden açılamaz.</p>
-        </Dialog>
-      ) : null}
+      {ask.element}
     </>
   );
 }
@@ -230,6 +210,8 @@ export function CountDetail({ id, onClose }: { id: string; onClose: () => void }
 function LineRow({ countId, line, editable }: { countId: string; line: StockCountLine; editable: boolean }) {
   const toast = useToast();
   const save = useSetCountLine();
+  const ask = useConfirm();
+  const asking = useRef(false);
   // null: kullanıcı yazmıyor, kayıtlı değer gösterilir.
   const [draft, setDraft] = useState<string | null>(null);
   // Doluysa alanın altında gösterilen hata (ör. belirsiz "1.250").
@@ -243,15 +225,42 @@ function LineRow({ countId, line, editable }: { countId: string; line: StockCoun
     if (parsed === null) return setInvalid(decimalError(draft, "miktar") ?? "Geçerli bir miktar girin");
     setInvalid(null);
     const countedMilli = toMilli(parsed);
-    if (countedMilli !== line.countedMilli) {
-      try {
-        await save.mutateAsync({ countId, materialId: line.materialId, countedMilli });
-      } catch (error) {
-        toast.error(errorMessage(error));
-        return;
-      }
+    if (countedMilli === line.countedMilli) return setDraft(null);
+    if (line.countedMilli === null) {
+      // İlk sayım hiçbir kaydı değiştirmez; onaya kadar düzeltilebilir.
+      if (await write(countedMilli)) setDraft(null);
+      return;
     }
+    // Kayıtlı sayımın üzerine yazmak değişikliktir: önce onay. Pencere açılınca alanın odak kaybı yeniden sormaz.
+    if (asking.current) return;
+    asking.current = true;
+    const ok = await ask.confirm({
+      title: "Sayılan miktar değişsin mi?",
+      body: (
+        <>
+          <p>
+            {line.materialCode} {line.materialName}:
+          </p>
+          <ChangeList changes={[{ label: "Sayılan", from: formatQty(line.countedMilli, line.unit), to: formatQty(countedMilli, line.unit) }]} />
+        </>
+      ),
+      confirmLabel: "Değiştir",
+      action: () => write(countedMilli),
+    });
+    asking.current = false;
+    // Vazgeçilirse kayıtlı değer geri gelir.
     setDraft(null);
+    if (!ok) setInvalid(null);
+  }
+
+  async function write(countedMilli: number): Promise<boolean> {
+    try {
+      await save.mutateAsync({ countId, materialId: line.materialId, countedMilli });
+      return true;
+    } catch (error) {
+      toast.error(errorMessage(error));
+      return false;
+    }
   }
 
   const diff = line.diffMilli;
@@ -287,6 +296,7 @@ function LineRow({ countId, line, editable }: { countId: string; line: StockCoun
           <span className="tabular whitespace-nowrap">{line.countedMilli === null ? "Sayılmadı" : formatQty(line.countedMilli, line.unit)}</span>
         )}
         {invalid ? <span className="block text-xs font-medium text-danger">{invalid}</span> : null}
+        {ask.element}
       </td>
       <td className={cn("tabular py-2 pl-3 text-right font-medium whitespace-nowrap", diff !== null && diff < 0 && "text-danger", diff !== null && diff > 0 && "text-ok")}>
         {diff === null ? "" : diff === 0 ? "Fark yok" : formatSignedQty(diff, line.unit)}

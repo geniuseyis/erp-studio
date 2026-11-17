@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { loginAs } from "./helpers";
+import { approve, loginAs } from "./helpers";
 
 const summary = (page: import("@playwright/test").Page, label: string) => page.getByRole("link", { name: new RegExp(`^${label}`) });
 
@@ -36,6 +36,7 @@ test("stok girişi yapınca ana paneldeki stok değeri yenilemeden artar", async
   await dialog.getByLabel("Miktar").fill("10");
   await dialog.getByLabel("Birim maliyet").fill("1.600,00");
   await dialog.getByRole("button", { name: "Girişi kaydet" }).click();
+  await approve(page, "Girişi kaydet");
   await expect(page.getByRole("status").filter({ hasText: "10 plaka giriş kaydedildi" })).toBeVisible();
   await page.keyboard.press("Escape");
 

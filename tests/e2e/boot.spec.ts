@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { loginAs, openLogin, sql } from "./helpers";
+import { approve, loginAs, openLogin, sql } from "./helpers";
 
 test("veritabanı tarayıcıda açılır, örnek veri yüklenir ve yenilemede kalır", async ({ page }) => {
   const errors: string[] = [];
@@ -73,6 +73,7 @@ test("bir sekmedeki stok girişi diğer sekmenin ekranında yenilemeden görün�
   await dialog.getByLabel("Miktar").fill("7");
   await dialog.getByLabel("Birim maliyet").fill("1.600,00");
   await dialog.getByRole("button", { name: "Girişi kaydet" }).click();
+  await approve(a, "Girişi kaydet");
   await expect(a.getByRole("status").filter({ hasText: "7 plaka giriş kaydedildi" })).toBeVisible();
 
   // B sekmesi yeniden yüklenmeden güncel satırı göstermeli.

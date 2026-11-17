@@ -89,7 +89,7 @@ test("veriyi sıfırla örnek veriye döner ve oturumu kapatır", async ({ page 
   await page.getByRole("button", { name: /Hesap menüsü/ }).click();
   await page.getByRole("menuitem", { name: "Ayarlar" }).click();
   await page.getByRole("button", { name: "Veriyi sıfırla" }).click();
-  const dialog = page.getByRole("dialog", { name: "Veri sıfırlansın mı?" });
+  const dialog = page.getByRole("alertdialog", { name: "Veri sıfırlansın mı?" });
   await dialog.getByRole("button", { name: "Veriyi sıfırla" }).click();
   await expect(page).toHaveURL(/\/giris/, { timeout: 45_000 });
   await expect(page.getByRole("heading", { name: "Giriş yapın", level: 1 })).toBeVisible({ timeout: 45_000 });

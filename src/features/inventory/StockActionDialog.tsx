@@ -10,6 +10,8 @@ import { NumberField, Textarea } from "@/ui/Field";
 import { useToast } from "@/ui/Toast";
 import { useIssueStock, useReceiveStock } from "./hooks";
 import { errorMessage } from "@/shell/useAction";
+import { useConfirm } from "@/shell/useConfirm";
+import { stockChangeText } from "./labels";
 
 type Props = { kind: "receipt" | "issue"; material: MaterialRow; onClose: () => void };
 
@@ -24,6 +26,7 @@ const toInput = (kurus: number) => (kurus / 100).toLocaleString("tr-TR", { minim
 export function StockActionDialog({ kind, material, onClose }: Props) {
   const copy = COPY[kind];
   const toast = useToast();
+  const ask = useConfirm();
   const receive = useReceiveStock();
   const issue = useIssueStock();
   const submitting = useRef(false);
@@ -34,7 +37,7 @@ export function StockActionDialog({ kind, material, onClose }: Props) {
   const [note, setNote] = useState("");
   const [errors, setErrors] = useState<{ qty?: string; cost?: string }>({});
 
-  async function onSubmit(e: FormEvent) {
+  function onSubmit(e: FormEvent) {
     e.preventDefault();
     // Çift tıklama: ilk gönderim bitmeden ikincisi başlamaz.
     if (submitting.current) return;
@@ -50,22 +53,40 @@ export function StockActionDialog({ kind, material, onClose }: Props) {
     setErrors(next);
     if (next.qty || next.cost || amount === null) return;
 
+    const qtyMilli = toMilli(amount);
+    const unitCostKurus = toKurus(unitCost ?? 0);
+    void ask.confirm({
+      title: kind === "receipt" ? "Stok girişi kaydedilsin mi?" : "Stok çıkışı kaydedilsin mi?",
+      body: (
+        <>
+          <p className="tabular">{stockChangeText(material, kind, qtyMilli)}</p>
+          {kind === "receipt" ? <p className="text-sm text-fg-muted">Birim maliyet {formatMoney(unitCostKurus)}; ortalama maliyet yeniden hesaplanır.</p> : null}
+        </>
+      ),
+      confirmLabel: copy.submit,
+      action: () => save(qtyMilli, unitCostKurus),
+    });
+  }
+
+  async function save(qtyMilli: number, unitCostKurus: number): Promise<boolean> {
+    if (submitting.current) return false;
     submitting.current = true;
     setBusy(true);
-    const qtyMilli = toMilli(amount);
     try {
       if (kind === "receipt") {
-        await receive.mutateAsync({ materialId: material.id, qtyMilli, unitCostKurus: toKurus(unitCost ?? 0), note });
+        await receive.mutateAsync({ materialId: material.id, qtyMilli, unitCostKurus, note });
       } else {
         await issue.mutateAsync({ materialId: material.id, qtyMilli, note });
       }
       toast.success(`${formatQty(qtyMilli, material.unit)} ${copy.done}`);
       onClose();
+      return true;
     } catch (error) {
       if (isDomainError(error) && error.code === "INSUFFICIENT_STOCK") setErrors({ qty: errorMessage(error) });
       else toast.error(errorMessage(error));
       submitting.current = false;
       setBusy(false);
+      return false;
     }
   }
 
@@ -108,6 +129,7 @@ export function StockActionDialog({ kind, material, onClose }: Props) {
         ) : null}
         <Textarea label="Not" value={note} onChange={(e) => setNote(e.target.value)} placeholder="İrsaliye numarası, teslim eden, neden" />
       </form>
+      {ask.element}
     </Dialog>
   );
 }
