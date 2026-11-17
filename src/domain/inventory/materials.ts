@@ -1,10 +1,10 @@
 import { eq, like } from "drizzle-orm";
 import { MATERIAL_CATEGORIES, MATERIAL_UNITS, materials } from "@/db/schema";
-import { logAudit } from "../audit";
+import { describeChanges, type FieldSpec, logAudit } from "../audit";
 import { type Ctx, inTx, isUuid } from "../context";
 import { DomainError } from "../errors";
 import { assertCan } from "../permissions";
-import type { Unit } from "../units";
+import { formatQty, type Unit, unitLabel } from "../units";
 import { asMaterial, type Material, type MaterialCategory } from "./types";
 
 export type NewMaterial = {
@@ -31,6 +31,30 @@ export type EditableMaterial = {
 };
 
 const CODE_PREFIX = "MLZ-";
+
+const CATEGORY_TEXT: Record<MaterialCategory, string> = {
+  panel: "panel",
+  masif: "masif",
+  kenar_bandi: "kenar bandı",
+  hirdavat: "hırdavat",
+  boya: "boya ve kimyasal",
+  kumas: "kumaş",
+  ambalaj: "ambalaj",
+};
+
+/** Güncelleme özetinde alanların adı ve yazılışı; miktarlar malzemenin birimiyle. */
+function fields(unit: Unit): FieldSpec<EditableMaterial> {
+  const qty = (milli: number) => formatQty(milli, unit);
+  return {
+    name: { label: "ad" },
+    category: { label: "kategori", format: (c) => CATEGORY_TEXT[c] },
+    safetyStockMilli: { label: "güvenlik stoğu", format: qty },
+    reorderPointMilli: { label: "yeniden sipariş noktası", format: qty },
+    leadTimeDays: { label: "tedarik süresi", format: (n) => `${n} gün` },
+    shelf: { label: "raf" },
+    active: { label: "durum" },
+  };
+}
 
 function invalid(message: string): DomainError {
   return new DomainError("VALIDATION", message);
@@ -83,7 +107,12 @@ export async function createMaterial(ctx: Ctx, input: NewMaterial): Promise<Mate
       })
       .returning();
     if (!row) throw new Error("malzeme eklenemedi");
-    await logAudit(tx, { entity: "material", entityId: row.id, action: "create", summary: `${code} ${name} eklendi` });
+    await logAudit(tx, {
+      entity: "material",
+      entityId: row.id,
+      action: "create",
+      summary: `${code} ${name} eklendi: ${CATEGORY_TEXT[input.category]}, ${unitLabel(input.unit)}`,
+    });
     return asMaterial(row);
   });
 }
@@ -107,8 +136,9 @@ export async function updateMaterial(ctx: Ctx, id: string, patch: Partial<Editab
   await inTx(ctx, async (tx) => {
     const [row] = isUuid(id) ? await tx.db.select().from(materials).where(eq(materials.id, id)) : [];
     if (!row) throw new DomainError("NOT_FOUND", "Malzeme bulunamadı");
-    if (Object.keys(set).length === 0) return;
+    const changes = describeChanges(fields(row.unit as Unit), asMaterial(row), set);
+    if (changes.length === 0) return;
     await tx.db.update(materials).set(set).where(eq(materials.id, id));
-    await logAudit(tx, { entity: "material", entityId: id, action: "update", summary: `${row.code} güncellendi` });
+    await logAudit(tx, { entity: "material", entityId: id, action: "update", summary: `${row.code} güncellendi: ${changes.join(", ")}` });
   });
 }

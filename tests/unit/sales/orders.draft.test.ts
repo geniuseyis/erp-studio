@@ -99,7 +99,7 @@ test("birleşirken açıkça verilen iskonto eskisinin yerine geçer ve denetimd
   const merged = await addLine(satis, { orderId: o.id, productId, qtyMilli: 1000, discountPermille: 125 });
   expect(merged).toMatchObject({ qtyMilli: 3000, discountPermille: 125, merged: true });
   const [summary] = (await db.select().from(auditLog)).filter((r) => r.action === "update_line").map((r) => r.summary);
-  expect(summary).toMatch(/adedi 2 → 3, iskonto %10 → %12,5$/);
+  expect(summary).toMatch(/adet 2 → 3, iskonto %10 → %12,5, tutar ₺22\.500,00 → ₺32\.812,50$/);
 });
 
 test("birleşen adet 9999'u aşarsa reddedilir", async () => {

@@ -3,14 +3,14 @@
 import { and, asc, eq, inArray, like, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { bomLines, materials, products, routings, salesOrderLines, salesOrders, stations, stockMovements, workOrders, workOrderSteps } from "@/db/schema";
-import { logAudit } from "../audit";
+import { auditDay, codeList, logAudit, refCode } from "../audit";
 import { type Ctx, inTx, isUuid } from "../context";
 import { DomainError } from "../errors";
 import { consumeStock, releaseStock, reserveStock } from "../inventory/ledger";
 import { assertCan } from "../permissions";
 import { refreshOrderStatus, setLineStatus } from "../sales/status";
 import type { LineStatus } from "../sales/types";
-import { roundUpToStep, type Unit } from "../units";
+import { formatQty, roundUpToStep, type Unit } from "../units";
 import { addWorkdays, istanbulDayStart, istanbulYear } from "./calendar";
 import { produceIn, reserveProduct } from "./productLedger";
 import { asWorkOrder, type Shortage, type WorkOrder, type WorkOrderStep } from "./types";
@@ -123,11 +123,12 @@ export async function openWorkOrder(
     );
 
     const shortages = await reserveMaterials(tx, wo);
+    const orderCode = i.salesOrderLineId ? await refCode(tx.db, { type: "sales_order_line", id: i.salesOrderLineId }) : null;
     await logAudit(tx, {
       entity: "work_order",
       entityId: wo.id,
       action: "create",
-      summary: `${code} açıldı: ${product.code} × ${i.qtyMilli / 1000}${shortages.length > 0 ? " (malzeme bekliyor)" : ""}`,
+      summary: `${code} açıldı: ${product.code} ${product.name} × ${i.qtyMilli / 1000}, ${orderCode ? `${orderCode} için` : "stok için"}${shortages.length > 0 ? " (malzeme bekliyor)" : ""}`,
     });
     return { workOrder: await reload(tx.db, wo.id), shortages };
   });
@@ -144,7 +145,12 @@ export async function retryMaterials(ctx: Ctx, workOrderId: string): Promise<{ w
     const shortages = await reserveMaterials(tx, wo);
     if (shortages.length > 0) return { workOrder: asWorkOrder(wo), shortages };
 
-    await logAudit(tx, { entity: "work_order", entityId: wo.id, action: "reserve_materials", summary: `${wo.code}: malzemeler ayrıldı` });
+    await logAudit(tx, {
+      entity: "work_order",
+      entityId: wo.id,
+      action: "reserve_materials",
+      summary: `${wo.code}: malzemeler ayrıldı — ${await needsText(tx.db, await reservedForWorkOrder(tx.db, wo.id))}`,
+    });
     if (wo.salesOrderLineId) {
       const [line] = await tx.db.select().from(salesOrderLines).where(eq(salesOrderLines.id, wo.salesOrderLineId));
       if (line?.status === "waiting_material") {
@@ -184,20 +190,36 @@ export async function cancelWorkOrderForLine(ctx: Ctx, lineId: string, reason: s
     for (const found of linked) {
       const wo = await mustFindWorkOrder(tx.db, found.id);
       if (wo.status !== "planned") continue;
-      if (wo.materialsReserved) {
-        for (const r of await reservedForWorkOrder(tx.db, wo.id)) {
-          await releaseStock(tx, { materialId: r.materialId, qtyMilli: r.neededMilli, ref: { type: "work_order", id: wo.id } });
-        }
+      const released = wo.materialsReserved ? await reservedForWorkOrder(tx.db, wo.id) : [];
+      for (const r of released) {
+        await releaseStock(tx, { materialId: r.materialId, qtyMilli: r.neededMilli, ref: { type: "work_order", id: wo.id } });
       }
+      const [product] = await tx.db.select({ code: products.code }).from(products).where(eq(products.id, wo.productId));
       await tx.db.update(workOrders).set({ status: "cancelled" }).where(eq(workOrders.id, wo.id));
       await logAudit(tx, {
         entity: "work_order",
         entityId: wo.id,
         action: "cancel",
-        summary: `${wo.code} iptal edildi: ${reason}${wo.materialsReserved ? "; ayrılan malzemeler serbest" : ""}`,
+        summary: `${wo.code} iptal edildi (${product?.code ?? "?"} × ${wo.qtyMilli / 1000}): ${reason}${released.length > 0 ? "; ayrılan malzemeler serbest" : ""}`,
       });
     }
   });
+}
+
+/** Malzeme listesi özeti: "MLZ-0009 2 plaka, MLZ-0012 4 adet" (en çok beş kalem). */
+async function needsText(db: Db, needs: MaterialNeed[]): Promise<string> {
+  if (needs.length === 0) return "malzeme yok";
+  const rows = await db
+    .select({ id: materials.id, code: materials.code, unit: materials.unit })
+    .from(materials)
+    .where(inArray(materials.id, needs.map((n) => n.materialId)));
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return codeList(
+    needs.map((n) => {
+      const m = byId.get(n.materialId);
+      return m ? `${m.code} ${formatQty(n.neededMilli, m.unit as Unit)}` : "?";
+    }),
+  );
 }
 
 async function stationName(db: Db, step: WorkOrderStep): Promise<string> {
@@ -239,11 +261,17 @@ export async function startNextStep(ctx: Ctx, workOrderId: string, expectedSeq?:
 
     if (next.seq === steps[0]?.seq) {
       if (!wo.materialsReserved) throw new DomainError("INVALID_STATE", await missingMaterialMessage(tx.db, wo));
-      for (const r of await reservedForWorkOrder(tx.db, wo.id)) {
+      const reserved = await reservedForWorkOrder(tx.db, wo.id);
+      for (const r of reserved) {
         await consumeStock(tx, { materialId: r.materialId, qtyMilli: r.neededMilli, ref: { type: "work_order", id: wo.id } });
       }
       await tx.db.update(workOrders).set({ status: "in_progress", startedAt: tx.now }).where(eq(workOrders.id, wo.id));
-      await logAudit(tx, { entity: "work_order", entityId: wo.id, action: "start", summary: `${wo.code} üretime başladı: ayrılan malzemeler tüketildi` });
+      await logAudit(tx, {
+        entity: "work_order",
+        entityId: wo.id,
+        action: "start",
+        summary: `${wo.code} üretime başladı${reserved.length > 0 ? `: ${reserved.length} kalem malzeme tüketildi` : ""}`,
+      });
     }
     const [started] = await tx.db
       .update(workOrderSteps)
@@ -312,7 +340,13 @@ export async function finishCurrentStep(
         lineNote = "; satır iptal, mamul serbest stokta";
       }
     }
-    await logAudit(tx, { entity: "work_order", entityId: wo.id, action: "complete", summary: `${wo.code} tamamlandı${lineNote}` });
+    const [product] = await tx.db.select({ code: products.code }).from(products).where(eq(products.id, wo.productId));
+    await logAudit(tx, {
+      entity: "work_order",
+      entityId: wo.id,
+      action: "complete",
+      summary: `${wo.code} tamamlandı: ${product?.code ?? "?"} × ${wo.qtyMilli / 1000} stoğa girdi${lineNote}`,
+    });
     return { step, completed: true };
   });
 }
@@ -342,7 +376,7 @@ export async function planWorkOrder(ctx: Ctx, i: { workOrderId: string; start: D
       entity: "work_order",
       entityId: wo.id,
       action: "plan",
-      summary: `${wo.code} planlandı: ${plannedStart.toLocaleDateString("tr-TR", { timeZone: "Europe/Istanbul" })} başlangıç`,
+      summary: `${wo.code} planlandı: ${auditDay(plannedStart)} başlangıç, ${steps.length} adım${wo.plannedStart && wo.plannedStart.getTime() !== plannedStart.getTime() ? ` (önce ${auditDay(wo.plannedStart)})` : ""}`,
     });
     return reload(tx.db, wo.id);
   });

@@ -4,7 +4,7 @@
 import { eq, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { productMovements, products } from "@/db/schema";
-import { logAudit } from "../audit";
+import { logAudit, refCode } from "../audit";
 import { type Ctx, inTx, isUuid } from "../context";
 import { DomainError } from "../errors";
 import { type Ref } from "../inventory/ledger";
@@ -66,11 +66,12 @@ export async function postProductMovement(ctx: Ctx, p: Posting): Promise<Product
     if (!row) throw new Error("hareket yazılamadı");
 
     const qty = Math.abs(p.deltaOnHand !== 0 ? p.deltaOnHand : p.deltaReserved);
+    const ref = await refCode(tx.db, p.ref);
     await logAudit(tx, {
       entity: "product",
       entityId: pr.id,
       action: p.type,
-      summary: `${pr.code} ${LABEL[p.type]}: ${formatQty(qty, "adet")}`,
+      summary: `${pr.code} ${LABEL[p.type]}: ${formatQty(qty, "adet")}${ref ? ` (${ref})` : ""}`,
     });
     return asProductMovement(row);
   });

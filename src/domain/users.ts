@@ -1,7 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { departments, users } from "@/db/schema";
-import { logAudit } from "./audit";
+import { describeChanges, type FieldSpec, logAudit } from "./audit";
 import { normalizeEmail, toSessionUser } from "./auth";
 import {
   type Ctx,
@@ -29,6 +29,14 @@ export type NewUser = {
 };
 export type UserPatch = Partial<Pick<NewUser, "name" | "departmentCode" | "level" | "title">>;
 export type UserRow = SessionUser & { active: boolean; departmentName: string };
+
+/** Güncelleme özetindeki alanlar. Parola ve parola özeti burada yoktur; özete hiçbir zaman yazılmaz. */
+const FIELDS: FieldSpec<Required<UserPatch>> = {
+  name: { label: "ad" },
+  title: { label: "unvan" },
+  departmentCode: { label: "departman", format: (d) => DEPARTMENT_NAMES[d] },
+  level: { label: "düzey", format: (l) => LEVEL_NAMES[l] },
+};
 
 function invalid(message: string): DomainError {
   return new DomainError("VALIDATION", message);
@@ -76,7 +84,12 @@ export async function createUser(ctx: Ctx, input: NewUser): Promise<SessionUser>
       })
       .returning();
     if (!row) throw new Error("kullanıcı eklenemedi");
-    await logAudit(tx, { entity: "user", entityId: row.id, action: "create", summary: `${name} eklendi` });
+    await logAudit(tx, {
+      entity: "user",
+      entityId: row.id,
+      action: "create",
+      summary: `${name} eklendi: ${[title, DEPARTMENT_NAMES[input.departmentCode], LEVEL_NAMES[input.level], email].filter(Boolean).join(", ")}`,
+    });
     return toSessionUser(row);
   });
 }
@@ -100,9 +113,10 @@ export async function updateUser(ctx: Ctx, id: string, patch: UserPatch): Promis
       id === ctx.user.id &&
       ((set.departmentCode !== undefined && set.departmentCode !== row.departmentCode) || (set.level !== undefined && set.level !== row.level));
     if (changesOwnRole) throw invalid("Kendi departmanınızı ya da düzeyinizi değiştiremezsiniz");
-    if (Object.keys(set).length === 0) return;
+    const changes = describeChanges(FIELDS, toSessionUser(row), set);
+    if (changes.length === 0) return;
     await tx.db.update(users).set(set).where(eq(users.id, id));
-    await logAudit(tx, { entity: "user", entityId: id, action: "update", summary: `${row.name} güncellendi` });
+    await logAudit(tx, { entity: "user", entityId: id, action: "update", summary: `${row.name} güncellendi: ${changes.join(", ")}` });
   });
 }
 

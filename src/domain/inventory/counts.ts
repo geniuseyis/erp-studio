@@ -1,10 +1,11 @@
 import { and, eq, inArray, like } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { materials, stockCountLines, stockCounts } from "@/db/schema";
-import { logAudit } from "../audit";
+import { codeList, logAudit } from "../audit";
 import { type Ctx, inTx, isUuid } from "../context";
 import { DomainError } from "../errors";
 import { assertCan } from "../permissions";
+import { formatQty, type Unit } from "../units";
 import { postMovement } from "./ledger";
 import { asCount, type StockCount } from "./types";
 
@@ -35,10 +36,11 @@ export async function createCount(ctx: Ctx, i: { materialIds: string[]; note?: s
       .values({ code, note: i.note?.trim() ?? "", createdBy: tx.user.id, createdAt: tx.now })
       .returning();
     if (!count) throw new Error("sayım fişi açılamadı");
+    const codes = found.map((m) => m.code).sort((a, b) => a.localeCompare(b, "tr"));
     await tx.db
       .insert(stockCountLines)
       .values(found.map((m) => ({ countId: count.id, materialId: m.id, systemMilli: m.onHandMilli })));
-    await logAudit(tx, { entity: "stock_count", entityId: count.id, action: "create", summary: `${code} açıldı (${ids.length} kalem)` });
+    await logAudit(tx, { entity: "stock_count", entityId: count.id, action: "create", summary: `${code} açıldı: ${ids.length} kalem (${codeList(codes)})` });
     return asCount(count);
   });
 }
@@ -69,16 +71,18 @@ export async function approveCount(ctx: Ctx, countId: string): Promise<StockCoun
   return inTx(ctx, async (tx) => {
     const count = await mustFindOpen(tx.db, countId);
     const lines = await tx.db
-      .select({ line: stockCountLines, onHand: materials.onHandMilli })
+      .select({ line: stockCountLines, onHand: materials.onHandMilli, code: materials.code, unit: materials.unit })
       .from(stockCountLines)
       .innerJoin(materials, eq(materials.id, stockCountLines.materialId))
       .where(eq(stockCountLines.countId, countId));
     if (lines.some((l) => l.line.countedMilli === null)) {
       throw new DomainError("INVALID_STATE", "Sayılmamış satırlar var");
     }
-    for (const { line, onHand } of lines) {
+    const diffs: string[] = [];
+    for (const { line, onHand, code, unit } of [...lines].sort((a, b) => a.code.localeCompare(b.code, "tr"))) {
       const diff = (line.countedMilli ?? 0) - onHand;
       if (diff === 0) continue;
+      diffs.push(`${code} ${diff > 0 ? "+" : "−"}${formatQty(Math.abs(diff), unit as Unit)}`);
       await postMovement(tx, {
         materialId: line.materialId,
         type: "count_adjust",
@@ -94,7 +98,15 @@ export async function approveCount(ctx: Ctx, countId: string): Promise<StockCoun
       .where(eq(stockCounts.id, countId))
       .returning();
     if (!row) throw new Error("sayım fişi güncellenemedi");
-    await logAudit(tx, { entity: "stock_count", entityId: countId, action: "approve", summary: `${count.code} onaylandı` });
+    await logAudit(tx, {
+      entity: "stock_count",
+      entityId: countId,
+      action: "approve",
+      summary:
+        diffs.length === 0
+          ? `${count.code} onaylandı: fark yok (${lines.length} kalem)`
+          : `${count.code} onaylandı: ${diffs.length} kalemde fark — ${codeList(diffs)}`,
+    });
     return asCount(row);
   });
 }
@@ -103,7 +115,14 @@ export async function cancelCount(ctx: Ctx, countId: string): Promise<void> {
   assertCan(ctx.user, "inventory", "write");
   await inTx(ctx, async (tx) => {
     const count = await mustFindOpen(tx.db, countId);
+    const lines = await tx.db.select({ counted: stockCountLines.countedMilli }).from(stockCountLines).where(eq(stockCountLines.countId, countId));
+    const counted = lines.filter((l) => l.counted !== null).length;
     await tx.db.update(stockCounts).set({ status: "cancelled" }).where(eq(stockCounts.id, countId));
-    await logAudit(tx, { entity: "stock_count", entityId: countId, action: "cancel", summary: `${count.code} iptal edildi` });
+    await logAudit(tx, {
+      entity: "stock_count",
+      entityId: countId,
+      action: "cancel",
+      summary: `${count.code} iptal edildi: ${lines.length} kalem, ${counted} sayıldı`,
+    });
   });
 }

@@ -3,11 +3,11 @@
 import { eq, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { materials, stockMovements } from "@/db/schema";
-import { logAudit } from "../audit";
+import { logAudit, refCode } from "../audit";
 import { type Ctx, inTx, isUuid } from "../context";
 import { DomainError } from "../errors";
 import { assertCan } from "../permissions";
-import { formatQty, type Unit } from "../units";
+import { formatMoney, formatQty, lineValueKurus, type Unit } from "../units";
 import { asMovement, type MovementType, type StockMovement } from "./types";
 
 export type Ref = { type: string; id: string };
@@ -37,6 +37,21 @@ type Posting = {
   note?: string;
   ref?: Ref;
 };
+
+/**
+ * Hareketin denetim özeti: "MLZ-0007 giriş: 10 plaka × ₺450,00 (₺4.500,00)", "MLZ-0007 ayırma: 2 plaka (IE-2026-0003)".
+ * Sayım farkı işaretli yazılır. Not, hareketler ekranında durduğu için özete girmez.
+ */
+async function movementSummary(db: Db, code: string, unit: Unit, p: Posting): Promise<string> {
+  const delta = p.deltaOnHand !== 0 ? p.deltaOnHand : p.deltaReserved;
+  const sign = p.type === "count_adjust" ? (delta > 0 ? "+" : "−") : "";
+  let text = `${code} ${LABEL[p.type]}: ${sign}${formatQty(Math.abs(delta), unit)}`;
+  if (p.type === "receipt" && p.unitCostKurus !== undefined) {
+    text += ` × ${formatMoney(p.unitCostKurus)} (${formatMoney(lineValueKurus(p.deltaOnHand, p.unitCostKurus))})`;
+  }
+  const ref = await refCode(db, p.ref);
+  return ref ? `${text} (${ref})` : text;
+}
 
 /** Modül içi: diğer stok servisleri (sayım gibi) de hareketi buradan yazar. */
 export async function postMovement(ctx: Ctx, p: Posting): Promise<StockMovement> {
@@ -83,13 +98,7 @@ export async function postMovement(ctx: Ctx, p: Posting): Promise<StockMovement>
       .returning();
     if (!row) throw new Error("hareket yazılamadı");
 
-    const qty = Math.abs(p.deltaOnHand !== 0 ? p.deltaOnHand : p.deltaReserved);
-    await logAudit(tx, {
-      entity: "material",
-      entityId: m.id,
-      action: p.type,
-      summary: `${m.code} ${LABEL[p.type]}: ${formatQty(qty, m.unit as Unit)}`,
-    });
+    await logAudit(tx, { entity: "material", entityId: m.id, action: p.type, summary: await movementSummary(tx.db, m.code, m.unit as Unit, p) });
     return asMovement(row);
   });
 }

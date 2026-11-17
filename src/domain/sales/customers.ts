@@ -1,6 +1,6 @@
 import { eq, like } from "drizzle-orm";
 import { CUSTOMER_KINDS, customers } from "@/db/schema";
-import { logAudit } from "../audit";
+import { describeChanges, type FieldSpec, logAudit } from "../audit";
 import { type Ctx, inTx, isUuid } from "../context";
 import { DomainError } from "../errors";
 import { assertCan } from "../permissions";
@@ -16,6 +16,19 @@ export type NewCustomer = {
 };
 
 const CODE_PREFIX = "MUS-";
+
+const KIND_TEXT: Record<CustomerKind, string> = { bireysel: "bireysel", kurumsal: "kurumsal" };
+const days = (n: number) => `${n} gün`;
+
+/** Güncelleme özetinde alanların adı ve yazılışı, formdaki sırayla. */
+const FIELDS: FieldSpec<NewCustomer> = {
+  name: { label: "ad" },
+  kind: { label: "tür", format: (k) => KIND_TEXT[k] },
+  city: { label: "il" },
+  district: { label: "ilçe" },
+  phone: { label: "telefon" },
+  paymentTermDays: { label: "vade", format: days },
+};
 
 function invalid(message: string): DomainError {
   return new DomainError("VALIDATION", message);
@@ -71,7 +84,12 @@ export async function createCustomer(ctx: Ctx, input: NewCustomer): Promise<Cust
       .values({ ...v, code, createdAt: tx.now })
       .returning();
     if (!row) throw new Error("müşteri eklenemedi");
-    await logAudit(tx, { entity: "customer", entityId: row.id, action: "create", summary: `${code} ${v.name} eklendi` });
+    await logAudit(tx, {
+      entity: "customer",
+      entityId: row.id,
+      action: "create",
+      summary: `${code} ${v.name} eklendi: ${KIND_TEXT[v.kind]}, ${v.city} / ${v.district}, ${v.phone}, vade ${days(v.paymentTermDays)}`,
+    });
     return asCustomer(row);
   });
 }
@@ -82,8 +100,9 @@ export async function updateCustomer(ctx: Ctx, id: string, patch: Partial<NewCus
   await inTx(ctx, async (tx) => {
     const [row] = isUuid(id) ? await tx.db.select().from(customers).where(eq(customers.id, id)) : [];
     if (!row) throw new DomainError("NOT_FOUND", "Müşteri bulunamadı");
-    if (Object.keys(set).length === 0) return;
+    const changes = describeChanges(FIELDS, asCustomer(row), set);
+    if (changes.length === 0) return;
     await tx.db.update(customers).set(set).where(eq(customers.id, id));
-    await logAudit(tx, { entity: "customer", entityId: id, action: "update", summary: `${row.code} güncellendi` });
+    await logAudit(tx, { entity: "customer", entityId: id, action: "update", summary: `${row.code} güncellendi: ${changes.join(", ")}` });
   });
 }

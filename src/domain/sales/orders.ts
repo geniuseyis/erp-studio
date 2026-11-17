@@ -1,7 +1,7 @@
 import { and, asc, eq, like } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { customers, products, salesOrderLines, salesOrders } from "@/db/schema";
-import { logAudit } from "../audit";
+import { auditDay, logAudit } from "../audit";
 import { type Ctx, inTx, isUuid } from "../context";
 import { DomainError } from "../errors";
 import { assertCan } from "../permissions";
@@ -9,6 +9,8 @@ import { istanbulDayStart, istanbulYear } from "../production/calendar";
 import { releaseProduct, reserveProduct, shipProduct } from "../production/productLedger";
 import type { Shortage } from "../production/types";
 import { cancelWorkOrderForLine, findShortages, materialNeeds, type MaterialNeed, openWorkOrder } from "../production/workOrders";
+import { formatMoney } from "../units";
+import { lineNetKurus, orderTotals } from "./money";
 import { refreshOrderStatus, setLineStatus } from "./status";
 import { asOrder, asOrderLine, type LineStatus, type SalesOrder, type SalesOrderLine } from "./types";
 
@@ -29,6 +31,40 @@ function checkQty(qtyMilli: number): void {
 /** Binde iskontoyu denetim özeti için yüzde yazar: 125 → "%12,5". */
 function discountText(permille: number): string {
   return `%${String(permille / 10).replace(".", ",")}`;
+}
+
+type LineFacts = { qtyMilli: number; unitPriceKurus: number; discountPermille: number };
+type ProductFacts = { code: string; name: string };
+
+/** Satırın denetim özetindeki adı: "URN-0031 Adım Ayakkabılık × 2, iskonto %10 (₺22.500,00)". Tutar KDV hariç, iskontolu. */
+function lineText(product: ProductFacts, line: LineFacts): string {
+  const discount = line.discountPermille > 0 ? `, iskonto ${discountText(line.discountPermille)}` : "";
+  const net = lineNetKurus(line.qtyMilli, line.unitPriceKurus, line.discountPermille);
+  return `${product.code} ${product.name} × ${line.qtyMilli / 1000}${discount} (${formatMoney(net)})`;
+}
+
+/** Satır değişikliği: yalnızca değişen adet ve iskonto, ardından tutarın eskisi ve yenisi. Değişiklik yoksa null. */
+function lineChangeText(product: ProductFacts, before: LineFacts, after: LineFacts): string | null {
+  const parts: string[] = [];
+  if (before.qtyMilli !== after.qtyMilli) parts.push(`adet ${before.qtyMilli / 1000} → ${after.qtyMilli / 1000}`);
+  if (before.discountPermille !== after.discountPermille) {
+    parts.push(`iskonto ${discountText(before.discountPermille)} → ${discountText(after.discountPermille)}`);
+  }
+  if (parts.length === 0) return null;
+  const from = lineNetKurus(before.qtyMilli, before.unitPriceKurus, before.discountPermille);
+  const to = lineNetKurus(after.qtyMilli, after.unitPriceKurus, after.discountPermille);
+  return `satır güncellendi — ${product.code} ${product.name}: ${parts.join(", ")}, tutar ${formatMoney(from)} → ${formatMoney(to)}`;
+}
+
+/** Siparişin iptal edilmemiş satırlarının sayısı ve KDV dahil tutarı: "2 satır, KDV dahil ₺27.500,00". */
+function orderSizeText(lines: (LineFacts & { vatRate: number; status: string })[]): string {
+  const live = lines.filter((l) => l.status !== "cancelled");
+  return `${live.length} satır, KDV dahil ${formatMoney(orderTotals(live).totalKurus)}`;
+}
+
+async function productFacts(db: Db, productId: string): Promise<ProductFacts> {
+  const [p] = await db.select({ code: products.code, name: products.name }).from(products).where(eq(products.id, productId));
+  return p ?? { code: "?", name: "silinmiş ürün" };
 }
 
 function checkDiscount(discountPermille: number): void {
@@ -69,7 +105,7 @@ export async function createOrder(ctx: Ctx, i: { customerId: string; dueAt: Date
       .values({ code, customerId: customer.id, dueAt: i.dueAt, note: i.note?.trim() ?? "", createdBy: tx.user.id, createdAt: tx.now })
       .returning();
     if (!row) throw new Error("sipariş açılamadı");
-    await logAudit(tx, { entity: "sales_order", entityId: row.id, action: "create", summary: `${code} taslağı açıldı (${customer.name})` });
+    await logAudit(tx, { entity: "sales_order", entityId: row.id, action: "create", summary: `${code} taslağı açıldı: ${customer.name}, termin ${auditDay(i.dueAt)}` });
     return asOrder(row);
   });
 }
@@ -105,15 +141,11 @@ export async function addLine(
         .where(eq(salesOrderLines.id, same.id))
         .returning();
       if (!row) throw new Error("satır güncellenemedi");
-      const discountChange =
-        i.discountPermille !== undefined && i.discountPermille !== same.discountPermille
-          ? `, iskonto ${discountText(same.discountPermille)} → ${discountText(i.discountPermille)}`
-          : "";
       await logAudit(tx, {
         entity: "sales_order",
         entityId: order.id,
         action: "update_line",
-        summary: `${order.code}: ${product.code} adedi ${same.qtyMilli / 1000} → ${qtyMilli / 1000}${discountChange}`,
+        summary: `${order.code}: ${lineChangeText(product, same, row)}`,
       });
       return { ...asOrderLine(row), merged: true };
     }
@@ -135,7 +167,7 @@ export async function addLine(
       entity: "sales_order",
       entityId: order.id,
       action: "add_line",
-      summary: `${order.code}: ${product.code} × ${i.qtyMilli / 1000} eklendi`,
+      summary: `${order.code}: satır eklendi — ${lineText(product, row)}`,
     });
     return { ...asOrderLine(row), merged: false };
   });
@@ -152,9 +184,10 @@ export async function updateLine(ctx: Ctx, i: { lineId: string; qtyMilli?: numbe
     const set: { qtyMilli?: number; discountPermille?: number } = {};
     if (i.qtyMilli !== undefined) set.qtyMilli = i.qtyMilli;
     if (i.discountPermille !== undefined) set.discountPermille = i.discountPermille;
-    if (Object.keys(set).length === 0) return;
+    const change = lineChangeText(await productFacts(tx.db, line.productId), line, { ...line, ...set });
+    if (change === null) return;
     await tx.db.update(salesOrderLines).set(set).where(eq(salesOrderLines.id, line.id));
-    await logAudit(tx, { entity: "sales_order", entityId: order.id, action: "update_line", summary: `${order.code}: satır güncellendi` });
+    await logAudit(tx, { entity: "sales_order", entityId: order.id, action: "update_line", summary: `${order.code}: ${change}` });
   });
 }
 
@@ -164,7 +197,13 @@ export async function removeLine(ctx: Ctx, lineId: string): Promise<void> {
     const line = await mustFindLine(tx.db, lineId);
     const order = await mustFindDraftOrder(tx.db, line.orderId);
     await tx.db.delete(salesOrderLines).where(eq(salesOrderLines.id, line.id));
-    await logAudit(tx, { entity: "sales_order", entityId: order.id, action: "remove_line", summary: `${order.code}: satır silindi` });
+    const product = await productFacts(tx.db, line.productId);
+    await logAudit(tx, {
+      entity: "sales_order",
+      entityId: order.id,
+      action: "remove_line",
+      summary: `${order.code}: satır silindi — ${lineText(product, line)}`,
+    });
   });
 }
 
@@ -188,6 +227,7 @@ export async function confirmOrder(ctx: Ctx, orderId: string): Promise<{ order: 
     if (lines.length === 0) throw invalid("Satırsız sipariş onaylanamaz");
 
     const waitingNeeds: MaterialNeed[] = [];
+    let opened = 0;
     for (const line of lines) {
       const [product] = await tx.db.select().from(products).where(eq(products.id, line.productId));
       if (!product) throw new DomainError("NOT_FOUND", "Ürün bulunamadı");
@@ -200,6 +240,7 @@ export async function confirmOrder(ctx: Ctx, orderId: string): Promise<{ order: 
       const remaining = line.qtyMilli - reserve;
       if (remaining > 0) {
         const { workOrder } = await openWorkOrder(tx, { productId: product.id, qtyMilli: remaining, salesOrderLineId: line.id });
+        opened += 1;
         if (workOrder.materialsReserved) {
           status = "in_production";
         } else {
@@ -211,7 +252,12 @@ export async function confirmOrder(ctx: Ctx, orderId: string): Promise<{ order: 
     }
 
     await tx.db.update(salesOrders).set({ status: "confirmed", confirmedAt: tx.now }).where(eq(salesOrders.id, order.id));
-    await logAudit(tx, { entity: "sales_order", entityId: order.id, action: "confirm", summary: `${order.code} onaylandı` });
+    await logAudit(tx, {
+      entity: "sales_order",
+      entityId: order.id,
+      action: "confirm",
+      summary: `${order.code} onaylandı: ${orderSizeText(lines)}${opened > 0 ? `; ${opened} iş emri açıldı` : ""}`,
+    });
     await refreshOrderStatus(tx, order.id);
 
     const [row] = await tx.db.select().from(salesOrders).where(eq(salesOrders.id, order.id));
@@ -240,7 +286,7 @@ export async function shipOrder(ctx: Ctx, orderId: string): Promise<SalesOrder> 
       await setLineStatus(tx, line.id, "shipped", 0);
     }
     await tx.db.update(salesOrders).set({ status: "shipped", shippedAt: tx.now }).where(eq(salesOrders.id, order.id));
-    await logAudit(tx, { entity: "sales_order", entityId: order.id, action: "ship", summary: `${order.code} sevk edildi` });
+    await logAudit(tx, { entity: "sales_order", entityId: order.id, action: "ship", summary: `${order.code} sevk edildi: ${orderSizeText(lines)}` });
     const [row] = await tx.db.select().from(salesOrders).where(eq(salesOrders.id, order.id));
     if (!row) throw new Error("sipariş okunamadı");
     return asOrder(row);
@@ -278,7 +324,12 @@ export async function cancelOrder(ctx: Ctx, i: { orderId: string; reason: string
     }
 
     await tx.db.update(salesOrders).set({ status: "cancelled", cancelledAt: tx.now }).where(eq(salesOrders.id, order.id));
-    await logAudit(tx, { entity: "sales_order", entityId: order.id, action: "cancel", summary: `${order.code} iptal edildi: ${reason}` });
+    await logAudit(tx, {
+      entity: "sales_order",
+      entityId: order.id,
+      action: "cancel",
+      summary: `${order.code} iptal edildi: ${reason} (${orderSizeText(lines)})`,
+    });
     const [row] = await tx.db.select().from(salesOrders).where(eq(salesOrders.id, order.id));
     if (!row) throw new Error("sipariş okunamadı");
     return asOrder(row);
