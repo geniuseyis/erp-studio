@@ -189,7 +189,7 @@ test("malzeme bekleyen iş emri: depo giriş yapar, planlama yeniden dener, duru
   await drawer.getByRole("button", { name: "Malzemeyi yeniden dene" }).click();
   await expect(page.getByRole("status").filter({ hasText: `${wo.code}: malzemeler ayrıldı` })).toBeVisible();
   await expect(drawer.getByRole("button", { name: "Malzemeyi yeniden dene" })).toHaveCount(0);
-  await expect(drawer.getByText("Malzeme bekliyor")).toHaveCount(0);
+  await expect(drawer.getByText("Malzeme bekliyor", { exact: true })).toHaveCount(0);
   await expect(drawer.getByRole("table", { name: "Malzemeler" }).getByRole("columnheader", { name: "Ayrılan" })).toBeVisible();
   await expect.poll(async () => (await one<{ r: boolean }>(page, `select materials_reserved as r from work_orders where id = '${wo.id}'`)).r).toBe(true);
   if (wo.line) {

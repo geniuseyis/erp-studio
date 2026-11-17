@@ -5,11 +5,13 @@ import type { StockCountLine } from "@/domain/inventory/queries";
 import { can } from "@/domain/permissions";
 import { decimalError, formatNumber, formatQty, parseDecimal, toMilli, unitLabel } from "@/domain/units";
 import { useSession } from "@/shell/session";
+import { entityHistory, useHistory } from "@/shell/useHistory";
 import { Button } from "@/ui/Button";
 import { cn } from "@/ui/cn";
 import { Dialog } from "@/ui/Dialog";
 import { Drawer } from "@/ui/Drawer";
 import { formatDateTime, formatSignedQty } from "@/ui/format";
+import { HistoryList } from "@/ui/HistoryList";
 import { ClipboardIcon, InfoIcon } from "@/ui/icons";
 import { Meter } from "@/ui/Meter";
 import { Skeleton } from "@/ui/Skeleton";
@@ -19,6 +21,8 @@ import { useApproveCount, useCancelCount, useCount, useSetCountLine } from "./ho
 import { errorMessage } from "@/shell/useAction";
 import { COUNT_STATUS } from "./labels";
 
+const countHistory = entityHistory("stock_count");
+
 const toText = (milli: number | null) => (milli === null ? "" : formatNumber(milli / 1000).replace(/\./g, ""));
 
 /** Sayım fişi: satır satır sayılan miktar girilir; müdür onaylayınca farklar stok hareketi olarak yazılır. */
@@ -26,6 +30,7 @@ export function CountDetail({ id, onClose }: { id: string; onClose: () => void }
   const { user } = useSession();
   const toast = useToast();
   const query = useCount(id);
+  const history = useHistory("stock_count", id, countHistory);
   const approve = useApproveCount();
   const cancel = useCancelCount();
   const [confirming, setConfirming] = useState<"approve" | "cancel" | null>(null);
@@ -152,6 +157,7 @@ export function CountDetail({ id, onClose }: { id: string; onClose: () => void }
                 </tbody>
               </table>
             </div>
+            <HistoryList {...history} />
           </div>
         ) : query.isPending ? (
           <div className="grid gap-3">

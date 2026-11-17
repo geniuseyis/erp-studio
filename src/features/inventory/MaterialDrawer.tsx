@@ -6,11 +6,13 @@ import type { MaterialRow } from "@/domain/inventory/queries";
 import { can } from "@/domain/permissions";
 import { formatMoney, formatNumber, formatQty, unitLabel } from "@/domain/units";
 import { useSession } from "@/shell/session";
+import { entityHistory, useHistory } from "@/shell/useHistory";
 import { Button } from "@/ui/Button";
 import { cn } from "@/ui/cn";
 import { Drawer } from "@/ui/Drawer";
 import { DetailItem } from "@/ui/DrawerParts";
 import { formatDateTime, formatSignedQty } from "@/ui/format";
+import { HistoryList } from "@/ui/HistoryList";
 import { ArrowRightIcon, ClockIcon, EditIcon, MinusIcon, PlusIcon, ShelfIcon, TagIcon } from "@/ui/icons";
 import { Meter } from "@/ui/Meter";
 import { Skeleton } from "@/ui/Skeleton";
@@ -24,11 +26,14 @@ import { StockActionDialog } from "./StockActionDialog";
 
 type Action = "receipt" | "issue" | "edit" | null;
 
+const materialHistory = entityHistory("material");
+
 /** Malzeme ayrıntısı: stok cetveli, kart bilgileri, son hareketler ve yetkiye göre işlemler. */
 export function MaterialDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const { user } = useSession();
   const material = useMaterial(id);
   const movements = useMovements({ materialId: id, limit: 10 });
+  const history = useHistory("material", id, materialHistory);
   const [action, setAction] = useState<Action>(null);
   const m = material.data;
 
@@ -130,6 +135,8 @@ export function MaterialDrawer({ id, onClose }: { id: string; onClose: () => voi
                 })}
               </ul>
             </section>
+
+            <HistoryList {...history} />
           </div>
         ) : material.isPending ? (
           <div className="grid gap-3">

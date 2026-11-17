@@ -5,10 +5,12 @@ import { useState } from "react";
 import { can } from "@/domain/permissions";
 import { formatMoney } from "@/domain/units";
 import { useSession } from "@/shell/session";
+import { entityHistory, useHistory } from "@/shell/useHistory";
 import { Button } from "@/ui/Button";
 import { Drawer } from "@/ui/Drawer";
 import { DetailItem } from "@/ui/DrawerParts";
 import { formatDate } from "@/ui/format";
+import { HistoryList } from "@/ui/HistoryList";
 import { ArrowRightIcon, ClockIcon, ContactIcon, EditIcon } from "@/ui/icons";
 import { Skeleton } from "@/ui/Skeleton";
 import { StatusChip } from "@/ui/StatusChip";
@@ -17,11 +19,14 @@ import { useCustomer, useOrders } from "./hooks";
 import { CUSTOMER_KIND_LABEL } from "./labels";
 import { DueDate, OrderStatusChips } from "./OrderStatus";
 
+const customerHistory = entityHistory("customer");
+
 /** Müşteri kartı, açık tutarı ve siparişleri. Siparişe tıklamak sipariş çekmecesini açar. */
 export function CustomerDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const { user } = useSession();
   const customer = useCustomer(id);
   const orders = useOrders({ customerId: id });
+  const history = useHistory("customer", id, customerHistory);
   const [editing, setEditing] = useState(false);
   const c = customer.data;
   const canWrite = user ? can(user, "sales", "write") : false;
@@ -112,6 +117,8 @@ export function CustomerDrawer({ id, onClose }: { id: string; onClose: () => voi
                 ))}
               </ul>
             </section>
+
+            <HistoryList {...history} />
           </div>
         ) : customer.isPending ? (
           <div className="grid gap-3">

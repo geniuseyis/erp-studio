@@ -48,7 +48,7 @@ test("beş departmanla siparişten sevke", async ({ page }) => {
   await drawer.getByRole("radio", { name: new RegExp(product.code) }).check();
   await drawer.getByLabel("Adet", { exact: true }).fill("1");
   await drawer.getByRole("button", { name: "Satırı ekle" }).click();
-  await expect(drawer.getByRole("listitem").filter({ hasText: product.code })).toBeVisible();
+  await expect(drawer.getByRole("list", { name: "Satırlar" }).getByRole("listitem").filter({ hasText: product.code })).toBeVisible();
   await drawer.getByRole("button", { name: "Onayla" }).click();
   await expect(page.getByRole("status").filter({ hasText: `${orderCode} onaylandı` })).toBeVisible();
   await expect(drawer.getByText("Üretimde").first()).toBeVisible();

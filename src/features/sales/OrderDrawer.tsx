@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { type FormEvent, useState } from "react";
+import { listOrderHistory } from "@/domain/audit-queries";
 import { can } from "@/domain/permissions";
 import type { Shortage } from "@/domain/production/types";
 import type { OrderDetail, OrderLineRow } from "@/domain/sales/queries";
 import { formatMoney, formatNumber } from "@/domain/units";
 import { useSession } from "@/shell/session";
+import { useHistory } from "@/shell/useHistory";
 import { Button, IconButton } from "@/ui/Button";
 import { cn } from "@/ui/cn";
 import { Dialog } from "@/ui/Dialog";
@@ -14,6 +16,7 @@ import { Drawer } from "@/ui/Drawer";
 import { DetailItem, DrawerBadge } from "@/ui/DrawerParts";
 import { Textarea } from "@/ui/Field";
 import { formatDateTime } from "@/ui/format";
+import { HistoryList } from "@/ui/HistoryList";
 import { AlertIcon, ArrowRightIcon, CheckIcon, CloseIcon, ReceiptIcon, TrashIcon, TruckIcon } from "@/ui/icons";
 import { Skeleton } from "@/ui/Skeleton";
 import { StatusChip } from "@/ui/StatusChip";
@@ -29,6 +32,7 @@ export function OrderDrawer({ id, onClose }: { id: string; onClose: () => void }
   const { user } = useSession();
   const toast = useToast();
   const order = useOrder(id);
+  const history = useHistory("order", id, listOrderHistory);
   const confirm = useConfirmOrder();
   const ship = useShipOrder();
   const { busy, run: guarded } = useGuardedRun<"confirm" | "ship">();
@@ -159,6 +163,7 @@ export function OrderDrawer({ id, onClose }: { id: string; onClose: () => void }
             {isDraft && canWrite ? <LineForm orderId={o.id} /> : null}
 
             <Totals order={o} />
+            <HistoryList {...history} />
           </div>
         ) : order.isPending ? (
           <div className="grid gap-3">

@@ -5,9 +5,11 @@ import type { ProductFinish } from "@/domain/production/types";
 import { formatMoney, formatNumber, formatQty } from "@/domain/units";
 import { CategorySwatch } from "@/features/inventory/CategorySwatch";
 import { FINISH_LABEL } from "@/features/sales/labels";
+import { entityHistory, useHistory } from "@/shell/useHistory";
 import { cn } from "@/ui/cn";
 import { Drawer } from "@/ui/Drawer";
 import { DetailItem, DrawerBadge } from "@/ui/DrawerParts";
+import { HistoryList } from "@/ui/HistoryList";
 import { BoxIcon } from "@/ui/icons";
 import { Skeleton } from "@/ui/Skeleton";
 import { useProduct } from "./hooks";
@@ -24,10 +26,12 @@ export function FinishChip({ finish }: { finish: ProductFinish }) {
 }
 
 const mm = (n: number) => formatNumber(n);
+const productHistory = entityHistory("product");
 
 /** Ürün ayrıntısı: ölçüler, fiyat ve maliyet, reçete (bir adet için) ve atölye rotası. */
 export function ProductDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const product = useProduct(id);
+  const history = useHistory("product", id, productHistory);
   const p = product.data;
 
   return (
@@ -67,6 +71,7 @@ export function ProductDrawer({ id, onClose }: { id: string; onClose: () => void
           </dl>
           <Bom product={p} />
           <Routing product={p} />
+          <HistoryList {...history} />
         </div>
       ) : product.isPending ? (
         <div className="grid gap-3">

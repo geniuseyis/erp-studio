@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { type FormEvent, type MouseEvent, useState } from "react";
+import { listWorkOrderHistory } from "@/domain/audit-queries";
 import { can } from "@/domain/permissions";
 import { istanbulDayStart } from "@/domain/production/calendar";
 import type { WorkOrderDetail, WorkOrderRow } from "@/domain/production/queries";
@@ -9,6 +10,7 @@ import type { WorkOrderStatus } from "@/domain/production/types";
 import { formatNumber, formatQty } from "@/domain/units";
 import { dueFromInput, formatDue, formatShortage } from "@/features/sales/labels";
 import { useSession } from "@/shell/session";
+import { useHistory } from "@/shell/useHistory";
 import { useGuardedRun } from "@/shell/useAction";
 import { Button } from "@/ui/Button";
 import { cn } from "@/ui/cn";
@@ -16,6 +18,7 @@ import { Drawer } from "@/ui/Drawer";
 import { DetailItem, DrawerBadge } from "@/ui/DrawerParts";
 import { Input } from "@/ui/Field";
 import { formatDateTime } from "@/ui/format";
+import { HistoryList } from "@/ui/HistoryList";
 import { AlertIcon, ArrowRightIcon, CheckIcon, ClockIcon, RefreshIcon, SawIcon } from "@/ui/icons";
 import { Meter } from "@/ui/Meter";
 import { Skeleton } from "@/ui/Skeleton";
@@ -42,6 +45,7 @@ export function WorkOrderDrawer({ id, onClose }: { id: string; onClose: () => vo
   const { user } = useSession();
   const toast = useToast();
   const query = useWorkOrder(id);
+  const history = useHistory("work_order", id, listWorkOrderHistory);
   const plan = usePlanWorkOrder();
   const retry = useRetryMaterials();
   const start = useStartStep();
@@ -207,6 +211,7 @@ export function WorkOrderDrawer({ id, onClose }: { id: string; onClose: () => vo
 
           <Steps workOrder={w} />
           <Materials workOrder={w} />
+          <HistoryList {...history} />
         </div>
       ) : query.isPending ? (
         <div className="grid gap-3">

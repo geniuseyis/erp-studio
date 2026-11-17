@@ -86,9 +86,9 @@ test("satış uzmanı sipariş açar, iki satır ekler, toplam KDV ayrı görün
   await expect(drawer.getByText(`Seçili: ${furniture.code}`)).toBeVisible();
 
   await addLine(drawer, furniture.code, "2", "10");
-  await expect(drawer.getByRole("listitem").filter({ hasText: furniture.code })).toBeVisible();
+  await expect(drawer.getByRole("list", { name: "Satırlar" }).getByRole("listitem").filter({ hasText: furniture.code })).toBeVisible();
   await addLine(drawer, general.code, "1");
-  await expect(drawer.getByRole("listitem").filter({ hasText: general.code })).toBeVisible();
+  await expect(drawer.getByRole("list", { name: "Satırlar" }).getByRole("listitem").filter({ hasText: general.code })).toBeVisible();
   expect(await count(page, `select count(*)::int as n from sales_order_lines where order_id = '${id}'`)).toBe(2);
 
   const totals = orderTotals([
@@ -145,7 +145,7 @@ test("onay çift tıklamada tek iş emri açar", async ({ page }) => {
   const p = await product(page, "on_hand_milli - reserved_milli = 0");
   const { drawer, id } = await newDraft(page);
   await addLine(drawer, p.code, "1");
-  await expect(drawer.getByRole("listitem").filter({ hasText: p.code })).toBeVisible();
+  await expect(drawer.getByRole("list", { name: "Satırlar" }).getByRole("listitem").filter({ hasText: p.code })).toBeVisible();
 
   const before = await count(page, "select count(*)::int as n from work_orders");
   await drawer.getByRole("button", { name: "Onayla" }).dblclick();
@@ -176,7 +176,7 @@ test("malzeme eksikse onay sonrası eksik listesi görünür", async ({ page }) 
 
   const { drawer } = await newDraft(page);
   await addLine(drawer, pick.code, String(pick.qty));
-  await expect(drawer.getByRole("listitem").filter({ hasText: pick.code })).toBeVisible();
+  await expect(drawer.getByRole("list", { name: "Satırlar" }).getByRole("listitem").filter({ hasText: pick.code })).toBeVisible();
   await drawer.getByRole("button", { name: "Onayla" }).click();
 
   const warning = drawer.getByRole("alert").filter({ hasText: "Malzeme eksik" });

@@ -3,6 +3,15 @@ import { formatQty, type Unit } from "@/domain/units";
 const DATE = new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric" });
 const DATE_TIME = new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
+const ISTANBUL_DATE_TIME = new Intl.DateTimeFormat("tr-TR", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "Europe/Istanbul",
+});
+
 /** 15.11.2026 */
 export function formatDate(date: Date): string {
   return DATE.format(date);
@@ -11,6 +20,11 @@ export function formatDate(date: Date): string {
 /** 15.11.2026 09:00 */
 export function formatDateTime(date: Date): string {
   return DATE_TIME.format(date);
+}
+
+/** İstanbul saatiyle 15.11.2026 09:00; tarayıcının saat diliminden bağımsız (işlem geçmişi). */
+export function formatIstanbulDateTime(date: Date): string {
+  return ISTANBUL_DATE_TIME.format(date);
 }
 
 /** Artı ya da eksi işaretiyle miktar: +12,5 plaka, −4 adet. Sıfırda işaret yok. */

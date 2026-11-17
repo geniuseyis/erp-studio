@@ -162,7 +162,7 @@ test("uzman yeni malzeme ekler ve düzenler", async ({ page }) => {
   const edit = page.getByRole("dialog", { name: "Malzemeyi düzenle" });
   await edit.getByLabel("Raf").fill("A-09");
   await edit.getByRole("button", { name: "Değişiklikleri kaydet" }).click();
-  await expect(drawer.getByText("A-09")).toBeVisible();
+  await expect(drawer.getByText("A-09", { exact: true })).toBeVisible();
 });
 
 test("sayım: uzman açar ve sayar, müdür onaylar, fark harekete yazılır", async ({ page }) => {
@@ -210,7 +210,7 @@ test("sayım: uzman açar ve sayar, müdür onaylar, fark harekete yazılır", a
   await expect(confirm).toContainText("2 kalemde fark var");
   await confirm.getByRole("button", { name: "Onayla" }).click();
   await expect(page.getByRole("status").filter({ hasText: `${code} onaylandı` })).toBeVisible();
-  await expect(review.getByText("Onaylandı")).toBeVisible();
+  await expect(review.getByText("Onaylandı", { exact: true })).toBeVisible();
 
   const adjusted = await sql<{ n: number }>(
     page,
