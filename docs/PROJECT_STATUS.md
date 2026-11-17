@@ -1,6 +1,6 @@
 # Proje durumu
 
-Son güncelleme: 2026-11-16 (Plan 2A: satış ve üretim tamamlandı)
+Son güncelleme: 2026-11-17 (Plan 2A: satış ve üretim tamamlandı, son gözden geçirme düzeltmeleri yapıldı)
 
 ## Yapılanlar (Plan 1: temel)
 
@@ -25,8 +25,8 @@ Son güncelleme: 2026-11-16 (Plan 2A: satış ve üretim tamamlandı)
 
 | Tür | Sayı | Not |
 |---|---|---|
-| Birim (Vitest) | 431 | Gerçek PGlite veritabanıyla; dosya başına paylaşılan veritabanı |
-| Tarayıcı (Playwright) | 75 (+1 elle çalıştırılan: ekran görüntüsü) | Başsız Chrome, "hareketi azalt" açık |
+| Birim (Vitest) | 470 | Gerçek PGlite veritabanıyla; dosya başına paylaşılan veritabanı |
+| Tarayıcı (Playwright) | 77 (+1 elle çalıştırılan: ekran görüntüsü) | Başsız Chrome, "hareketi azalt" açık |
 | Üretim dolaşımı | `scripts/walkthrough.mjs` | Giriş, stok girişi, sayım, palet, siparişten sevke (satış, planlama, atölye, depo), kullanıcı ekleme, sıfırlama; konsol hatası ve 4xx yok |
 
 ## Tarayıcıda PostgreSQL
@@ -36,7 +36,7 @@ Son güncelleme: 2026-11-16 (Plan 2A: satış ve üretim tamamlandı)
 - **Çok sekme:** PGlite sekmelerden birini lider seçer, diğerleri sorgularını ona yollar. Kurulum ve örnek veri yüklemesi Web Locks ile tek sekmede çalışır. Bir sekmedeki değişiklik `BroadcastChannel` ile diğer sekmelerin sorgularını yeniler.
 - **Depolama kapalıysa** (OPFS yok, ya da site verisi engellendiği için Worker içinde reddediliyor): veritabanı bellekte açılır (`persistent: false`) ve ekranda kalıcı bir uyarı durur. Worker reddi açıkça bildirir; sessizce takılırsa 60 sn sonra bellekte devam edilir.
 - **Sıfırlama ve sürüm değişimi:** `public` şeması silinip yeniden kurulur.
-- **Örnek veri:** derleme sırasında üretilen anlık görüntüden (`src/seed/snapshot.generated.json`, ~210 KB) tablo başına toplu INSERT ile yüklenir; tarihler yükleme anına kaydırılır. Anlık görüntü (~900 KB) `npm run seed:snapshot` ile yenilenir; güncel olup olmadığını bir birim testi denetler.
+- **Örnek veri:** derleme sırasında üretilen anlık görüntüden (`src/seed/snapshot.generated.json`, ~900 KB) tablo başına toplu INSERT ile yüklenir; tarihler yükleme anına iş günü olarak kaydırılır, hiçbir kayıt hafta sonuna düşmez. Anlık görüntü `npm run seed:snapshot` ile yenilenir; güncel olup olmadığını bir birim testi denetler.
 
 ### Neden bu depolama (2026-11-15 ölçümleri, başsız Chrome, RTX 4070 makine)
 
@@ -66,16 +66,16 @@ Ayrıca örnek veriyi tarayıcıda servislerle üretmek (2.000'den fazla sorgu) 
 
 **Bilinçle ertelenenler (2A):**
 
-- Satın alınan parçalar (ayna, LED, metal ayak) reçetelerde ve maliyette yok; ürün maliyeti yalnızca levha, bant, menteşe gibi stoktaki malzemeleri sayar.
+- Satın alınan parçalar (ayna, LED, metal ayak) reçetelerde ve maliyette yok; ürünün malzeme maliyeti yalnızca levha, bant, menteşe gibi stoktaki malzemeleri sayar. Birim maliyet buna rota dakikası × 2,91 TL × 2 (işçilik ve genel gider) ekler; katalog fiyatı da bu maliyetten çıkar.
 - Hata yönlendirmesi ileti metnini okuyor (hata kodu yerine metne bakan yerler var); metin değişirse yönlendirme bozulur.
 - Eşzamanlılık: eksik malzeme okumalarında `FOR UPDATE` yok. Tarayıcıda tek bağlantı olduğu için sorun çıkmaz; ikinci aşamada sunucu PostgreSQL'e geçerken kilitleme eklenmeli.
 - Örnek verinin anlık görüntüsünün güncel olup olmadığını denetleyen birim testi zaman damgalarını karşılaştırmıyor.
 
 - Ölçümler yerel sunucuda ve yalnızca Chrome'da yapıldı. Yayında dosyalar sıkıştırılmış gelir ve önbellekte kalır, ama ilk ziyarette yaklaşık 15 MB'lık indirme bağlantı hızına göre süre ekler. Yayın sonrası gerçek ağda yeniden ölçülmeli.
 - **Firefox ve Safari'de denenmedi.** `memfs2opfs` bir Worker içinde OPFS eşzamanlı dosya erişimi ister; bu tarayıcılarda çalışmazsa uygulama bellekte açılır ve uyarı gösterir.
-- Her tam sayfa yenilemesinde veritabanı yeniden başlatılır (1,4–2,5 sn açılış ekranı). Uygulama içi gezinme sayfayı yenilemez.
+- Her tam sayfa yenilemesinde veritabanı yeniden başlatılır (1,4–3,4 sn açılış ekranı; dokuz ölçümün sekizinde 1,4–1,5 sn). Uygulama içi gezinme sayfayı yenilemez.
 - Malzeme fiyatları 2026-11-16'da Türkiye'deki kaynaklardan toplandı ve KDV hariç tutulur: 42 kalemin 14'ü sayfadan okundu, 18'i arama özetinden (Koçtaş, Cimri ve Hepsiburada otomatik okumayı engelliyor), 10'u dayanağı yazılı tahmin. Kereste fiyatları Bakanlığın Ocak 2026 rayicinden. Ayrıntı: `docs/DATA_SOURCES.md`.
-- Örnek verinin tarihleri tam gün kaydırılır; hafta içi ve hafta sonu düzeni korunmaz.
+- Örnek verinin tarihleri iş günü olarak kaydırılır. Plan 1 stok verisindeki hafta sonu kayıtları sonraki iş gününe, anlık görüntünün son hafta sonundakiler (cumartesi sayımı dahil) son iş gününe taşınır; o günlerde saat sırası hareket sırasıyla birebir örtüşmeyebilir.
 - Kaydedilmiş veritabanı bozulursa kendiliğinden onarım yolu yok; Ayarlar → Veriyi sıfırla ya da site verisini silmek gerekir.
 - "Parolamı unuttum" yok: parolayı bilgi işlem ya da yönetim sıfırlar (vitrinde e-posta gönderilmez).
 
