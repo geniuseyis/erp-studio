@@ -21,9 +21,10 @@ import { AlertIcon, ArrowRightIcon, CheckIcon, CloseIcon, ReceiptIcon, TrashIcon
 import { Skeleton } from "@/ui/Skeleton";
 import { StatusChip } from "@/ui/StatusChip";
 import { useToast } from "@/ui/Toast";
-import { errorMessage, useGuardedRun } from "@/shell/useAction";
+import { useGuardedRun } from "@/shell/useAction";
+import { useConfirm } from "@/shell/useConfirm";
 import { useCancelOrder, useConfirmOrder, useOrder, useRemoveLine, useShipOrder } from "./hooks";
-import { formatDiscount, formatShortage, LINE_STATUS_LABEL, LINE_STATUS_TONE, orderTone } from "./labels";
+import { confirmOrderText, formatDiscount, formatShortage, LINE_STATUS_LABEL, LINE_STATUS_TONE, orderTone, removeLineText, shipOrderText } from "./labels";
 import { LineForm } from "./LineForm";
 import { DueDate, OrderStatusChips } from "./OrderStatus";
 
@@ -35,7 +36,9 @@ export function OrderDrawer({ id, onClose }: { id: string; onClose: () => void }
   const history = useHistory("order", id, listOrderHistory);
   const confirm = useConfirmOrder();
   const ship = useShipOrder();
-  const { busy, run: guarded } = useGuardedRun<"confirm" | "ship">();
+  const remove = useRemoveLine();
+  const { busy, run: guarded } = useGuardedRun<"confirm" | "ship" | "remove">();
+  const ask = useConfirm();
   const [cancelling, setCancelling] = useState(false);
   // Onayda dönen eksikler çekmece kapanana dek kalır; sonraki sorgular onları geri getirmez.
   const [shortages, setShortages] = useState<Shortage[]>([]);
@@ -49,24 +52,40 @@ export function OrderDrawer({ id, onClose }: { id: string; onClose: () => void }
   const canShipNow = o?.status === "ready" && canShip;
   const canCancel = o ? (isDraft ? canWrite : (o.status === "confirmed" || o.status === "in_production" || o.status === "ready") && canApprove) : false;
 
-  /** Çift tıklama ve yenileme bitmeden ikinci istek ortak kancada engellenir. */
+  /** Önce onay sorulur; çift tıklama ve yenileme bitmeden ikinci istek ortak kancada engellenir. */
   function run(kind: "confirm" | "ship", event: { detail: number }) {
-    if (!o) return;
-    void guarded(
-      kind,
-      async () => {
-        if (kind === "confirm") {
-          const result = await confirm.mutateAsync(o.id);
-          setShortages(result.shortages);
-          if (result.shortages.length > 0) toast.error(`${o.code} onaylandı; bazı iş emirleri malzeme bekliyor`);
-          else toast.success(`${o.code} onaylandı`);
-        } else {
-          await ship.mutateAsync(o.id);
-          toast.success(`${o.code} sevk edildi`);
-        }
-      },
-      event,
+    if (!o || event.detail > 1) return;
+    const work = async () => {
+      if (kind === "confirm") {
+        const result = await confirm.mutateAsync(o.id);
+        setShortages(result.shortages);
+        if (result.shortages.length > 0) toast.error(`${o.code} onaylandı; bazı iş emirleri malzeme bekliyor`);
+        else toast.success(`${o.code} onaylandı`);
+      } else {
+        await ship.mutateAsync(o.id);
+        toast.success(`${o.code} sevk edildi`);
+      }
+    };
+    void ask.confirm(
+      kind === "confirm"
+        ? { title: "Sipariş onaylansın mı?", body: confirmOrderText(o), confirmLabel: "Onayla", action: () => guarded(kind, work) }
+        : { title: "Sipariş sevk edilsin mi?", body: shipOrderText(o), confirmLabel: "Sevk et", action: () => guarded(kind, work) },
     );
+  }
+
+  function removeLine(line: OrderLineRow) {
+    if (!o) return;
+    void ask.confirm({
+      title: "Satır silinsin mi?",
+      body: removeLineText(o, line),
+      confirmLabel: "Satırı sil",
+      tone: "danger",
+      action: () =>
+        guarded("remove", async () => {
+          await remove.mutateAsync(line.id);
+          toast.success(`${line.productCode} satırı silindi`);
+        }),
+    });
   }
 
   const actions = o && (canConfirm || canShipNow || canCancel);
@@ -154,13 +173,19 @@ export function OrderDrawer({ id, onClose }: { id: string; onClose: () => void }
               ) : (
                 <ul aria-label="Satırlar" className="grid gap-2">
                   {o.lines.map((line) => (
-                    <LineItem key={line.id} line={line} showStatus={!isDraft} removable={isDraft && canWrite} />
+                    <LineItem
+                      key={line.id}
+                      line={line}
+                      showStatus={!isDraft}
+                      onRemove={isDraft && canWrite ? () => removeLine(line) : undefined}
+                      disabled={busy !== null}
+                    />
                   ))}
                 </ul>
               )}
             </section>
 
-            {isDraft && canWrite ? <LineForm orderId={o.id} /> : null}
+            {isDraft && canWrite ? <LineForm order={o} /> : null}
 
             <Totals order={o} />
             <HistoryList {...history} />
@@ -177,6 +202,7 @@ export function OrderDrawer({ id, onClose }: { id: string; onClose: () => void }
       </Drawer>
 
       {o && cancelling ? <CancelDialog order={o} onClose={() => setCancelling(false)} /> : null}
+      {ask.element}
     </>
   );
 }
@@ -215,9 +241,7 @@ function ShortageBox({ shortages }: { shortages: Shortage[] }) {
   );
 }
 
-function LineItem({ line, showStatus, removable }: { line: OrderLineRow; showStatus: boolean; removable: boolean }) {
-  const toast = useToast();
-  const remove = useRemoveLine();
+function LineItem({ line, showStatus, onRemove, disabled }: { line: OrderLineRow; showStatus: boolean; onRemove?: () => void; disabled: boolean }) {
   const qty = formatNumber(line.qtyMilli / 1000);
   return (
     <li className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 rounded-2xl bg-surface-2/70 px-3.5 py-3 ring-1 ring-line ring-inset">
@@ -227,19 +251,8 @@ function LineItem({ line, showStatus, removable }: { line: OrderLineRow; showSta
       </span>
       <span className="flex items-start gap-1">
         <span className="tabular pt-0.5 font-semibold whitespace-nowrap">{formatMoney(line.netKurus)}</span>
-        {removable ? (
-          <IconButton
-            label={`Satırı sil: ${line.productCode}`}
-            size="sm"
-            className="-mt-1 -mr-1.5 text-danger"
-            disabled={remove.isPending}
-            onClick={() =>
-              remove.mutate(line.id, {
-                onSuccess: () => toast.success(`${line.productCode} satırı silindi`),
-                onError: (error) => toast.error(errorMessage(error)),
-              })
-            }
-          >
+        {onRemove ? (
+          <IconButton label={`Satırı sil: ${line.productCode}`} size="sm" className="-mt-1 -mr-1.5 text-danger" disabled={disabled} onClick={onRemove}>
             <TrashIcon />
           </IconButton>
         ) : null}
@@ -325,7 +338,7 @@ function CancelDialog({ order, onClose }: { order: OrderDetail; onClose: () => v
       open
       onOpenChange={(open) => !open && !busy && onClose()}
       title="Siparişi iptal et"
-      description={`${order.code}, ${order.customerName}. Ayrılmış mamul serbest kalır, başlamamış iş emirleri iptal olur. Bu işlem geri alınmaz.`}
+      description={`${order.code}, ${order.customerName}: ${order.lines.length} kalem, KDV dahil ${formatMoney(order.totals.totalKurus)} iptal edilecek. Ayrılmış mamul serbest kalır, başlamamış iş emirleri iptal olur. Geri alınamaz.`}
       footer={
         <>
           <Button variant="ghost" disabled={busy} onClick={onClose}>

@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 export const DEMO_PASSWORD = "Demo2026!";
 const BOOT_TIMEOUT = 45_000;
@@ -44,6 +44,18 @@ export async function leave(page: Page): Promise<void> {
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await signOut(page);
+}
+
+/** Açık onay penceresi. Değişiklik yapan her işlem önce bunu açar (role=alertdialog). */
+export function confirmDialog(page: Page): Locator {
+  return page.getByRole("alertdialog");
+}
+
+/** Onay penceresinde onay düğmesine basar ve pencerenin kapanmasını bekler. */
+export async function approve(page: Page, label: string | RegExp): Promise<void> {
+  const dialog = confirmDialog(page);
+  await dialog.getByRole("button", { name: label, exact: true }).click();
+  await expect(dialog).toBeHidden({ timeout: 45_000 });
 }
 
 /** Tek satır dönmesi beklenen sorgu; satır yoksa test anlaşılır bir hatayla düşer. */

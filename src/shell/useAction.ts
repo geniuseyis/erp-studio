@@ -10,11 +10,16 @@ import { useCtx } from "./useCtx";
 
 /**
  * Bir iş kuralını çağırır; başarıda bütün sorgular yenilenir ve diğer sekmelere haber verilir.
- * `mutateAsync` ancak yenileme bitip yeni veri ekrana iletildiğinde çözülür.
+ * `mutateAsync` ancak yenileme bitip yeni veri ekrana iletildiğinde çözülür. Kayıt başka yerden değiştiği için
+ * reddedilen işlemde (INVALID_STATE, ör. "…liste yenilendi") de ekran yenilenir; hata ondan sonra iletilir.
  */
 export function useAction<I, O>(run: (ctx: Ctx, input: I) => Promise<O>) {
   const ctx = useCtx();
-  return useMutation({ mutationFn: (input: I) => run(ctx(), input), onSuccess: () => announceChange() });
+  return useMutation({
+    mutationFn: (input: I) => run(ctx(), input),
+    onSuccess: () => announceChange(),
+    onError: (error) => (isDomainError(error) && error.code === "INVALID_STATE" ? announceChange() : undefined),
+  });
 }
 
 const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`);

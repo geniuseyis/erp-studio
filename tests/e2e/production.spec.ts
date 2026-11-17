@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { addWorkdays } from "../../src/domain/production/calendar";
-import { leave, loginAs, navTo, one, signOut, sql } from "./helpers";
+import { approve, confirmDialog, leave, loginAs, navTo, one, signOut, sql } from "./helpers";
 
 const ISTANBUL_OFFSET_MS = 3 * 60 * 60 * 1000;
 /** "YYYY-AA-GG" → o İstanbul gününün başlangıç anı. */
@@ -124,6 +124,8 @@ test("planlama uzmanı iş emrini planlar; adımlara günler yazılır", async (
   await expect(drawer.getByLabel("Başlangıç günü")).toHaveValue(defaultDay);
   const start = istanbulDay(defaultDay);
   await drawer.getByRole("button", { name: "Planla" }).click();
+  await expect(confirmDialog(page)).toContainText(`${wo.code}, ${trDay(start)} gününden başlayarak ${wo.steps} adıma planlanacak.`);
+  await approve(page, "Planla");
   await expect(page.getByRole("status").filter({ hasText: `${wo.code} planlandı` })).toBeVisible();
 
   const expected = Array.from({ length: wo.steps }, (_, i) => addWorkdays(start, i).getTime());
@@ -164,6 +166,7 @@ test("malzeme bekleyen iş emri: depo giriş yapar, planlama yeniden dener, duru
   for (const s of short) await expect(missing).toContainText(s.code);
   // Malzeme gelmeden yeniden deneme eksikleri söyler, durumu değiştirmez.
   await drawer.getByRole("button", { name: "Malzemeyi yeniden dene" }).click();
+  await approve(page, "Yeniden dene");
   await expect(page.getByRole("alert").filter({ hasText: "hâlâ eksik" })).toBeVisible();
   await leave(page);
 
@@ -177,6 +180,7 @@ test("malzeme bekleyen iş emri: depo giriş yapar, planlama yeniden dener, duru
     const dialog = page.getByRole("dialog", { name: "Stok girişi" });
     await dialog.getByLabel("Miktar").fill(String(s.units));
     await dialog.getByRole("button", { name: "Girişi kaydet" }).click();
+    await approve(page, "Girişi kaydet");
     await expect(dialog).toBeHidden();
     await page.keyboard.press("Escape");
     await expect(material).toBeHidden();
@@ -187,6 +191,7 @@ test("malzeme bekleyen iş emri: depo giriş yapar, planlama yeniden dener, duru
   drawer = await openWorkOrder(page, wo.code);
   await expect(drawer.getByRole("region", { name: "Eksikler" })).toHaveCount(0);
   await drawer.getByRole("button", { name: "Malzemeyi yeniden dene" }).click();
+  await approve(page, "Yeniden dene");
   await expect(page.getByRole("status").filter({ hasText: `${wo.code}: malzemeler ayrıldı` })).toBeVisible();
   await expect(drawer.getByRole("button", { name: "Malzemeyi yeniden dene" })).toHaveCount(0);
   await expect(drawer.getByText("Malzeme bekliyor", { exact: true })).toHaveCount(0);
@@ -232,11 +237,17 @@ test("atölye ekranında Başla sonra Bitti; kart sonraki istasyona geçer", asy
   const start = card.getByRole("button", { name: "Başla" });
   expect((await start.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(48);
   await start.click();
+  const ask = confirmDialog(page);
+  await expect(ask).toContainText(`${pick.code} · ${pick.station} adımı başlatılacak`);
+  for (const name of ["Vazgeç", "Başlat"]) expect((await ask.getByRole("button", { name, exact: true }).boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(48);
+  await approve(page, "Başlat");
   const finish = card.getByRole("button", { name: "Bitti" });
   await expect(finish).toBeVisible();
   await expect(card).toContainText("Çalışıyor");
   expect((await finish.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(48);
   await finish.click();
+  await expect(confirmDialog(page)).toContainText(`${pick.code} · ${pick.station} adımı bitirilecek`);
+  await approve(page, "Bitir");
   await expect(card).toBeHidden();
   await expect
     .poll(async () => (await one<{ by: string }>(page, `select u.name as by from work_order_steps s join users u on u.id = s.finished_by where s.work_order_id = '${pick.id}' and s.seq = ${pick.seq}`)).by)
@@ -273,7 +284,11 @@ test("atölyede Başla'ya çift dokunmak adımı yalnızca başlatır, bitirmez"
   await page.goto(`/atolye?istasyon=${pick.station}`);
   const card = page.getByRole("article", { name: pick.code });
   await expect(card.getByRole("button", { name: "Başla" })).toBeVisible({ timeout: 45_000 });
+  // Başla'ya çift dokunmak onay penceresini açık bırakır (ikinci dokunuş arka plana düşmez); onaya çift dokunmak da tek kez yazar.
   await card.getByRole("button", { name: "Başla" }).dblclick();
+  await expect(confirmDialog(page)).toBeVisible();
+  await confirmDialog(page).getByRole("button", { name: "Başlat" }).dblclick();
+  await expect(confirmDialog(page)).toBeHidden();
 
   // Yenileme bitince aynı yerdeki düğme Bitti olur; adım çalışıyor kalır.
   await expect(card.getByRole("button", { name: "Bitti" })).toBeEnabled();
@@ -302,24 +317,29 @@ test("atölyede düğme ancak yeni veriyle yeniden açılır: Başla'dan sonra i
   await page.goto(`/atolye?istasyon=${pick.station}`);
   const start = page.getByRole("article", { name: pick.code }).getByRole("button", { name: "Başla" });
   await expect(start).toBeVisible({ timeout: 45_000 });
-  // Tıkla ve kart içindeki düğme yeniden etkin olduğu ilk anı DOM değişikliğiyle yakala: o anki yazısı ne?
+  // Kart onay açılmadan alınır: pencere açıkken sayfanın geri kalanı erişilebilirlik ağacından gizlidir.
+  const card = await page.getByRole("article", { name: pick.code }).elementHandle();
+  await start.click();
+  // Onayla ve kart içindeki düğme yeniden etkin olduğu ilk anı DOM değişikliğiyle yakala: o anki yazısı ne?
   // Yenileme beklenmeden açılırsa eski "Başla" görünür ve ikinci dokunuş eski veriyle işlem yapar.
-  const firstEnabledLabel = await start.evaluate(
-    (button) =>
-      new Promise<string>((resolve) => {
-        const card = button.closest("article");
-        if (!card) throw new Error("kart yok");
-        const observer = new MutationObserver(() => {
-          const current = card.querySelector("button");
-          if (current && !current.disabled) {
-            observer.disconnect();
-            resolve(current.textContent?.trim() ?? "");
-          }
-        });
-        observer.observe(card, { attributes: true, childList: true, subtree: true, characterData: true });
-        (button as HTMLButtonElement).click();
-      }),
-  );
+  const firstEnabledLabel = await confirmDialog(page)
+    .getByRole("button", { name: "Başlat" })
+    .evaluate(
+      (button, card) =>
+        new Promise<string>((resolve) => {
+          if (!card) throw new Error("kart yok");
+          const observer = new MutationObserver(() => {
+            const current = card.querySelector("button");
+            if (current && !current.disabled) {
+              observer.disconnect();
+              resolve(current.textContent?.trim() ?? "");
+            }
+          });
+          observer.observe(card, { attributes: true, childList: true, subtree: true, characterData: true });
+          (button as HTMLButtonElement).click();
+        }),
+      card,
+    );
   expect(firstEnabledLabel).toBe("Bitti");
 });
 
@@ -334,7 +354,9 @@ test("çekmecede Adımı bitir'e çift tıklamak sıradaki adımı başlatmaz", 
   );
   const starts = await auditCount(page, pick.id, "step_start");
   const drawer = await openWorkOrder(page, pick.code);
-  await drawer.getByRole("button", { name: "Adımı bitir" }).dblclick();
+  await drawer.getByRole("button", { name: "Adımı bitir" }).click();
+  await confirmDialog(page).getByRole("button", { name: "Bitir" }).dblclick();
+  await expect(confirmDialog(page)).toBeHidden();
 
   await expect(drawer.getByRole("button", { name: "Sıradaki adımı başlat" })).toBeEnabled();
   await expect(drawer.getByRole("button", { name: "Adımı bitir" })).toHaveCount(0);

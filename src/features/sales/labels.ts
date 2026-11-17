@@ -1,7 +1,9 @@
 import { type DomainErrorCode, isDomainError } from "@/domain/errors";
 import type { ProductFinish, Shortage } from "@/domain/production/types";
 import type { CustomerKind, LineStatus, OrderStatus } from "@/domain/sales/types";
-import { formatQty, parseDecimal } from "@/domain/units";
+import { orderTotals, type OrderTotals, type TotalsLine } from "@/domain/sales/money";
+import { formatMoney, formatNumber, formatQty, parseDecimal } from "@/domain/units";
+import { type Change, diffFields } from "@/ui/changes";
 import type { Tone } from "@/ui/StatusChip";
 
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
@@ -135,4 +137,49 @@ export function orderErrorField(error: unknown): "due" | null {
 /** İskonto binde → "%12,5". */
 export function formatDiscount(permille: number): string {
   return `%${(permille / 10).toLocaleString("tr-TR", { maximumFractionDigits: 1 })}`;
+}
+
+// ---- Onay pencereleri: ekrandaki veriden somut sonuç metni --------------------------------------------
+
+type ConfirmLine = TotalsLine & { id: string; productId: string };
+type ConfirmOrder = { code: string; lines: ConfirmLine[]; totals: OrderTotals };
+
+const adet = (qtyMilli: number) => formatNumber(qtyMilli / 1000);
+
+/** "URN-0031 Adım Ayakkabılık × 2 satırı silinecek. Sipariş tutarı ₺X → ₺Y olacak." Y kalan satırlarla hesaplanır. */
+export function removeLineText(order: ConfirmOrder, line: { id: string; productCode: string; productName: string; qtyMilli: number }): string {
+  const after = orderTotals(order.lines.filter((l) => l.id !== line.id)).totalKurus;
+  return `${line.productCode} ${line.productName} × ${adet(line.qtyMilli)} satırı silinecek. Sipariş tutarı ${formatMoney(order.totals.totalKurus)} → ${formatMoney(after)} olacak.`;
+}
+
+/**
+ * Satır ekleme önizlemesi, servisteki kuralla aynı: ürün siparişte varsa adet eklenir ve iskonto yalnızca verildiyse
+ * değişir (`merged`, değişen alanlar); yoksa yeni satır ürünün fiyatı ve KDV'siyle açılır.
+ */
+export function previewAddLine(
+  lines: ConfirmLine[],
+  product: { id: string; priceKurus: number; vatRate: number },
+  qtyMilli: number,
+  discountPermille: number | undefined,
+): { merged: boolean; changes: Change[]; beforeKurus: number; afterKurus: number } {
+  const beforeKurus = orderTotals(lines).totalKurus;
+  const same = lines.find((l) => l.productId === product.id);
+  if (!same) {
+    const added = { qtyMilli, unitPriceKurus: product.priceKurus, discountPermille: discountPermille ?? 0, vatRate: product.vatRate, status: "draft" };
+    return { merged: false, changes: [], beforeKurus, afterKurus: orderTotals([...lines, added]).totalKurus };
+  }
+  const next = { ...same, qtyMilli: same.qtyMilli + qtyMilli, discountPermille: discountPermille ?? same.discountPermille };
+  const changes = diffFields([
+    { label: "Adet", before: adet(same.qtyMilli), after: adet(next.qtyMilli) },
+    { label: "İskonto", before: formatDiscount(same.discountPermille), after: formatDiscount(next.discountPermille) },
+  ]);
+  return { merged: true, changes, beforeKurus, afterKurus: orderTotals(lines.map((l) => (l.id === same.id ? next : l))).totalKurus };
+}
+
+export function confirmOrderText(order: ConfirmOrder): string {
+  return `${order.code} onaylanacak: ${order.lines.length} kalem, KDV dahil ${formatMoney(order.totals.totalKurus)}. Stok ayrılır, eksikler için iş emri açılır.`;
+}
+
+export function shipOrderText(order: { code: string }): string {
+  return `${order.code} sevk edilecek; mamul stoktan düşer. Geri alınamaz.`;
 }

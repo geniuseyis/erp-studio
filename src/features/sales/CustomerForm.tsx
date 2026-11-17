@@ -5,10 +5,13 @@ import { CUSTOMER_KINDS } from "@/db/schema";
 import type { CustomerRow } from "@/domain/sales/queries";
 import type { CustomerKind } from "@/domain/sales/types";
 import { Button } from "@/ui/Button";
+import { diffFields } from "@/ui/changes";
+import { ChangeList, SummaryList } from "@/ui/ConfirmDialog";
 import { Dialog } from "@/ui/Dialog";
 import { Input, NumberField, Select } from "@/ui/Field";
 import { useToast } from "@/ui/Toast";
 import { errorMessage } from "@/shell/useAction";
+import { useConfirm } from "@/shell/useConfirm";
 import { useCreateCustomer, useUpdateCustomer } from "./hooks";
 import { CUSTOMER_KIND_LABEL } from "./labels";
 
@@ -30,6 +33,7 @@ function phoneError(phone: string): string | undefined {
 export function CustomerForm({ customer, onClose }: Props) {
   const editing = customer !== undefined;
   const toast = useToast();
+  const ask = useConfirm();
   const create = useCreateCustomer();
   const update = useUpdateCustomer();
   const submitting = useRef(false);
@@ -43,7 +47,20 @@ export function CustomerForm({ customer, onClose }: Props) {
   const [term, setTerm] = useState(String(customer?.paymentTermDays ?? 0));
   const [errors, setErrors] = useState<Errors>({});
 
-  async function onSubmit(e: FormEvent) {
+  const termText = (t: string) => (/^\d+$/.test(t.trim()) ? `${Number(t.trim())} gün` : t);
+  const shown = [
+    { label: "Ad", before: customer?.name ?? "", after: name },
+    { label: "Tür", before: customer ? CUSTOMER_KIND_LABEL[customer.kind] : "", after: CUSTOMER_KIND_LABEL[kind] },
+    { label: "Telefon", before: customer?.phone ?? "", after: phone },
+    { label: "İl", before: customer?.city ?? "", after: city },
+    { label: "İlçe", before: customer?.district ?? "", after: district },
+    { label: "Ödeme vadesi", before: customer ? `${customer.paymentTermDays} gün` : "", after: termText(term) },
+  ];
+  // Düzenlemede yalnızca değişen alanlar; değişiklik yoksa kaydet pasif.
+  const changes = editing ? diffFields(shown) : [];
+  const unchanged = editing && changes.length === 0;
+
+  function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (submitting.current) return;
     const termDays = Number(term.trim());
@@ -55,11 +72,37 @@ export function CustomerForm({ customer, onClose }: Props) {
     if (badPhone) next.phone = badPhone;
     if (!/^\d+$/.test(term.trim()) || !Number.isInteger(termDays)) next.term = "Vadeyi gün olarak tam sayı girin";
     setErrors(next);
-    if (Object.keys(next).length > 0) return;
+    if (Object.keys(next).length > 0 || unchanged) return;
 
+    const fields = { name, kind, city, district, phone, paymentTermDays: termDays };
+    void ask.confirm(
+      customer
+        ? {
+            title: "Değişiklikler kaydedilsin mi?",
+            body: (
+              <>
+                <p>
+                  {customer.code} {customer.name}:
+                </p>
+                <ChangeList changes={changes} />
+              </>
+            ),
+            confirmLabel: "Kaydet",
+            action: () => save(fields),
+          }
+        : {
+            title: "Müşteri eklensin mi?",
+            body: <SummaryList items={shown.map((f) => ({ label: f.label, value: f.after.trim() }))} />,
+            confirmLabel: "Müşteriyi ekle",
+            action: () => save(fields),
+          },
+    );
+  }
+
+  async function save(fields: { name: string; kind: CustomerKind; city: string; district: string; phone: string; paymentTermDays: number }): Promise<boolean> {
+    if (submitting.current) return false;
     submitting.current = true;
     setBusy(true);
-    const fields = { name, kind, city, district, phone, paymentTermDays: termDays };
     try {
       if (customer) {
         await update.mutateAsync({ id: customer.id, patch: fields });
@@ -69,10 +112,12 @@ export function CustomerForm({ customer, onClose }: Props) {
         toast.success(`${created.code} eklendi`);
       }
       onClose();
+      return true;
     } catch (error) {
       toast.error(errorMessage(error));
       submitting.current = false;
       setBusy(false);
+      return false;
     }
   }
 
@@ -88,7 +133,7 @@ export function CustomerForm({ customer, onClose }: Props) {
           <Button variant="ghost" disabled={busy} onClick={onClose}>
             Vazgeç
           </Button>
-          <Button variant="primary" type="submit" form="customer-form" loading={busy}>
+          <Button variant="primary" type="submit" form="customer-form" loading={busy} disabled={unchanged} title={unchanged ? "Değişiklik yok" : undefined}>
             {editing ? "Değişiklikleri kaydet" : "Müşteriyi ekle"}
           </Button>
         </>
@@ -116,6 +161,7 @@ export function CustomerForm({ customer, onClose }: Props) {
           hint="Peşin satışta 0."
         />
       </form>
+      {ask.element}
     </Dialog>
   );
 }

@@ -2,6 +2,7 @@ import { addWorkdays, istanbulDayStart, isWorkday } from "@/domain/production/ca
 import type { WorkOrderDetail } from "@/domain/production/queries";
 import type { WorkOrderStatus } from "@/domain/production/types";
 import { formatNumber, roundUpToStep, type Unit } from "@/domain/units";
+import { formatDue } from "@/features/sales/labels";
 import type { Tone } from "@/ui/StatusChip";
 
 export const WO_STATUS_LABEL: Record<WorkOrderStatus, string> = {
@@ -82,4 +83,20 @@ export function stepControls(wo: Pick<WorkOrderDetail, "status" | "materialsRese
     return { start: null, finish: null, reason: "Malzeme ayrılmadı: planlama malzemeyi ayırmadan üretim başlamaz." };
   }
   return { start: next.stationName, finish: null, reason: null };
+}
+
+/** Planlama onayı: hafta sonu seçilirse servis gibi pazartesiden başlar. */
+export function planText(code: string, start: Date, steps: number): string {
+  return `${code}, ${formatDue(addWorkdays(istanbulDayStart(start), 0))} gününden başlayarak ${steps} adıma planlanacak.`;
+}
+
+/**
+ * Atölye onayı: iş emri, istasyon ve adım. İlk adımın başlaması ayrılmış malzemeyi tüketir; son adımın bitmesi iş
+ * emrini tamamlar ve mamulü stoğa alır (startNextStep, finishCurrentStep).
+ */
+export function stepText(i: { code: string; station: string; seq: number; totalSteps: number; qtyMilli: number; kind: "start" | "finish" }): string {
+  const head = `${i.code} · ${i.station} adımı ${i.kind === "start" ? "başlatılacak" : "bitirilecek"} (adım ${i.seq}/${i.totalSteps}).`;
+  if (i.kind === "start" && i.seq === 1) return `${head} Ayrılan malzemeler tüketilecek.`;
+  if (i.kind === "finish" && i.seq === i.totalSteps) return `${head} İş emri tamamlanır, ${formatNumber(i.qtyMilli / 1000)} adet mamul stoğa girer.`;
+  return head;
 }

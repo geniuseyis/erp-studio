@@ -7,9 +7,11 @@ import { Dialog } from "@/ui/Dialog";
 import { Input, Textarea } from "@/ui/Field";
 import { PickList } from "@/ui/PickList";
 import { useToast } from "@/ui/Toast";
+import { SummaryList } from "@/ui/ConfirmDialog";
 import { errorMessage } from "@/shell/useAction";
+import { useConfirm } from "@/shell/useConfirm";
 import { useCreateOrder, useCustomers } from "./hooks";
-import { CUSTOMER_KIND_LABEL, defaultDueInput, dueFromInput, orderErrorField } from "./labels";
+import { CUSTOMER_KIND_LABEL, defaultDueInput, dueFromInput, formatDue, orderErrorField } from "./labels";
 
 type Props = {
   onClose: () => void;
@@ -20,6 +22,7 @@ type Props = {
 /** Yeni sipariş taslağı: müşteri, termin ve not. Satırlar taslak açıldıktan sonra çekmecede eklenir. */
 export function NewOrderDialog({ onClose, onCreated }: Props) {
   const toast = useToast();
+  const ask = useConfirm();
   const create = useCreateOrder();
   const customers = useCustomers();
   const submitting = useRef(false);
@@ -36,27 +39,47 @@ export function NewOrderDialog({ onClose, onCreated }: Props) {
     .map((c) => ({ id: c.id, primary: c.name, secondary: `${c.code} · ${CUSTOMER_KIND_LABEL[c.kind]} · ${c.city} / ${c.district}` }));
   const selected = customers.data?.find((c) => c.id === customerId);
 
-  async function onSubmit(e: FormEvent) {
+  function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (submitting.current) return;
     const dueAt = dueFromInput(due);
     const next: typeof errors = {};
-    if (!customerId) next.customer = "Müşteri seçin";
+    if (!selected) next.customer = "Müşteri seçin";
     if (!dueAt) next.due = "Termin girin";
     setErrors(next);
-    if (!customerId || !dueAt) return;
+    if (!selected || !dueAt) return;
 
+    void ask.confirm({
+      title: "Taslak açılsın mı?",
+      body: (
+        <SummaryList
+          items={[
+            { label: "Müşteri", value: `${selected.code} ${selected.name}` },
+            { label: "Termin", value: formatDue(dueAt) },
+            { label: "Not", value: note.trim() },
+          ]}
+        />
+      ),
+      confirmLabel: "Taslağı aç",
+      action: () => save(selected.id, dueAt),
+    });
+  }
+
+  async function save(customerId: string, dueAt: Date): Promise<boolean> {
+    if (submitting.current) return false;
     submitting.current = true;
     setBusy(true);
     try {
       const order = await create.mutateAsync({ customerId, dueAt, note });
       toast.success(`${order.code} taslağı açıldı`);
       onCreated(order.id);
+      return true;
     } catch (error) {
       if (orderErrorField(error) === "due") setErrors({ due: errorMessage(error) });
       else toast.error(errorMessage(error));
       submitting.current = false;
       setBusy(false);
+      return false;
     }
   }
 
@@ -104,6 +127,7 @@ export function NewOrderDialog({ onClose, onCreated }: Props) {
           <Textarea label="Not" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Teslim adresi, renk isteği, irtibat" />
         </div>
       </form>
+      {ask.element}
     </Dialog>
   );
 }

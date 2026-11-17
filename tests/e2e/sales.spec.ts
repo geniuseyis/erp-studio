@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { orderTotals } from "../../src/domain/sales/money";
 import { formatMoney } from "../../src/domain/units";
-import { loginAs, sql } from "./helpers";
+import { approve, confirmDialog, loginAs, sql } from "./helpers";
 
 const QTY_ERROR = "Adet 1 ile 9999 arasında tam sayı olmalı";
 const SHORT_MATERIAL = "MDF Lam 8 mm Beyaz Arkalık";
@@ -44,6 +44,7 @@ async function newDraft(page: Page, customerQuery?: string): Promise<{ drawer: L
   if (customerQuery) await dialog.getByRole("searchbox", { name: "Müşteri ara" }).fill(customerQuery);
   await dialog.getByRole("radio").first().check();
   await dialog.getByRole("button", { name: "Taslağı aç" }).click();
+  await approve(page, "Taslağı aç");
   await expect(dialog).toBeHidden();
   await expect(page).toHaveURL(/ac=/);
   const id = new URL(page.url()).searchParams.get("ac") ?? "";
@@ -55,12 +56,14 @@ async function newDraft(page: Page, customerQuery?: string): Promise<{ drawer: L
   return { drawer, id, code };
 }
 
-async function addLine(drawer: Locator, code: string, qty: string, discount = ""): Promise<void> {
+/** Satırı forma yazar ve ekler; `confirm` false ise (geçersiz giriş) onay penceresi açılmaz. */
+async function addLine(drawer: Locator, code: string, qty: string, discount = "", confirm = true): Promise<void> {
   await drawer.getByRole("searchbox", { name: "Ürün ara" }).fill(code);
   await drawer.getByRole("radio", { name: new RegExp(code) }).check();
   await drawer.getByLabel("Adet", { exact: true }).fill(qty);
   await drawer.getByLabel("İskonto", { exact: true }).fill(discount);
   await drawer.getByRole("button", { name: "Satırı ekle" }).click();
+  if (confirm) await approve(drawer.page(), /^Satırı (ekle|güncelle)$/);
 }
 
 async function product(page: Page, where: string): Promise<ProductPick> {
@@ -104,6 +107,7 @@ test("satış uzmanı sipariş açar, iki satır ekler, toplam KDV ayrı görün
 
   // Satır silinince toplam yeniden hesaplanır ve %20 satırı kaybolur.
   await drawer.getByRole("button", { name: `Satırı sil: ${general.code}` }).click();
+  await approve(page, "Satırı sil");
   await expect(summary.getByRole("row", { name: /KDV %20/ })).toHaveCount(0);
   expect(await count(page, `select count(*)::int as n from sales_order_lines where order_id = '${id}'`)).toBe(1);
 });
@@ -132,7 +136,8 @@ for (const bad of ["1,5", "0", "abc", "10000"]) {
     const id = new URL(page.url()).searchParams.get("ac") ?? "";
     const before = await count(page, `select coalesce(sum(qty_milli), 0)::int as n from sales_order_lines where order_id = '${id}'`);
     const p = await product(page, "true");
-    await addLine(drawer, p.code, bad);
+    await addLine(drawer, p.code, bad, "", false);
+    await expect(confirmDialog(page)).toHaveCount(0);
     await expect(drawer.getByText(QTY_ERROR)).toBeVisible();
     await expect(drawer.getByLabel("Adet", { exact: true })).toHaveAttribute("aria-invalid", "true");
     expect(await count(page, `select coalesce(sum(qty_milli), 0)::int as n from sales_order_lines where order_id = '${id}'`)).toBe(before);
@@ -148,7 +153,10 @@ test("onay çift tıklamada tek iş emri açar", async ({ page }) => {
   await expect(drawer.getByRole("list", { name: "Satırlar" }).getByRole("listitem").filter({ hasText: p.code })).toBeVisible();
 
   const before = await count(page, "select count(*)::int as n from work_orders");
-  await drawer.getByRole("button", { name: "Onayla" }).dblclick();
+  // Onay penceresinde onaya çift tıklamak da tek iş emri açar.
+  await drawer.getByRole("button", { name: "Onayla" }).click();
+  await confirmDialog(page).getByRole("button", { name: "Onayla" }).dblclick();
+  await expect(confirmDialog(page)).toBeHidden();
   await expect(drawer.getByRole("button", { name: "Onayla" })).toHaveCount(0);
   await expect.poll(() => count(page, `select count(*)::int as n from sales_orders where id = '${id}' and status <> 'draft'`)).toBe(1);
   expect(await count(page, "select count(*)::int as n from work_orders")).toBe(before + 1);
@@ -178,6 +186,7 @@ test("malzeme eksikse onay sonrası eksik listesi görünür", async ({ page }) 
   await addLine(drawer, pick.code, String(pick.qty));
   await expect(drawer.getByRole("list", { name: "Satırlar" }).getByRole("listitem").filter({ hasText: pick.code })).toBeVisible();
   await drawer.getByRole("button", { name: "Onayla" }).click();
+  await approve(page, "Onayla");
 
   const warning = drawer.getByRole("alert").filter({ hasText: "Malzeme eksik" });
   await expect(warning).toBeVisible();
@@ -215,6 +224,7 @@ test("depo hesabında Onayla görünmez; satış hesabında Sevk et görünmez",
   drawer = await openFirstWithStatus(page, "Hazır");
   const id = new URL(page.url()).searchParams.get("ac") ?? "";
   await drawer.getByRole("button", { name: "Sevk et" }).click();
+  await approve(page, "Sevk et");
   await expect(page.getByRole("status").filter({ hasText: "sevk edildi" })).toBeVisible();
   await expect.poll(() => count(page, `select count(*)::int as n from sales_orders where id = '${id}' and status = 'shipped'`)).toBe(1);
   await expect(drawer.getByRole("button", { name: "Sevk et" })).toHaveCount(0);
@@ -252,6 +262,8 @@ test("müşteri ekle, aramada bul, siparişlerini gör", async ({ page }) => {
   await form.getByLabel("Telefon").fill("0224 555 01 23");
   await form.getByLabel("Ödeme vadesi").fill("30");
   await form.getByRole("button", { name: "Müşteriyi ekle" }).click();
+  await expect(confirmDialog(page)).toContainText("Bursa");
+  await approve(page, "Müşteriyi ekle");
   await expect(page.getByRole("status").filter({ hasText: /MUS-\d{4} eklendi/ })).toBeVisible();
   await expect(form).toBeHidden();
 

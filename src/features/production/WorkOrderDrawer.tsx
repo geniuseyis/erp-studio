@@ -12,6 +12,7 @@ import { dueFromInput, formatDue, formatShortage } from "@/features/sales/labels
 import { useSession } from "@/shell/session";
 import { useHistory } from "@/shell/useHistory";
 import { useGuardedRun } from "@/shell/useAction";
+import { useConfirm } from "@/shell/useConfirm";
 import { Button } from "@/ui/Button";
 import { cn } from "@/ui/cn";
 import { Drawer } from "@/ui/Drawer";
@@ -25,7 +26,7 @@ import { Skeleton } from "@/ui/Skeleton";
 import { StatusChip, type Tone } from "@/ui/StatusChip";
 import { useToast } from "@/ui/Toast";
 import { useFinishStep, usePlanWorkOrder, useRetryMaterials, useStartStep, useWorkOrder } from "./hooks";
-import { formatMinutes, materialStateLabel, nextWorkdayInput, stepControls, todayInput, WO_STATUS_LABEL, WO_STATUS_TONE } from "./labels";
+import { formatMinutes, materialStateLabel, nextWorkdayInput, planText, stepControls, stepText, todayInput, WO_STATUS_LABEL, WO_STATUS_TONE } from "./labels";
 
 export function WorkOrderStatusChips({ status }: { status: WorkOrderStatus }) {
   return <StatusChip tone={WO_STATUS_TONE[status]}>{WO_STATUS_LABEL[status]}</StatusChip>;
@@ -51,6 +52,7 @@ export function WorkOrderDrawer({ id, onClose }: { id: string; onClose: () => vo
   const start = useStartStep();
   const finish = useFinishStep();
   const { busy, run: guarded } = useGuardedRun<Kind>();
+  const ask = useConfirm();
   const [day, setDay] = useState(() => nextWorkdayInput(new Date()));
   const [dayError, setDayError] = useState<string | null>(null);
   const w = query.data;
@@ -78,38 +80,69 @@ export function WorkOrderDrawer({ id, onClose }: { id: string; onClose: () => vo
       return;
     }
     setDayError(null);
-    void guarded("plan", async () => {
-      const result = await plan.mutateAsync({ workOrderId: w.id, start: startDay });
-      toast.success(`${w.code} planlandı: ${result.plannedStart ? formatDue(result.plannedStart) : day} başlangıç`);
+    const replan = w.steps.some((s) => s.plannedDay !== null);
+    void ask.confirm({
+      title: "İş emri planlansın mı?",
+      body: `${planText(w.code, startDay, w.steps.length)}${replan ? " Önceki plan günlerinin yerine yazılır." : ""}`,
+      confirmLabel: "Planla",
+      action: () =>
+        guarded("plan", async () => {
+          const result = await plan.mutateAsync({ workOrderId: w.id, start: startDay });
+          toast.success(`${w.code} planlandı: ${result.plannedStart ? formatDue(result.plannedStart) : day} başlangıç`);
+        }),
     });
   }
 
-  // Çift tıklama ve yenileme bitmeden gelen ikinci istek ortak kancada yok sayılır (Adımı bitir → Sıradaki adımı başlat).
+  // Önce onay; çift tıklama ve yenileme bitmeden gelen ikinci istek ortak kancada yok sayılır (Adımı bitir → Sıradaki adımı başlat).
   const onRetry = (e: MouseEvent) =>
     w &&
-    void guarded("retry", async () => {
-      const result = await retry.mutateAsync(w.id);
-      if (result.shortages.length > 0) toast.error(`${w.code}: malzeme hâlâ eksik`);
-      else toast.success(`${w.code}: malzemeler ayrıldı`);
-    }, e);
+    e.detail <= 1 &&
+    void ask.confirm({
+      title: "Malzeme yeniden denensin mi?",
+      body: `${w.code} için malzeme yeniden ayrılmaya çalışılacak. Yeterse stok bu iş emrine ayrılır; yetmezse hiçbir şey değişmez.`,
+      confirmLabel: "Yeniden dene",
+      action: () =>
+        guarded("retry", async () => {
+          const result = await retry.mutateAsync(w.id);
+          if (result.shortages.length > 0) toast.error(`${w.code}: malzeme hâlâ eksik`);
+          else toast.success(`${w.code}: malzemeler ayrıldı`);
+        }),
+    });
+
+  const stepInfo = (seq: number, station: string, kind: "start" | "finish") =>
+    w ? stepText({ code: w.code, station, seq: w.steps.findIndex((s) => s.seq === seq) + 1, totalSteps: w.steps.length, qtyMilli: w.qtyMilli, kind }) : "";
 
   const onStart = (e: MouseEvent) =>
     w &&
     controls?.start &&
     nextSeq !== undefined &&
-    void guarded("start", async () => {
-      await start.mutateAsync({ workOrderId: w.id, seq: nextSeq });
-      toast.success(`${w.code} ${controls.start} başladı`);
-    }, e);
+    e.detail <= 1 &&
+    void ask.confirm({
+      title: "Adım başlatılsın mı?",
+      body: stepInfo(nextSeq, controls.start, "start"),
+      confirmLabel: "Başlat",
+      action: () =>
+        guarded("start", async () => {
+          await start.mutateAsync({ workOrderId: w.id, seq: nextSeq });
+          toast.success(`${w.code} ${controls.start} başladı`);
+        }),
+    });
 
   const onFinish = (e: MouseEvent) =>
     w &&
     controls?.finish &&
     runningSeq !== undefined &&
-    void guarded("finish", async () => {
-      const result = await finish.mutateAsync({ workOrderId: w.id, seq: runningSeq });
-      toast.success(result.completed ? `${w.code} tamamlandı` : `${w.code} ${controls.finish} bitti`);
-    }, e);
+    e.detail <= 1 &&
+    void ask.confirm({
+      title: "Adım bitirilsin mi?",
+      body: stepInfo(runningSeq, controls.finish, "finish"),
+      confirmLabel: "Bitir",
+      action: () =>
+        guarded("finish", async () => {
+          const result = await finish.mutateAsync({ workOrderId: w.id, seq: runningSeq });
+          toast.success(result.completed ? `${w.code} tamamlandı` : `${w.code} ${controls.finish} bitti`);
+        }),
+    });
 
   const showRetry = canRetry && waitingMaterial;
   const showFloor = canFloor && controls && (controls.start || controls.finish || controls.reason);
@@ -212,6 +245,7 @@ export function WorkOrderDrawer({ id, onClose }: { id: string; onClose: () => vo
           <Steps workOrder={w} />
           <Materials workOrder={w} />
           <HistoryList {...history} />
+          {ask.element}
         </div>
       ) : query.isPending ? (
         <div className="grid gap-3">

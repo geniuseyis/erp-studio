@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { leave, loginAs, navTo, one, signOut, sql } from "./helpers";
+import { approve, leave, loginAs, navTo, one, signOut, sql } from "./helpers";
 
 const ISTANBUL_OFFSET_MS = 3 * 60 * 60 * 1000;
 
@@ -39,6 +39,7 @@ test("beş departmanla siparişten sevke", async ({ page }) => {
   const dialog = page.getByRole("dialog", { name: "Yeni sipariş" });
   await dialog.getByRole("radio").first().check();
   await dialog.getByRole("button", { name: "Taslağı aç" }).click();
+  await approve(page, "Taslağı aç");
   await expect(dialog).toBeHidden();
   await expect(page).toHaveURL(/ac=/);
   const orderId = new URL(page.url()).searchParams.get("ac") ?? "";
@@ -48,8 +49,10 @@ test("beş departmanla siparişten sevke", async ({ page }) => {
   await drawer.getByRole("radio", { name: new RegExp(product.code) }).check();
   await drawer.getByLabel("Adet", { exact: true }).fill("1");
   await drawer.getByRole("button", { name: "Satırı ekle" }).click();
+  await approve(page, "Satırı ekle");
   await expect(drawer.getByRole("list", { name: "Satırlar" }).getByRole("listitem").filter({ hasText: product.code })).toBeVisible();
   await drawer.getByRole("button", { name: "Onayla" }).click();
+  await approve(page, "Onayla");
   await expect(page.getByRole("status").filter({ hasText: `${orderCode} onaylandı` })).toBeVisible();
   await expect(drawer.getByText("Üretimde").first()).toBeVisible();
 
@@ -73,6 +76,7 @@ test("beş departmanla siparişten sevke", async ({ page }) => {
   const today = new Date(Date.now() + ISTANBUL_OFFSET_MS).toISOString().slice(0, 10);
   await woDrawer.getByLabel("Başlangıç günü").fill(today);
   await woDrawer.getByRole("button", { name: "Planla" }).click();
+  await approve(page, "Planla");
   await expect(page.getByRole("status").filter({ hasText: `${wo.code} planlandı` })).toBeVisible();
   await expect
     .poll(async () => (await one<{ n: number }>(page, `select count(*)::int as n from work_order_steps where work_order_id = '${wo.id}' and planned_day is null`)).n)
@@ -93,7 +97,9 @@ test("beş departmanla siparişten sevke", async ({ page }) => {
     await expect(stations.getByRole("button", { name, exact: true })).toHaveAttribute("aria-pressed", "true");
     const card = page.getByRole("article", { name: wo.code });
     await card.getByRole("button", { name: "Başla" }).click();
+    await approve(page, "Başlat");
     await card.getByRole("button", { name: "Bitti" }).click();
+    await approve(page, "Bitir");
     await expect(card).toBeHidden();
   }
   await expect.poll(async () => (await one<{ s: string }>(page, `select status as s from work_orders where id = '${wo.id}'`)).s).toBe("completed");
@@ -104,6 +110,7 @@ test("beş departmanla siparişten sevke", async ({ page }) => {
   await loginAs(page, "Onur Tekin");
   drawer = await openOrder(page, orderCode);
   await drawer.getByRole("button", { name: "Sevk et" }).click();
+  await approve(page, "Sevk et");
   await expect(page.getByRole("status").filter({ hasText: `${orderCode} sevk edildi` })).toBeVisible();
   await leave(page);
 

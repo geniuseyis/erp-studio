@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { loginAs, one, sql } from "./helpers";
+import { approve, loginAs, one, sql } from "./helpers";
 
 test("silinen sipariş satırının ürün kodu ve adı Geçmiş'te görünür", async ({ page }) => {
   await loginAs(page, "Elif Karaca");
@@ -12,6 +12,7 @@ test("silinen sipariş satırının ürün kodu ve adı Geçmiş'te görünür",
   const dialog = page.getByRole("dialog", { name: "Yeni sipariş" });
   await dialog.getByRole("radio").first().check();
   await dialog.getByRole("button", { name: "Taslağı aç" }).click();
+  await approve(page, "Taslağı aç");
   await expect(dialog).toBeHidden();
   await expect(page).toHaveURL(/ac=/);
   const id = new URL(page.url()).searchParams.get("ac") ?? "";
@@ -28,10 +29,12 @@ test("silinen sipariş satırının ürün kodu ve adı Geçmiş'te görünür",
   await drawer.getByRole("radio", { name: new RegExp(product.code) }).check();
   await drawer.getByLabel("Adet", { exact: true }).fill("2");
   await drawer.getByRole("button", { name: "Satırı ekle" }).click();
+  await approve(page, "Satırı ekle");
   const lines = drawer.getByRole("list", { name: "Satırlar" });
   await expect(lines.getByRole("listitem").filter({ hasText: product.code })).toBeVisible();
 
   await drawer.getByRole("button", { name: `Satırı sil: ${product.code}` }).click();
+  await approve(page, "Satırı sil");
   await expect(drawer.getByText("Henüz satır yok.")).toBeVisible();
 
   const newest = history.getByRole("listitem").first();

@@ -8,6 +8,7 @@ import { formatDue } from "@/features/sales/labels";
 import { HeroStat, Page, PageHeader } from "@/shell/AppGuard";
 import { useSession } from "@/shell/session";
 import { useGuardedRun } from "@/shell/useAction";
+import { useConfirm } from "@/shell/useConfirm";
 import { useUrlState } from "@/shell/useUrlState";
 import { Button } from "@/ui/Button";
 import { FilterChip } from "@/ui/Chip";
@@ -18,7 +19,7 @@ import { Skeleton } from "@/ui/Skeleton";
 import { StatusChip } from "@/ui/StatusChip";
 import { useToast } from "@/ui/Toast";
 import { useFinishStep, useStartStep, useStationQueues, useStations } from "./hooks";
-import { formatMinutes } from "./labels";
+import { formatMinutes, stepText } from "./labels";
 
 const STORAGE_KEY = "erp-studio:atolye-istasyon";
 
@@ -56,6 +57,7 @@ export function ShopfloorScreen() {
   const start = useStartStep();
   const finish = useFinishStep();
   const { busy, run } = useGuardedRun<string>();
+  const ask = useConfirm();
 
   const fromUrl = params.get("istasyon");
   const selected = [fromUrl, stored].find((c) => c && codes.includes(c)) ?? codes[0] ?? null;
@@ -74,22 +76,34 @@ export function ShopfloorScreen() {
     }
   }
 
-  // Aynı düğme Başla'dan Bitti'ye döner: çift dokunma ve yenileme bitmeden gelen ikinci dokunma ortak kancada yok sayılır.
+  // Önce büyük düğmeli onay (kuyruk arkada yenilenmeye devam eder). Aynı düğme Başla'dan Bitti'ye döner: çift dokunma
+  // ve yenileme bitmeden gelen ikinci dokunma ortak kancada yok sayılır.
   function act(item: QueueItem, event: MouseEvent) {
-    if (!station) return;
-    void run(
-      item.workOrderId,
-      async () => {
-        if (item.state === "waiting") {
-          await start.mutateAsync({ workOrderId: item.workOrderId, seq: item.seq });
-          toast.success(`${item.code} ${station.name} başladı`);
-        } else {
-          const result = await finish.mutateAsync({ workOrderId: item.workOrderId, seq: item.seq });
-          toast.success(result.completed ? `${item.code} tamamlandı` : `${item.code} ${station.name} bitti`);
-        }
-      },
-      event,
-    );
+    if (!station || event.detail > 1) return;
+    const starting = item.state === "waiting";
+    void ask.confirm({
+      title: starting ? "Adım başlatılsın mı?" : "Adım bitirilsin mi?",
+      body: (
+        <>
+          <p className="font-semibold">
+            {item.productName} × {formatNumber(item.qtyMilli / 1000)} adet
+          </p>
+          <p>{stepText({ code: item.code, station: station.name, seq: item.seq, totalSteps: item.totalSteps, qtyMilli: item.qtyMilli, kind: starting ? "start" : "finish" })}</p>
+        </>
+      ),
+      confirmLabel: starting ? "Başlat" : "Bitir",
+      large: true,
+      action: () =>
+        run(item.workOrderId, async () => {
+          if (starting) {
+            await start.mutateAsync({ workOrderId: item.workOrderId, seq: item.seq });
+            toast.success(`${item.code} ${station.name} başladı`);
+          } else {
+            const result = await finish.mutateAsync({ workOrderId: item.workOrderId, seq: item.seq });
+            toast.success(result.completed ? `${item.code} tamamlandı` : `${item.code} ${station.name} bitti`);
+          }
+        }),
+    });
   }
 
   return (
@@ -137,6 +151,7 @@ export function ShopfloorScreen() {
           </ul>
         )}
       </section>
+      {ask.element}
     </Page>
   );
 }
