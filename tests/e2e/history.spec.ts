@@ -19,7 +19,7 @@ test("silinen sipariş satırının ürün kodu ve adı Geçmiş'te görünür",
   const { code } = await one<{ code: string }>(page, `select code from sales_orders where id = '${id}'`);
   const drawer = page.getByRole("dialog", { name: code });
 
-  const history = drawer.getByRole("list", { name: "Geçmiş" });
+  const history = drawer.getByRole("region", { name: "Geçmiş" });
   await expect(history.getByRole("listitem")).toHaveCount(1);
   await expect(history.getByRole("listitem").first()).toContainText("taslağı açıldı");
   await expect(history.getByRole("listitem").first()).toContainText("Elif Karaca");
@@ -56,12 +56,12 @@ test("sipariş geçmişi bağlı iş emirlerinin kayıtlarını da gösterir; m�
   );
   await page.goto(`/satis/siparisler?ac=${order.id}`);
   const drawer = page.getByRole("dialog", { name: order.code });
-  const history = drawer.getByRole("list", { name: "Geçmiş" });
+  const history = drawer.getByRole("region", { name: "Geçmiş" });
   await expect(history.getByRole("listitem").filter({ hasText: `${order.wo} tamamlandı` })).toBeVisible({ timeout: 45_000 });
   await expect(history.getByRole("listitem").filter({ hasText: `${order.code} onaylandı` })).toBeVisible();
 
   const customer = await one<{ id: string; code: string; name: string }>(page, "select id, code, name from customers order by code limit 1");
   await page.goto(`/satis/musteriler?ac=${customer.id}`);
-  const customerHistory = page.getByRole("dialog", { name: customer.name }).getByRole("list", { name: "Geçmiş" });
+  const customerHistory = page.getByRole("dialog", { name: customer.name }).getByRole("region", { name: "Geçmiş" });
   await expect(customerHistory.getByRole("listitem").filter({ hasText: `${customer.code} ${customer.name} eklendi` })).toBeVisible({ timeout: 45_000 });
 });

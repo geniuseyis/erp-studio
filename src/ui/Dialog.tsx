@@ -61,7 +61,7 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
               )}
             </div>
             <RadixDialog.Close asChild>
-              <IconButton label="Kapat" size="sm" className="-mr-1.5">
+              <IconButton label="Kapat" size={size === "md" ? "lg" : "sm"} className="-mr-1.5">
                 <CloseIcon />
               </IconButton>
             </RadixDialog.Close>

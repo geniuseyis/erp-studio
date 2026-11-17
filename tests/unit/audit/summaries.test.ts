@@ -103,14 +103,14 @@ test("sipariş: onay, sevk ve iptal satır sayısını ve KDV dahil tutarı yaza
   const o = await createOrder(satis, { customerId: (await addCustomer(db)).id, dueAt: DUE });
   await addLine(satis, { orderId: o.id, productId: product.id, qtyMilli: 2000 });
   await confirmOrder(satis, o.id);
-  expect(await only(o.id, "confirm")).toBe(`${o.code} onaylandı: 1 satır, KDV dahil ₺2.200,00`);
+  expect(await only(o.id, "confirm")).toBe(`${o.code} onaylandı: 1 kalem, KDV dahil ₺2.200,00`);
   await shipOrder(depo, o.id);
-  expect(await only(o.id, "ship")).toBe(`${o.code} sevk edildi: 1 satır, KDV dahil ₺2.200,00`);
+  expect(await only(o.id, "ship")).toBe(`${o.code} sevk edildi: 1 kalem, KDV dahil ₺2.200,00`);
 
   const other = await createOrder(satis, { customerId: (await addCustomer(db)).id, dueAt: DUE });
   await addLine(satis, { orderId: other.id, productId: product.id, qtyMilli: 1000 });
   await cancelOrder(satisMudur, { orderId: other.id, reason: "Müşteri vazgeçti" });
-  expect(await only(other.id, "cancel")).toBe(`${other.code} iptal edildi: Müşteri vazgeçti (1 satır, KDV dahil ₺1.100,00)`);
+  expect(await only(other.id, "cancel")).toBe(`${other.code} iptal edildi: Müşteri vazgeçti (1 kalem, KDV dahil ₺1.100,00)`);
 });
 
 test("sipariş: onayda açılan iş emri sayısı yazılır", async () => {
@@ -119,7 +119,7 @@ test("sipariş: onayda açılan iş emri sayısı yazılır", async () => {
   const o = await createOrder(satis, { customerId: (await addCustomer(db)).id, dueAt: DUE });
   await addLine(satis, { orderId: o.id, productId: product.id, qtyMilli: 1000 });
   await confirmOrder(satis, o.id);
-  expect(await only(o.id, "confirm")).toBe(`${o.code} onaylandı: 1 satır, KDV dahil ₺1.100,00; 1 iş emri açıldı`);
+  expect(await only(o.id, "confirm")).toBe(`${o.code} onaylandı: 1 kalem, KDV dahil ₺1.100,00; 1 iş emri açıldı`);
 });
 
 test("müşteri: ekleme kartı, güncelleme yalnızca değişen alanları eski → yeni yazar", async () => {

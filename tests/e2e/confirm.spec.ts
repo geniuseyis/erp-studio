@@ -280,8 +280,8 @@ test("sayım: kayıtlı sayımın üzerine yazmak onay ister, Vazgeç eski değe
   await expect.poll(counted).toBe(8000);
   await expect(input).toHaveValue("8");
   // Üzerine yazma Geçmiş'e düşer: eski ve yeni değer birlikte.
-  await expect(detail.getByRole("list", { name: "Geçmiş" })).toContainText("sayılan 7");
-  await expect(detail.getByRole("list", { name: "Geçmiş" })).toContainText("→ 8");
+  await expect(detail.getByRole("region", { name: "Geçmiş" })).toContainText("sayılan 7");
+  await expect(detail.getByRole("region", { name: "Geçmiş" })).toContainText("→ 8");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await signOut(page);
@@ -293,7 +293,7 @@ test("sayım: kayıtlı sayımın üzerine yazmak onay ister, Vazgeç eski değe
   await page.goto(`/stok/sayim?fis=${countId}`);
   const review = page.getByRole("dialog").filter({ hasText: "SYM-" });
   await review.getByRole("button", { name: "Onayla" }).click({ timeout: 45_000 });
-  await expect(confirmDialog(page)).toContainText("satırdaki fark stok hareketi olarak yazılacak");
+  await expect(confirmDialog(page)).toContainText("kalemde fark stok hareketi olarak yazılacak");
   await confirmDialog(page).getByRole("button", { name: "Vazgeç" }).click();
   await expect(confirmDialog(page)).toBeHidden();
   expect(await adjustments()).toBe(0);

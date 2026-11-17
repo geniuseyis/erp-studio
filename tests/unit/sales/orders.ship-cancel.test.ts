@@ -93,7 +93,7 @@ test("hazır sipariş sevk edilir; mamul eldeki ve ayrılmış düşer", async (
   expect(await linesOf(o.id)).toMatchObject([{ status: "shipped", reservedMilli: 0 }]);
   await expectReservedInvariant();
   const logs = await db.select().from(auditLog).where(eq(auditLog.entityId, o.id));
-  expect(logs.filter((r) => r.action === "ship")).toMatchObject([{ summary: `${o.code} sevk edildi: 1 satır, KDV dahil ₺2.200,00` }]);
+  expect(logs.filter((r) => r.action === "ship")).toMatchObject([{ summary: `${o.code} sevk edildi: 1 kalem, KDV dahil ₺2.200,00` }]);
 });
 
 test("hazır olmayan sipariş sevk edilemez", async () => {
@@ -123,7 +123,7 @@ test("taslak iptalini satış uzmanı yapar; onaylı iptal için müdür gerekir
   expect((await order(confirmed.id)).status).toBe("ready");
   await expect(cancelOrder(satisMudur, { orderId: confirmed.id, reason: "Hata" })).resolves.toMatchObject({ status: "cancelled" });
   const rows = await db.select().from(auditLog).where(eq(auditLog.entityId, confirmed.id));
-  expect(rows.filter((r) => r.action === "cancel")).toMatchObject([{ summary: `${confirmed.code} iptal edildi: Hata (1 satır, KDV dahil ₺2.200,00)` }]);
+  expect(rows.filter((r) => r.action === "cancel")).toMatchObject([{ summary: `${confirmed.code} iptal edildi: Hata (1 kalem, KDV dahil ₺2.200,00)` }]);
 });
 
 test("iptalde hazır satırın ayrılmış mamulü serbest kalır", async () => {

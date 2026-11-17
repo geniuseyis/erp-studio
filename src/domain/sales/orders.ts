@@ -56,10 +56,10 @@ function lineChangeText(product: ProductFacts, before: LineFacts, after: LineFac
   return `satır güncellendi — ${product.code} ${product.name}: ${parts.join(", ")}, tutar ${formatMoney(from)} → ${formatMoney(to)}`;
 }
 
-/** Siparişin iptal edilmemiş satırlarının sayısı ve KDV dahil tutarı: "2 satır, KDV dahil ₺27.500,00". */
+/** Siparişin iptal edilmemiş satırlarının sayısı ve KDV dahil tutarı: "2 kalem, KDV dahil ₺27.500,00". */
 function orderSizeText(lines: (LineFacts & { vatRate: number; status: string })[]): string {
   const live = lines.filter((l) => l.status !== "cancelled");
-  return `${live.length} satır, KDV dahil ${formatMoney(orderTotals(live).totalKurus)}`;
+  return `${live.length} kalem, KDV dahil ${formatMoney(orderTotals(live).totalKurus)}`;
 }
 
 async function productFacts(db: Db, productId: string): Promise<ProductFacts> {

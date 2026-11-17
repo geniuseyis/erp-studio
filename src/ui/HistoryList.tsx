@@ -32,7 +32,7 @@ export function HistoryList({ entries, loading, hasMore, onShowAll }: HistoryLis
       ) : entries.length === 0 ? (
         <p className="text-fg-muted">Henüz kayıt yok</p>
       ) : (
-        <ol aria-label="Geçmiş" className="relative grid">
+        <ol className="relative grid">
           {/* Zaman çizgisi */}
           <span aria-hidden="true" className="absolute top-3 bottom-3 left-[5px] w-px bg-line" />
           {entries.map((e) => (

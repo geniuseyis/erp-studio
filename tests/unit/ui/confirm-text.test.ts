@@ -89,6 +89,6 @@ test("stok metni eldeki miktarın öncesini ve sonrasını yazar", () => {
 });
 
 test("sayım onay metni farklı satır sayısını söyler", () => {
-  expect(countApproveText(2)).toBe("2 satırdaki fark stok hareketi olarak yazılacak.");
+  expect(countApproveText(2)).toBe("2 kalemde fark stok hareketi olarak yazılacak.");
   expect(countApproveText(0)).toBe("Sayılan miktarlar stokla aynı; stok hareketi yazılmaz.");
 });

@@ -54,5 +54,5 @@ export function stockChangeText(m: { code: string; name: string; unit: Unit; onH
 }
 
 export function countApproveText(differing: number): string {
-  return differing > 0 ? `${differing} satırdaki fark stok hareketi olarak yazılacak.` : "Sayılan miktarlar stokla aynı; stok hareketi yazılmaz.";
+  return differing > 0 ? `${differing} kalemde fark stok hareketi olarak yazılacak.` : "Sayılan miktarlar stokla aynı; stok hareketi yazılmaz.";
 }
