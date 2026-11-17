@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { loginAs } from "./helpers";
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/bilesenler");
@@ -95,4 +96,20 @@ test("telefonda sayfa yatay taşmaz", async ({ page }) => {
   await page.reload();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(0);
+});
+
+test("yan menü taşınca kenar geçişleri kaydırma konumunu izler", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await loginAs(page, "Nermin Aksoy");
+  const nav = page.getByRole("navigation", { name: "Ana menü" }).locator("visible=true").first();
+  await expect(nav).toHaveAttribute("data-fade-bottom", "");
+  await expect(nav).not.toHaveAttribute("data-fade-top", "");
+
+  await nav.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await expect(nav).toHaveAttribute("data-fade-top", "");
+  await expect(nav).not.toHaveAttribute("data-fade-bottom", "");
+
+  await page.setViewportSize({ width: 1280, height: 1400 });
+  await expect(nav).not.toHaveAttribute("data-fade-top", "");
+  await expect(nav).not.toHaveAttribute("data-fade-bottom", "");
 });

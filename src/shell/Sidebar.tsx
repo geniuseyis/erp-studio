@@ -3,7 +3,7 @@
 import { motion } from "motion/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ComponentType } from "react";
+import { type ComponentType, useEffect, useRef } from "react";
 import { DEPARTMENT_NAMES, type SessionUser } from "@/domain/context";
 import { cn } from "@/ui/cn";
 import { ArrowsIcon, BoxIcon, ClipboardIcon, ContactIcon, HomeIcon, MalletIcon, PanelIcon, ReceiptIcon, SawIcon, TagIcon, UsersIcon } from "@/ui/icons";
@@ -43,6 +43,35 @@ type Props = {
 export function Sidebar({ user, collapsed = false, onToggle, onNavigate, layoutId = "nav-pill", className }: Props) {
   const pathname = usePathname();
   const items = visibleNav(user);
+  const navRef = useRef<HTMLElement>(null);
+
+  // Kenar geçişleri ve kaydırma çubuğunun görünürlüğü doğrudan öznitelikle yönetilir; her kaydırmada yeniden çizim olmaz.
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const sync = () => {
+      const max = nav.scrollHeight - nav.clientHeight;
+      nav.toggleAttribute("data-fade-top", nav.scrollTop > 1);
+      nav.toggleAttribute("data-fade-bottom", max - nav.scrollTop > 1);
+    };
+    const onScroll = () => {
+      sync();
+      nav.setAttribute("data-scrolling", "");
+      clearTimeout(timer);
+      timer = setTimeout(() => nav.removeAttribute("data-scrolling"), 800);
+    };
+    sync();
+    nav.addEventListener("scroll", onScroll, { passive: true });
+    const observer = new ResizeObserver(sync);
+    observer.observe(nav);
+    for (const child of Array.from(nav.children)) observer.observe(child);
+    return () => {
+      nav.removeEventListener("scroll", onScroll);
+      observer.disconnect();
+      clearTimeout(timer);
+    };
+  }, [collapsed, items.length]);
 
   return (
     <aside
@@ -58,7 +87,7 @@ export function Sidebar({ user, collapsed = false, onToggle, onNavigate, layoutI
       <div className={cn("relative flex h-16 shrink-0 items-center", collapsed ? "justify-center" : "px-5")}>
         <Brand compact={collapsed} />
       </div>
-      <nav aria-label="Ana menü" className="relative min-h-0 flex-1 overflow-y-auto px-3 py-3">
+      <nav ref={navRef} aria-label="Ana menü" className="menu-scroll relative min-h-0 flex-1 overflow-y-auto px-3 py-3">
         {NAV_GROUPS.map((group) => {
           const groupItems = items.filter((i) => i.group === group);
           if (groupItems.length === 0) return null;
