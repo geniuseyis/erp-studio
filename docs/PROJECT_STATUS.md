@@ -1,6 +1,6 @@
 # Proje durumu
 
-Son güncelleme: 2026-11-17 (Plan 2A: satış ve üretim tamamlandı, son gözden geçirme düzeltmeleri yapıldı)
+Son güncelleme: 2026-11-18 (Plan 2A: satış ve üretim tamamlandı ve `main`'e birleştirildi)
 
 ## Yapılanlar (Plan 1: temel)
 
@@ -19,14 +19,17 @@ Son güncelleme: 2026-11-17 (Plan 2A: satış ve üretim tamamlandı, son gözde
 - **Ekranlar:** Siparişler (çekmecede satır ekleme, onay, sevk, iptal), Müşteriler, Ürünler (reçete ve rota), İş emirleri (adım çizelgesi, malzeme durumu, planlama), Atölye (istasyon kuyruğu, büyük Başla ve Bitti düğmeleri; tablette en az 48 px). Atölye yalnızca işlem yetkisi olanlara menüde görünür.
 - **Ctrl+K:** sipariş, iş emri, müşteri ve ürün kodu ya da adıyla arama (yazınca, her grupta en çok 5; görme yetkisi olmayan ekranın kaydı çıkmaz), seçilince çekmece açılır. Satışta "Yeni sipariş" komutu. Kayıt listeleri palet açılınca bir kez okunur, tuş vuruşunda veritabanına gidilmez.
 - **Yetki:** Satış sipariş açar ve onaylar, Planlama iş emrini planlar, Atölye adımları ilerletir, Depo sevk eder; hem düğme gizlenir hem servis `FORBIDDEN` döner.
+- **İşlem geçmişi:** her işlem neyin değiştiğini açıkça yazar (silinen satırın ürünü, adedi ve tutarı; düzenlenen alanların eski → yeni değeri; iptal gerekçesi). Kayıt çekmecelerinin altında "Geçmiş" bölümü; sol menüde **İşlemler** ekranı (bütün kayıtlar, tür, departman, kişi, tarih ve metinle süzme, CSV). Kullanıcı yönetimi kayıtlarını yalnızca Yönetim ve Bilgi İşlem görür.
+- **İşlem öncesi onay:** veri değiştiren her düğme önce neyin olacağını söyleyen bir pencere açar ("satır silinecek, tutar ₺X → ₺Y olacak"); düzenleme formları yalnızca değişen alanları eski → yeni gösterir. Pencere açılınca "Vazgeç" seçilidir, Enter tek başına onaylamaz; silen işlemler kırmızı düğmelidir. Sayımda yalnızca kayıtlı bir sayımın üzerine yazmak onay ister.
+- Yan menüde tasarıma uygun ince kaydırma çubuğu ve kenar geçişleri.
 - Ekran görüntüleri: `docs/screens/asama-2`.
 
 ## Testler
 
 | Tür | Sayı | Not |
 |---|---|---|
-| Birim (Vitest) | 470 | Gerçek PGlite veritabanıyla; dosya başına paylaşılan veritabanı |
-| Tarayıcı (Playwright) | 77 (+1 elle çalıştırılan: ekran görüntüsü) | Başsız Chrome, "hareketi azalt" açık |
+| Birim (Vitest) | 513 | Gerçek PGlite veritabanıyla; dosya başına paylaşılan veritabanı |
+| Tarayıcı (Playwright) | 95 (+1 elle çalıştırılan: ekran görüntüsü) | Başsız Chrome, "hareketi azalt" açık |
 | Üretim dolaşımı | `scripts/walkthrough.mjs` | Giriş, stok girişi, sayım, palet, siparişten sevke (satış, planlama, atölye, depo), kullanıcı ekleme, sıfırlama; konsol hatası ve 4xx yok |
 
 ## Tarayıcıda PostgreSQL
@@ -36,7 +39,7 @@ Son güncelleme: 2026-11-17 (Plan 2A: satış ve üretim tamamlandı, son gözde
 - **Çok sekme:** PGlite sekmelerden birini lider seçer, diğerleri sorgularını ona yollar. Kurulum ve örnek veri yüklemesi Web Locks ile tek sekmede çalışır. Bir sekmedeki değişiklik `BroadcastChannel` ile diğer sekmelerin sorgularını yeniler.
 - **Depolama kapalıysa** (OPFS yok, ya da site verisi engellendiği için Worker içinde reddediliyor): veritabanı bellekte açılır (`persistent: false`) ve ekranda kalıcı bir uyarı durur. Worker reddi açıkça bildirir; sessizce takılırsa 60 sn sonra bellekte devam edilir.
 - **Sıfırlama ve sürüm değişimi:** `public` şeması silinip yeniden kurulur.
-- **Örnek veri:** derleme sırasında üretilen anlık görüntüden (`src/seed/snapshot.generated.json`, ~900 KB) tablo başına toplu INSERT ile yüklenir; tarihler yükleme anına iş günü olarak kaydırılır, hiçbir kayıt hafta sonuna düşmez. Anlık görüntü `npm run seed:snapshot` ile yenilenir; güncel olup olmadığını bir birim testi denetler.
+- **Örnek veri:** derleme sırasında üretilen anlık görüntüden (`src/seed/snapshot.generated.json`, ~960 KB; 1 MB sınırına yakın, Plan 2B'nin başında küçültülecek) tablo başına toplu INSERT ile yüklenir; tarihler yükleme anına iş günü olarak kaydırılır, hiçbir kayıt hafta sonuna düşmez. Anlık görüntü `npm run seed:snapshot` ile yenilenir; güncel olup olmadığını bir birim testi denetler.
 
 ### Neden bu depolama (2026-11-15 ölçümleri, başsız Chrome, RTX 4070 makine)
 
