@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, ReactNode, Ref } from "react";
 import { cn } from "./cn";
 
 /** `light`: ceviz bandının üstünde duran birincil düğme. */
@@ -6,6 +6,7 @@ type Variant = "primary" | "secondary" | "ghost" | "danger" | "light";
 type Size = "sm" | "md" | "lg";
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  ref?: Ref<HTMLButtonElement>;
   variant?: Variant;
   size?: Size;
   /** İşlem sürerken düğmeyi kilitler ve dönen işaret gösterir. */

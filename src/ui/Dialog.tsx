@@ -1,7 +1,7 @@
 "use client";
 
 import { Dialog as RadixDialog } from "radix-ui";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import { IconButton } from "./Button";
 import { cn } from "./cn";
 import { CloseIcon } from "./icons";
@@ -16,10 +16,16 @@ type Props = {
   /** Alt satırdaki düğmeler. */
   footer?: ReactNode;
   size?: "sm" | "md";
+  /** Açılınca odaklanacak öğe; verilmezse Radix ilk odaklanabilir öğeyi seçer. */
+  initialFocus?: RefObject<HTMLElement | null>;
+  /** Onay penceresi: ekran okuyucuya `alertdialog` olarak duyurulur. */
+  alert?: boolean;
+  /** Dışarı tıklama; `event.preventDefault()` pencereyi açık tutar. */
+  onPointerDownOutside?: (event: Event) => void;
 };
 
 /** Ortada açılan pencere. Odak içeride kalır, Esc kapatır, kapanınca odak açan düğmeye döner. */
-export function Dialog({ open, onOpenChange, title, description, children, footer, size = "sm" }: Props) {
+export function Dialog({ open, onOpenChange, title, description, children, footer, size = "sm", initialFocus, alert = false, onPointerDownOutside }: Props) {
   const focus = useReturnFocus();
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
@@ -27,6 +33,16 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
         <RadixDialog.Overlay className="fixed inset-0 z-40 bg-overlay backdrop-blur-[2px] animate-[fade-in_160ms_ease-out]" />
         <RadixDialog.Content
           {...focus}
+          onOpenAutoFocus={(event) => {
+            focus.onOpenAutoFocus();
+            const target = initialFocus?.current;
+            if (target) {
+              event.preventDefault();
+              target.focus();
+            }
+          }}
+          onPointerDownOutside={onPointerDownOutside}
+          {...(alert ? { role: "alertdialog" } : {})}
           className={cn(
             "fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col",
             "overflow-hidden rounded-[24px] border border-line bg-surface shadow-panel animate-[pop-in_320ms_var(--ease-pop)]",
