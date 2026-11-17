@@ -1,4 +1,4 @@
-// Ctrl+K paleti: sayfalar, kayıtlar (sipariş, iş emri, müşteri, ürün, malzeme) ve komutlar tek listede. React içermez; birim testiyle denetlenir.
+// Ctrl+K paleti: sayfalar (menüdeki her madde, İşlemler dahil), kayıtlar (sipariş, iş emri, müşteri, ürün, malzeme) ve komutlar tek listede. React içermez; birim testiyle denetlenir.
 import type { SessionUser } from "@/domain/context";
 import type { MaterialRow } from "@/domain/inventory/queries";
 import { can } from "@/domain/permissions";

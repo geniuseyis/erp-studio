@@ -123,3 +123,11 @@ test("depo kullanıcısında 'Yeni sipariş' komutu yok; satış uzmanında var 
   items.find((i) => i.label === "Yeni sipariş")?.run();
   expect(go).toHaveBeenCalledWith("/satis/siparisler?yeni=1");
 });
+
+test("İşlemler sayfası Sayfalar grubunda; 'islem' yazınca bulunur", () => {
+  const { items, go } = build(user("atolye", "operator"), "islem");
+  const page = items.find((i) => i.label === "İşlemler");
+  expect(page).toMatchObject({ group: "Sayfalar", hint: "Genel" });
+  page?.run();
+  expect(go).toHaveBeenCalledWith("/islemler");
+});

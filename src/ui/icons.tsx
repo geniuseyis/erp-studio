@@ -57,6 +57,7 @@ export const LockIcon = make(<><rect x="5" y="10" width="14" height="10" rx="2" 
 export const UnlockIcon = make(<><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 7.5-2" /></>);
 export const SawIcon = make(<><path d="M3 15 15 3l6 6L9 21l-2-2 2-2-2-2-2 2-2-2Z" /><path d="m13 9 2 2" /></>);
 export const ShelfIcon = make(<><path d="M4 4v16M20 4v16M4 9h16M4 15h16" /></>);
+export const HistoryIcon = make(<><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1M3.5 4v4h4" /><path d="M12 8v4l2.8 1.8" /></>);
 export const ClockIcon = make(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>);
 export const TagIcon = make(<><path d="M3 12V4h8l10 10-8 8L3 12Z" /><circle cx="7.5" cy="8.5" r="1.5" /></>);
 export const ArrowRightIcon = make(<path d="M5 12h14m0 0-5-5m5 5-5 5" />);

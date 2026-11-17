@@ -6,13 +6,14 @@ import { usePathname } from "next/navigation";
 import { type ComponentType, useEffect, useRef } from "react";
 import { DEPARTMENT_NAMES, type SessionUser } from "@/domain/context";
 import { cn } from "@/ui/cn";
-import { ArrowsIcon, BoxIcon, ClipboardIcon, ContactIcon, HomeIcon, MalletIcon, PanelIcon, ReceiptIcon, SawIcon, TagIcon, UsersIcon } from "@/ui/icons";
+import { ArrowsIcon, BoxIcon, ClipboardIcon, ContactIcon, HistoryIcon, HomeIcon, MalletIcon, PanelIcon, ReceiptIcon, SawIcon, TagIcon, UsersIcon } from "@/ui/icons";
 import { SLIDE_SPRING } from "@/ui/motion";
 import { Brand } from "./Brand";
 import { NAV_GROUPS, visibleNav } from "./nav";
 
 const ICON: Record<string, ComponentType<{ size?: number }>> = {
   "/": HomeIcon,
+  "/islemler": HistoryIcon,
   "/satis/siparisler": ReceiptIcon,
   "/satis/musteriler": ContactIcon,
   "/uretim/urunler": TagIcon,

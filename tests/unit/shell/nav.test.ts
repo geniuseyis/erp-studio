@@ -66,3 +66,10 @@ test("girişten sonraki adres yalnızca uygulama içi bir yol olabilir", () => {
     expect(safeNextPath(bad), String(bad)).toBe("/");
   }
 });
+
+test("İşlemler herkese görünür, Genel grubunda ana panelin hemen altında", () => {
+  expect(NAV.filter((n) => n.group === "Genel").map((n) => n.href)).toEqual(["/", "/islemler"]);
+  for (const dept of ["yonetim", "satis", "planlama", "atolye", "depo", "satinalma", "bt"] as const) {
+    for (const level of ["operator", "uzman", "mudur"] as const) expect(labels(user(dept, level))).toContain("İşlemler");
+  }
+});

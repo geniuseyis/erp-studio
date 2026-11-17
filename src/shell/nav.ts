@@ -8,6 +8,8 @@ export type NavItem = { href: string; label: string; module: Module; group: NavG
 /** Yan menü. Yalnızca çalışan ekranlar yer alır; yeni modüller hazır olduklarında buraya eklenir. */
 export const NAV: NavItem[] = [
   { href: "/", label: "Ana panel", module: "reports", group: "Genel" },
+  // Herkes görür: kayıtlarda gizli bilgi yoktur. Kayıt bağlantıları yalnızca görülebilen ekranlara verilir.
+  { href: "/islemler", label: "İşlemler", module: "reports", group: "Genel" },
   { href: "/satis/siparisler", label: "Siparişler", module: "sales", group: "Satış" },
   { href: "/satis/musteriler", label: "Müşteriler", module: "sales", group: "Satış" },
   { href: "/uretim/urunler", label: "Ürünler", module: "planning", group: "Üretim" },
