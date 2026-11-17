@@ -127,6 +127,7 @@ test("atölye Başla: büyük düğmeli onay iş emrini, istasyonu ve adımı ya
   for (const name of ["Vazgeç", "Başlat"]) {
     expect((await dialog.getByRole("button", { name, exact: true }).boundingBox())?.height ?? 0, name).toBeGreaterThanOrEqual(48);
   }
+  expect((await dialog.getByRole("button", { name: "Kapat" }).boundingBox())?.height ?? 0, "Kapat").toBeGreaterThanOrEqual(48);
   await dialog.getByRole("button", { name: "Vazgeç" }).click();
   await expect(dialog).toBeHidden();
   expect(await started()).toBe(false);

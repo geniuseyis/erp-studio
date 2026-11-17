@@ -24,10 +24,12 @@ type Props = {
   onPointerDownOutside?: (event: Event) => void;
   /** Pencerenin gövdesi açıklamadır (onay penceresinin sonuç metni): ekran okuyucu başlıktan sonra bunu okur. */
   bodyIsDescription?: boolean;
+  /** Kapatma (X) düğmesi 48 px: eldivenle kullanılan atölye onayı için. */
+  largeClose?: boolean;
 };
 
 /** Ortada açılan pencere. Odak içeride kalır, Esc kapatır, kapanınca odak açan düğmeye döner. */
-export function Dialog({ open, onOpenChange, title, description, children, footer, size = "sm", initialFocus, alert = false, onPointerDownOutside, bodyIsDescription = false }: Props) {
+export function Dialog({ open, onOpenChange, title, description, children, footer, size = "sm", initialFocus, alert = false, onPointerDownOutside, bodyIsDescription = false, largeClose = false }: Props) {
   const focus = useReturnFocus();
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
@@ -61,7 +63,7 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
               )}
             </div>
             <RadixDialog.Close asChild>
-              <IconButton label="Kapat" size={size === "md" ? "lg" : "sm"} className="-mr-1.5">
+              <IconButton label="Kapat" size={largeClose ? "lg" : "sm"} className="-mr-1.5">
                 <CloseIcon />
               </IconButton>
             </RadixDialog.Close>
