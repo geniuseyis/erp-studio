@@ -56,8 +56,8 @@ async function runAllSteps() {
 }
 
 // Ürünün 3 adımlı rotası ve 2 plakalık reçetesi var; malzeme stokta yok, onaylanan sipariş bekleyen iş emri açar.
-beforeEach(async () => {
-  db = await createTestDb();
+async function setup(target: Db) {
+  db = target;
   satis = ctxFor(db, await addUser(db, "satis", "uzman"));
   planlama = ctxFor(db, await addUser(db, "planlama", "uzman"));
   depo = ctxFor(db, await addUser(db, "depo", "uzman"));
@@ -75,6 +75,10 @@ beforeEach(async () => {
   const [wo] = await db.select().from(workOrders);
   if (!wo) throw new Error("iş emri açılmadı");
   workOrderId = wo.id;
+}
+
+beforeEach(async () => {
+  await setup(await createTestDb());
 });
 
 test("ilk adım malzemeleri tüketir; ayrılmış ve eldeki birlikte düşer", async () => {
@@ -287,6 +291,8 @@ test("her başlatma ve bitirme işlem geçmişine yazılır", async () => {
 });
 
 test("tüketim defter hatası verirse ilk başlatma geri alınır", async () => {
+  // Kısıt kaldırılacağı için ortak veritabanı değil, bu teste ait yeni bir veritabanı kullanılır.
+  await setup(await createTestDb({ fresh: true }));
   await reserveMaterials();
   // Eldeki stok ayrılmışın altına düşürülür: tüketim defterde reddedilir.
   await db.execute(sql`alter table materials drop constraint materials_reserved_check`);
@@ -301,4 +307,9 @@ test("tüketim defter hatası verirse ilk başlatma geri alınır", async () => 
   expect(wo.startedAt).toBeNull();
   expect((await db.select().from(stockMovements)).length).toBe(movements);
   expect((await db.select().from(auditLog)).length).toBe(audits);
+});
+
+test("önceki testler ortak veritabanının kısıtlarını kalıcı değiştirmez", async () => {
+  const found = await db.execute(sql`select 1 from pg_constraint where conname = 'materials_reserved_check'`);
+  expect(found.rows).toHaveLength(1);
 });
