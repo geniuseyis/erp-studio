@@ -279,21 +279,28 @@ test("müşteri ekle, aramada bul, siparişlerini gör", async ({ page }) => {
   await expect(page.getByRole("dialog", { name: code })).toBeVisible();
 });
 
-test("telefonda sipariş ekranı ve çekmece yatay taşmaz", async ({ page }) => {
+test("telefonda sipariş ve müşteri ekranları ve çekmeceleri yatay taşmaz", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await loginAs(page, "Elif Karaca");
-  await page.goto("/satis/siparisler?durum=draft");
-  await expect(page.getByRole("heading", { name: "Siparişler", level: 1 })).toBeVisible({ timeout: 45_000 });
   const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  expect(await overflow()).toBeLessThanOrEqual(0);
-  const rows = page.getByRole("table", { name: "Siparişler" }).locator("tbody tr");
-  await expect(rows.first()).toContainText("Taslak");
-  await rows.first().click();
-  const drawer = page.getByRole("dialog").filter({ hasText: /SIP-/ });
-  await expect(drawer).toBeVisible();
-  const inner = await drawer.evaluate((el) => {
-    const body = el.querySelector("div.overflow-y-auto");
-    return body ? body.scrollWidth - body.clientWidth : 0;
-  });
-  expect(inner).toBeLessThanOrEqual(0);
+  for (const [path, heading, rowText, drawerText] of [
+    ["/satis/siparisler?durum=draft", "Siparişler", "Taslak", /SIP-/],
+    ["/satis/musteriler", "Müşteriler", /MUS-/, /MUS-/],
+  ] as const) {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible({ timeout: 45_000 });
+    const rows = page.getByRole("table", { name: heading }).locator("tbody tr");
+    await expect(rows.first()).toContainText(rowText);
+    expect(await overflow(), path).toBeLessThanOrEqual(0);
+    await rows.first().click();
+    const drawer = page.getByRole("dialog").filter({ hasText: drawerText });
+    await expect(drawer).toBeVisible();
+    const inner = await drawer.evaluate((el) => {
+      const body = el.querySelector("div.overflow-y-auto");
+      return body ? body.scrollWidth - body.clientWidth : 0;
+    });
+    expect(inner, path).toBeLessThanOrEqual(0);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  }
 });
