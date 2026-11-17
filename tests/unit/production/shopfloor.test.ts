@@ -313,3 +313,31 @@ test("önceki testler ortak veritabanının kısıtlarını kalıcı değiştirm
   const found = await db.execute(sql`select 1 from pg_constraint where conname = 'materials_reserved_check'`);
   expect(found.rows).toHaveLength(1);
 });
+
+test("bayat ekran: beklenen adım sırası tutmazsa başlatma ve bitirme reddedilir, hiçbir şey yazılmaz", async () => {
+  await reserveMaterials();
+  const STALE = "Bu adım başka bir tabletten ilerletildi; liste yenilendi";
+  // İlk tablet 1. adımı başlattı; ikinci tablet hâlâ 1. adımın "Başla" düğmesini gösteriyor.
+  await startNextStep(atolye, workOrderId, 1);
+  const movements = (await db.select().from(stockMovements)).length;
+  const audits = (await db.select().from(auditLog)).length;
+  await expect(startNextStep(atolye, workOrderId, 1)).rejects.toMatchObject({ code: "INVALID_STATE", message: STALE });
+
+  // İlk tablet 1. adımı bitirdi; bayat ekran 2. adım yerine yine 1. adımı bitirmeye çalışır.
+  await finishCurrentStep(atolye, workOrderId, 1);
+  await expect(finishCurrentStep(atolye, workOrderId, 1)).rejects.toMatchObject({ code: "INVALID_STATE", message: STALE });
+  // Sıradaki 2. adım; bayat ekran 1. adımı başlatmak isterse 2. adım başlamaz.
+  await expect(startNextStep(atolye, workOrderId, 1)).rejects.toMatchObject({ code: "INVALID_STATE", message: STALE });
+  expect((await steps()).map((s) => [s.seq, s.startedAt !== null, s.finishedAt !== null])).toEqual([
+    [1, true, true],
+    [2, false, false],
+    [3, false, false],
+  ]);
+  expect((await db.select().from(stockMovements)).length).toBe(movements);
+  expect((await db.select().from(auditLog)).length).toBe(audits + 1); // yalnızca geçerli bitirme
+
+  // Doğru sıra kabul edilir; beklenen sıra verilmezse eski davranış sürer.
+  await startNextStep(atolye, workOrderId, 2);
+  await finishCurrentStep(atolye, workOrderId);
+  expect((await steps())[1]?.finishedAt).not.toBeNull();
+});

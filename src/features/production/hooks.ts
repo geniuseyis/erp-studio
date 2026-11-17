@@ -11,6 +11,7 @@ import {
   stationQueue,
   type WorkOrderFilter,
 } from "@/domain/production/queries";
+import type { Ctx } from "@/domain/context";
 import { finishCurrentStep, planWorkOrder, retryMaterials, startNextStep } from "@/domain/production/workOrders";
 import { useDb } from "@/shell/db-context";
 import { useAction } from "@/shell/useAction";
@@ -58,5 +59,7 @@ export function useStationQueues(codes: readonly string[]) {
 
 export const usePlanWorkOrder = () => useAction(planWorkOrder);
 export const useRetryMaterials = () => useAction(retryMaterials);
-export const useStartStep = () => useAction(startNextStep);
-export const useFinishStep = () => useAction(finishCurrentStep);
+/** `seq`: ekranın gösterdiği adım; başka tablet ilerlettiyse servis reddeder. */
+type StepInput = { workOrderId: string; seq: number };
+export const useStartStep = () => useAction((ctx: Ctx, i: StepInput) => startNextStep(ctx, i.workOrderId, i.seq));
+export const useFinishStep = () => useAction((ctx: Ctx, i: StepInput) => finishCurrentStep(ctx, i.workOrderId, i.seq));

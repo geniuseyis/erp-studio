@@ -57,6 +57,9 @@ export function WorkOrderDrawer({ id, onClose }: { id: string; onClose: () => vo
   const isPlanned = w?.status === "planned";
   const waitingMaterial = isPlanned && !w.materialsReserved;
   const controls = w ? stepControls(w) : null;
+  // Ekranda görünen adım; servis başka tabletin ilerlettiği adımı bu sırayla yakalar.
+  const nextSeq = w?.steps.find((s) => s.startedAt === null)?.seq;
+  const runningSeq = w?.steps.find((s) => s.startedAt !== null && s.finishedAt === null)?.seq;
 
   function onPlan(e: FormEvent) {
     e.preventDefault();
@@ -89,16 +92,18 @@ export function WorkOrderDrawer({ id, onClose }: { id: string; onClose: () => vo
   const onStart = (e: MouseEvent) =>
     w &&
     controls?.start &&
+    nextSeq !== undefined &&
     void guarded("start", async () => {
-      await start.mutateAsync(w.id);
+      await start.mutateAsync({ workOrderId: w.id, seq: nextSeq });
       toast.success(`${w.code} ${controls.start} başladı`);
     }, e);
 
   const onFinish = (e: MouseEvent) =>
     w &&
     controls?.finish &&
+    runningSeq !== undefined &&
     void guarded("finish", async () => {
-      const result = await finish.mutateAsync(w.id);
+      const result = await finish.mutateAsync({ workOrderId: w.id, seq: runningSeq });
       toast.success(result.completed ? `${w.code} tamamlandı` : `${w.code} ${controls.finish} bitti`);
     }, e);
 

@@ -211,11 +211,17 @@ async function missingMaterialMessage(db: Db, wo: typeof workOrders.$inferSelect
   return `Malzeme ayrılmadı: ${shortages.map((s) => `${s.code} ${s.name}`).join(", ")}`;
 }
 
+/** Ekranın gösterdiği adım artık sıradaki değilse (başka tablet ilerletmiş): hiçbir şey yazılmaz. */
+function staleStep(): DomainError {
+  return new DomainError("INVALID_STATE", "Bu adım başka bir tabletten ilerletildi; liste yenilendi");
+}
+
 /**
  * Sıradaki adımı başlatır. İlk adım ayrılmış malzemeleri tüketir (ayrılan kadar; reçeteye yeniden bakılmaz).
- * Adımlar yalnızca `seq` sırasıyla başlar.
+ * Adımlar yalnızca `seq` sırasıyla başlar. `expectedSeq`: ekranın başlatmak üzere gösterdiği adım; sıradaki adım
+ * başkaysa ya da açık adım varsa reddedilir.
  */
-export async function startNextStep(ctx: Ctx, workOrderId: string): Promise<WorkOrderStep> {
+export async function startNextStep(ctx: Ctx, workOrderId: string, expectedSeq?: number): Promise<WorkOrderStep> {
   assertCan(ctx.user, "shopfloor", "execute");
   return inTx(ctx, async (tx) => {
     const wo = await mustFindWorkOrder(tx.db, workOrderId);
@@ -224,10 +230,11 @@ export async function startNextStep(ctx: Ctx, workOrderId: string): Promise<Work
     }
     const steps = await tx.db.select().from(workOrderSteps).where(eq(workOrderSteps.workOrderId, wo.id)).orderBy(asc(workOrderSteps.seq));
     const open = steps.find((s) => s.startedAt !== null && s.finishedAt === null);
+    const next = steps.find((s) => s.startedAt === null);
+    if (expectedSeq !== undefined && (open || next?.seq !== expectedSeq)) throw staleStep();
     if (open) {
       throw new DomainError("INVALID_STATE", `Önce ${await stationName(tx.db, open)} adımını bitirin`);
     }
-    const next = steps.find((s) => s.startedAt === null);
     if (!next) throw new DomainError("INVALID_STATE", "Başlatılacak adım kalmadı");
 
     if (next.seq === steps[0]?.seq) {
@@ -254,13 +261,21 @@ export async function startNextStep(ctx: Ctx, workOrderId: string): Promise<Work
   });
 }
 
-/** Başlamış adımı bitirir. Son adımsa iş emri tamamlanır, mamul girer ve bağlı satıra ayrılır. */
-export async function finishCurrentStep(ctx: Ctx, workOrderId: string): Promise<{ step: WorkOrderStep; completed: boolean }> {
+/**
+ * Başlamış adımı bitirir. Son adımsa iş emri tamamlanır, mamul girer ve bağlı satıra ayrılır. `expectedSeq`: ekranın
+ * bitirmek üzere gösterdiği adım; açık adım başkaysa (ya da yoksa) reddedilir.
+ */
+export async function finishCurrentStep(
+  ctx: Ctx,
+  workOrderId: string,
+  expectedSeq?: number,
+): Promise<{ step: WorkOrderStep; completed: boolean }> {
   assertCan(ctx.user, "shopfloor", "execute");
   return inTx(ctx, async (tx) => {
     const wo = await mustFindWorkOrder(tx.db, workOrderId);
     const steps = await tx.db.select().from(workOrderSteps).where(eq(workOrderSteps.workOrderId, wo.id)).orderBy(asc(workOrderSteps.seq));
     const open = steps.find((s) => s.startedAt !== null && s.finishedAt === null);
+    if (expectedSeq !== undefined && open?.seq !== expectedSeq) throw staleStep();
     if (wo.status !== "in_progress" || !open) throw new DomainError("INVALID_STATE", "Bitirilecek başlamış adım yok");
 
     const [step] = await tx.db

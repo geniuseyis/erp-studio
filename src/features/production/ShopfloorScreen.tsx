@@ -81,10 +81,10 @@ export function ShopfloorScreen() {
       item.workOrderId,
       async () => {
         if (item.state === "waiting") {
-          await start.mutateAsync(item.workOrderId);
+          await start.mutateAsync({ workOrderId: item.workOrderId, seq: item.seq });
           toast.success(`${item.code} ${station.name} başladı`);
         } else {
-          const result = await finish.mutateAsync(item.workOrderId);
+          const result = await finish.mutateAsync({ workOrderId: item.workOrderId, seq: item.seq });
           toast.success(result.completed ? `${item.code} tamamlandı` : `${item.code} ${station.name} bitti`);
         }
       },
