@@ -48,6 +48,7 @@ export const ACTION_LABEL: Record<string, string> = {
   reserve: "Stok ayrıldı",
   unreserve: "Ayırma kaldırıldı",
   consume: "Üretimde tüketildi",
+  count_line: "Sayım girildi",
   count_adjust: "Sayım farkı",
   production_in: "Üretimden giriş",
   activate: "Etkinleştirildi",

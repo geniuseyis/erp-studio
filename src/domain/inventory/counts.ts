@@ -52,13 +52,25 @@ export async function setCountLine(ctx: Ctx, i: { countId: string; materialId: s
     throw new DomainError("VALIDATION", "Sayılan miktar sıfır ya da daha büyük olmalı");
   }
   await inTx(ctx, async (tx) => {
-    await mustFindOpen(tx.db, i.countId);
-    const updated = await tx.db
-      .update(stockCountLines)
-      .set({ countedMilli: i.countedMilli })
-      .where(and(eq(stockCountLines.countId, i.countId), eq(stockCountLines.materialId, i.materialId)))
-      .returning({ id: stockCountLines.id });
-    if (updated.length === 0) throw new DomainError("NOT_FOUND", "Bu malzeme sayım fişinde yok");
+    const count = await mustFindOpen(tx.db, i.countId);
+    const [row] = await tx.db
+      .select({ lineId: stockCountLines.id, counted: stockCountLines.countedMilli, code: materials.code, name: materials.name, unit: materials.unit })
+      .from(stockCountLines)
+      .innerJoin(materials, eq(materials.id, stockCountLines.materialId))
+      .where(and(eq(stockCountLines.countId, i.countId), eq(stockCountLines.materialId, i.materialId)));
+    if (!row) throw new DomainError("NOT_FOUND", "Bu malzeme sayım fişinde yok");
+    if (row.counted === i.countedMilli) return;
+    await tx.db.update(stockCountLines).set({ countedMilli: i.countedMilli }).where(eq(stockCountLines.id, row.lineId));
+    const unit = row.unit as Unit;
+    await logAudit(tx, {
+      entity: "stock_count",
+      entityId: count.id,
+      action: "count_line",
+      summary:
+        row.counted === null
+          ? `${count.code}: ${row.code} ${row.name} sayıldı: ${formatQty(i.countedMilli, unit)}`
+          : `${count.code}: ${row.code} ${row.name} sayılan ${formatQty(row.counted, unit)} → ${formatQty(i.countedMilli, unit)}`,
+    });
   });
 }
 

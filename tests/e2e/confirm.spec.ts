@@ -279,6 +279,9 @@ test("sayım: kayıtlı sayımın üzerine yazmak onay ister, Vazgeç eski değe
   await approve(page, "Değiştir");
   await expect.poll(counted).toBe(8000);
   await expect(input).toHaveValue("8");
+  // Üzerine yazma Geçmiş'e düşer: eski ve yeni değer birlikte.
+  await expect(detail.getByRole("list", { name: "Geçmiş" })).toContainText("sayılan 7");
+  await expect(detail.getByRole("list", { name: "Geçmiş" })).toContainText("→ 8");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await signOut(page);

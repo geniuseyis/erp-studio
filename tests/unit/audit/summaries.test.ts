@@ -188,6 +188,18 @@ test("sayım: açılış kalemleri, onay farkları, iptal sayılan kalemleri yaz
   expect(await only(second.id, "cancel")).toBe(`${second.code} iptal edildi: 2 kalem, 1 sayıldı`);
 });
 
+test("sayım: satır ilk sayıldığında ve değiştiğinde işlem geçmişine yazılır; aynı değer yazılmaz", async () => {
+  const a = await addMaterial(db, { code: "MLZ-0001", name: "MDF Lam", unit: "plaka", onHandMilli: 10_000 });
+  const count = await createCount(depo, { materialIds: [a.id] });
+  await setCountLine(depo, { countId: count.id, materialId: a.id, countedMilli: 12_000 });
+  await setCountLine(depo, { countId: count.id, materialId: a.id, countedMilli: 12_000 });
+  await setCountLine(depo, { countId: count.id, materialId: a.id, countedMilli: 10_000 });
+  expect(await summaries(count.id, "count_line")).toEqual([
+    `${count.code}: MLZ-0001 MDF Lam sayıldı: 12 plaka`,
+    `${count.code}: MLZ-0001 MDF Lam sayılan 12 plaka → 10 plaka`,
+  ]);
+});
+
 test("sayım: fark yoksa onay bunu söyler", async () => {
   const a = await addMaterial(db, { code: "MLZ-0001", unit: "plaka", onHandMilli: 10_000 });
   const count = await createCount(depo, { materialIds: [a.id] });
