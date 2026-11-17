@@ -37,6 +37,10 @@ async function orderOf(...items: { productId: string; qtyMilli: number }[]) {
   for (const [i, item] of items.entries()) await addLine(later(satis, i), { orderId: o.id, ...item });
   return o;
 }
+/** İş emri ancak rotalı ürüne açılır: tek adımlık rota. */
+async function route(id: string) {
+  await addRouting(db, { productId: id, seq: 1, stationId: (await addStation(db)).id, minutesPerUnit: 10 });
+}
 async function stock(materialId: string, qtyMilli: number) {
   await receiveStock(depo, { materialId, qtyMilli, unitCostKurus: 100 });
 }
@@ -66,6 +70,7 @@ test("mamul stoğu yeterse satır ready, iş emri açılmaz", async () => {
 });
 
 test("mamul kısmen yeterse eldeki ayrılır, kalan için iş emri açılır", async () => {
+  await route(productId);
   await produceIn(satis, { productId, qtyMilli: 1000, ref });
   const o = await orderOf({ productId, qtyMilli: 3000 });
 
@@ -88,6 +93,7 @@ test("mamul kısmen yeterse eldeki ayrılır, kalan için iş emri açılır", a
 });
 
 test("malzeme yeterse iş emri malzemeleri fire dahil ayrılır", async () => {
+  await route(productId);
   const panel = await addMaterial(db, { unit: "plaka" });
   const boya = await addMaterial(db, { unit: "L" });
   await addBomLine(db, { productId, materialId: panel.id, qtyMilli: 340, scrapPermille: 150 });
@@ -110,6 +116,7 @@ test("malzeme yeterse iş emri malzemeleri fire dahil ayrılır", async () => {
 });
 
 test("bir malzeme yetmezse hiçbiri ayrılmaz, satır waiting_material, eksik döner", async () => {
+  await route(productId);
   const panel = await addMaterial(db, { unit: "plaka", code: "PNL-01", name: "Beyaz panel" });
   const vida = await addMaterial(db, { unit: "adet", code: "VDA-01", name: "Vida" });
   await addBomLine(db, { productId, materialId: panel.id, qtyMilli: 1000 });
@@ -133,6 +140,7 @@ test("bir malzeme yetmezse hiçbiri ayrılmaz, satır waiting_material, eksik d�
 });
 
 test("ikinci onay INVALID_STATE; ayırma ve iş emri sayısı değişmez", async () => {
+  await route(productId);
   await produceIn(satis, { productId, qtyMilli: 1000, ref });
   const o = await orderOf({ productId, qtyMilli: 3000 });
   await confirmOrder(satis, o.id);
@@ -152,6 +160,7 @@ test("ikinci onay INVALID_STATE; ayırma ve iş emri sayısı değişmez", async
 });
 
 test("eldeki 2 adet iki siparişe: ilki 2'yi alır, ikincisi iş emri açar", async () => {
+  await route(productId);
   await produceIn(satis, { productId, qtyMilli: 2000, ref });
   const first = await orderOf({ productId, qtyMilli: 2000 });
   const second = await orderOf({ productId, qtyMilli: 2000 });
@@ -195,6 +204,17 @@ test("rota adımları dakikası adetle çarpılır", async () => {
   ]);
 });
 
+test("rotasız ürün üretilecekse onay reddedilir; mamul ayırması dahil hiçbir şey yazılmaz", async () => {
+  const routed = (await addProduct(db)).id;
+  await route(routed);
+  await produceIn(satis, { productId: routed, qtyMilli: 1000, ref });
+  const o = await orderOf({ productId: routed, qtyMilli: 1000 }, { productId, qtyMilli: 1000 });
+  await expect(confirmOrder(satis, o.id)).rejects.toMatchObject({ code: "VALIDATION", message: "Ürünün rotası tanımlı değil" });
+  expect((await db.select().from(salesOrders).where(eq(salesOrders.id, o.id)))[0]?.status).toBe("draft");
+  expect((await product(routed)).reservedMilli).toBe(0);
+  expect(await db.select().from(workOrders)).toHaveLength(0);
+});
+
 test("satırsız sipariş onaylanamaz; bilinmeyen sipariş NOT_FOUND", async () => {
   const o = await createOrder(satis, { customerId, dueAt: DUE });
   await expect(confirmOrder(satis, o.id)).rejects.toMatchObject({ code: "VALIDATION" });
@@ -204,6 +224,7 @@ test("satırsız sipariş onaylanamaz; bilinmeyen sipariş NOT_FOUND", async () 
 test("önceki satırın ayırdığı malzeme sonraki satırdan düşülür; eksikler sonunda toplanır", async () => {
   const other = (await addProduct(db)).id;
   const third = (await addProduct(db)).id;
+  for (const id of [productId, other, third]) await route(id);
   const panel = await addMaterial(db, { unit: "plaka", code: "PNL-02", name: "Ceviz panel" });
   await addBomLine(db, { productId, materialId: panel.id, qtyMilli: 2000 });
   await addBomLine(db, { productId: other, materialId: panel.id, qtyMilli: 2000 });

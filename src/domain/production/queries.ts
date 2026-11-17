@@ -206,7 +206,8 @@ export async function getWorkOrder(db: Db, id: string): Promise<WorkOrderDetail 
 
   // Ayrılmışsa ihtiyaç, ayrılan net miktardır (reçete sonradan değişmiş olabilir); değilse reçeteden hesaplanır.
   const needs = row.materialsReserved ? await reservedForWorkOrder(db, id) : await materialNeeds(db, row.productId, row.qtyMilli);
-  const shortages = row.materialsReserved ? [] : await findShortages(db, needs);
+  // Eksik yalnızca malzemesini bekleyen planlı iş emrinde anlamlıdır; iptal ya da tamamlanmışta gösterilmez.
+  const shortages = row.status === "planned" && !row.materialsReserved ? await findShortages(db, needs) : [];
   const found = needs.length ? await db.select().from(materials).where(inArray(materials.id, needs.map((n) => n.materialId))) : [];
   const byId = new Map(found.map((m) => [m.id, m]));
   const mats = needs

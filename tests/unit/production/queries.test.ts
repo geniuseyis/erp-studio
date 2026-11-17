@@ -1,5 +1,7 @@
+import { eq } from "drizzle-orm";
 import { beforeEach, expect, test } from "vitest";
 import type { Db } from "@/db/client";
+import { workOrders } from "@/db/schema";
 import type { Ctx } from "@/domain/context";
 import { receiveStock } from "@/domain/inventory/ledger";
 import { getProduct, getWorkOrder, listProducts, listStations, listWorkOrders, stationQueue } from "@/domain/production/queries";
@@ -187,4 +189,16 @@ test("kuyruk sırası: çalışan, sonra planlı gün, sonra kod", async () => {
 
 test("listStations sıraya göre gelir", async () => {
   expect((await listStations(db)).map((s) => s.code)).toEqual(stationCodes);
+});
+
+test("iptal ya da tamamlanmış iş emrinde malzeme eksiği gösterilmez", async () => {
+  await order();
+  const wo = await firstWorkOrder();
+  expect((await getWorkOrder(db, wo.id))?.shortages).toHaveLength(1);
+  for (const status of ["cancelled", "completed"] as const) {
+    await db.update(workOrders).set({ status }).where(eq(workOrders.id, wo.id));
+    const detail = await getWorkOrder(db, wo.id);
+    expect(detail?.materialsReserved, status).toBe(false);
+    expect(detail?.shortages, status).toEqual([]);
+  }
 });

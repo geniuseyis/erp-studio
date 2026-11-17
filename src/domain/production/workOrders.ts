@@ -83,7 +83,7 @@ async function reload(db: Db, workOrderId: string): Promise<WorkOrder> {
 }
 
 /**
- * Modül içi (yetkiyi çağıran denetler): iş emri açar, rotadan adımları kurar (dakika = birim dakika × adet,
+ * Modül içi (yetkiyi çağıran denetler): iş emri açar (rotasız ürüne açılmaz), rotadan adımları kurar (dakika = birim dakika × adet,
  * gün boş) ve malzemeleri hepsi-ya-hiçbiri ayırır. Bağlı satırın durumunu çağıran yazar.
  */
 export async function openWorkOrder(
@@ -96,6 +96,9 @@ export async function openWorkOrder(
   return inTx(ctx, async (tx) => {
     const [product] = isUuid(i.productId) ? await tx.db.select().from(products).where(eq(products.id, i.productId)) : [];
     if (!product) throw new DomainError("NOT_FOUND", "Ürün bulunamadı");
+    // Rotasız iş emri atölyede hiç ilerleyemez ve tamamlanamaz.
+    const route = await tx.db.select().from(routings).where(eq(routings.productId, product.id)).orderBy(asc(routings.seq));
+    if (route.length === 0) throw new DomainError("VALIDATION", "Ürünün rotası tanımlı değil");
 
     const prefix = `${CODE_PREFIX}${istanbulYear(tx.now)}-`;
     const existing = await tx.db.select({ code: workOrders.code }).from(workOrders).where(like(workOrders.code, `${prefix}%`));
@@ -115,12 +118,9 @@ export async function openWorkOrder(
       .returning();
     if (!wo) throw new Error("iş emri açılamadı");
 
-    const route = await tx.db.select().from(routings).where(eq(routings.productId, product.id)).orderBy(asc(routings.seq));
-    if (route.length > 0) {
-      await tx.db.insert(workOrderSteps).values(
-        route.map((r) => ({ workOrderId: wo.id, seq: r.seq, stationId: r.stationId, minutes: r.minutesPerUnit * (i.qtyMilli / 1000) })),
-      );
-    }
+    await tx.db.insert(workOrderSteps).values(
+      route.map((r) => ({ workOrderId: wo.id, seq: r.seq, stationId: r.stationId, minutes: r.minutesPerUnit * (i.qtyMilli / 1000) })),
+    );
 
     const shortages = await reserveMaterials(tx, wo);
     await logAudit(tx, {

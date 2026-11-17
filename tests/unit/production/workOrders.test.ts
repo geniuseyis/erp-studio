@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from "vitest";
 import type { Db } from "@/db/client";
-import { auditLog, workOrderSteps } from "@/db/schema";
+import { auditLog, workOrders, workOrderSteps } from "@/db/schema";
 import type { Ctx } from "@/domain/context";
 import { materialNeeds, openWorkOrder } from "@/domain/production/workOrders";
 import { addBomLine, addMaterial, addProduct, addRouting, addStation, addUser, ctxFor } from "../../helpers/fixtures";
@@ -36,11 +36,18 @@ test("malzeme ihtiyacı fire dahil hesaplanır ve birim adımına yukarı yuvarl
   ]);
 });
 
-test("reçetesiz ve rotasız ürünün iş emri malzemesi ayrılmış sayılır", async () => {
+test("rotası tanımlı olmayan ürüne iş emri açılmaz; hiçbir şey yazılmaz", async () => {
+  await expect(openWorkOrder(ctx, { productId, qtyMilli: 1000 })).rejects.toMatchObject({ code: "VALIDATION", message: "Ürünün rotası tanımlı değil" });
+  expect(await db.select().from(workOrders)).toHaveLength(0);
+  expect(await db.select().from(auditLog)).toHaveLength(0);
+});
+
+test("reçetesiz ürünün iş emri malzemesi ayrılmış sayılır", async () => {
+  await addRouting(db, { productId, seq: 1, stationId: (await addStation(db)).id, minutesPerUnit: 10 });
   const { workOrder, shortages } = await openWorkOrder(ctx, { productId, qtyMilli: 1000 });
   expect(shortages).toEqual([]);
   expect(workOrder).toMatchObject({ code: "IE-2026-0001", salesOrderLineId: null, materialsReserved: true, status: "planned" });
-  expect(await db.select().from(workOrderSteps)).toHaveLength(0);
+  expect(await db.select().from(workOrderSteps)).toHaveLength(1);
 });
 
 test("iş emri kodları yıl içinde sırayla artar ve açılış kaydı düşer", async () => {
