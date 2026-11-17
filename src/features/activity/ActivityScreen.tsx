@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ACTIVITY_LIMIT, type ActivityRow } from "@/domain/audit-queries";
 import { DEPARTMENT_NAMES, type DepartmentCode } from "@/domain/context";
+import { can } from "@/domain/permissions";
 import { matchesSearch } from "@/domain/text";
 import { HeroStat, Page, PageHeader } from "@/shell/AppGuard";
 import { Avatar } from "@/shell/LoginScreen";
@@ -69,7 +70,10 @@ export function ActivityScreen() {
 
   const search = params.get("q") ?? "";
   const kindParam = params.get("tur");
-  const entity = isEntityKind(kindParam) ? kindParam : undefined;
+  // Kullanıcı kayıtları sorguda da dışlanır; burada yalnızca çip ve adres parametresi gizlenir.
+  const seesUsers = user !== null && can(user, "users", "view");
+  const kinds = seesUsers ? ENTITY_KINDS : ENTITY_KINDS.filter((k) => k !== "user");
+  const entity = isEntityKind(kindParam) && kinds.includes(kindParam) ? kindParam : undefined;
   const departmentCode = asDepartment(params.get("departman"));
   const userId = params.get("kisi") || undefined;
   const fromText = params.get("bas") ?? "";
@@ -187,7 +191,7 @@ export function ActivityScreen() {
               <FilterChip group="tur" pressed={!entity} onClick={() => setParams({ tur: null })}>
                 Tümü
               </FilterChip>
-              {ENTITY_KINDS.map((k) => (
+              {kinds.map((k) => (
                 <FilterChip key={k} group="tur" pressed={entity === k} onClick={() => setParams({ tur: entity === k ? null : k })}>
                   {ENTITY_LABEL[k]}
                 </FilterChip>

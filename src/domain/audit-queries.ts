@@ -1,8 +1,9 @@
 // Kayıt çekmecelerindeki "Geçmiş" bölümünün ve İşlemler ekranının sorguları. Yalnızca okur.
-import { and, desc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, ne, or, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { auditLog, customers, departments, materials, products, salesOrderLines, salesOrders, stockCounts, users, workOrders } from "@/db/schema";
-import { type DepartmentCode, isUuid } from "./context";
+import { type DepartmentCode, isUuid, type SessionUser } from "./context";
+import { can } from "./permissions";
 import { istanbulDayStart } from "./production/calendar";
 import { matchesSearch } from "./text";
 
@@ -92,6 +93,9 @@ export type ActivityRow = HistoryEntry & {
 };
 
 export const ACTIVITY_LIMIT = 500;
+
+/** İşlemleri soran kişi: kullanıcı kayıtları yalnızca Kullanıcılar modülünü görebilenlere açılır. */
+export type ActivityViewer = Pick<SessionUser, "departmentCode" | "level">;
 export const DELETED_RECORD = "silinmiş kayıt";
 
 type Resolved = { label: string; href: string };
@@ -138,9 +142,10 @@ const SUMMARY_CODE = /^([A-Z]{2,4}-(?:\d{4}-)?\d{3,})\b/;
 /**
  * Bütün kayıtların işlem geçmişi, yeniden eskiye, en çok `limit` (varsayılan 500) satır. Tür, departman, kişi ve tarih
  * (`from` dahil, `to` hariç) veritabanında süzülür; metin araması (özet, kayıt etiketi, kişi adı) etiketler çözüldükten
- * sonra bellekte yapılır ve sınırdan önce uygulanır. Etiketler kayıt türü başına tek sorguyla okunur.
+ * sonra bellekte yapılır ve sınırdan önce uygulanır. Etiketler kayıt türü başına tek sorguyla okunur. Kullanıcılar modülünü
+ * göremeyen `viewer` için `user` kayıtları sorguda dışlanır (sınır ve sayılar dışlamadan sonra hesaplanır).
  */
-export async function listActivity(db: Db, f: ActivityFilter = {}): Promise<ActivityRow[]> {
+export async function listActivity(db: Db, viewer: ActivityViewer, f: ActivityFilter = {}): Promise<ActivityRow[]> {
   const limit = f.limit ?? ACTIVITY_LIMIT;
   const search = f.search?.trim() ?? "";
   if (f.userId !== undefined && !isUuid(f.userId)) return [];
@@ -163,6 +168,7 @@ export async function listActivity(db: Db, f: ActivityFilter = {}): Promise<Acti
     .innerJoin(departments, eq(departments.code, users.departmentCode))
     .where(
       and(
+        can(viewer, "users", "view") ? undefined : ne(auditLog.entity, "user"),
         f.entity ? eq(auditLog.entity, f.entity) : undefined,
         f.departmentCode ? eq(users.departmentCode, f.departmentCode) : undefined,
         f.userId ? eq(auditLog.userId, f.userId) : undefined,
@@ -210,7 +216,7 @@ export type ActivityStats = {
 const DAY_MS = 86_400_000;
 
 /** İşlemler ekranının başlık bandı; hepsi veritabanından sayılır. */
-export async function activityStats(db: Db, now: Date): Promise<ActivityStats> {
+export async function activityStats(db: Db, viewer: ActivityViewer, now: Date): Promise<ActivityStats> {
   const today = istanbulDayStart(now);
   const weekAgo = new Date(today.getTime() - 6 * DAY_MS);
   // İstanbul gününün haftadaki yeri: 0 pazartesi … 6 pazar. Gün başlangıcına 3 saat eklenince UTC tarihi İstanbul tarihidir.
@@ -218,19 +224,20 @@ export async function activityStats(db: Db, now: Date): Promise<ActivityStats> {
   const weekStart = new Date(today.getTime() - weekday * DAY_MS);
   const weekEnd = new Date(weekStart.getTime() + 7 * DAY_MS);
 
+  const visible = can(viewer, "users", "view") ? undefined : ne(auditLog.entity, "user");
   const [counts] = await db
     .select({
       today: sql<number>`(count(*) filter (where ${auditLog.createdAt} >= ${today}))::int`,
       last7Days: sql<number>`count(*)::int`,
     })
     .from(auditLog)
-    .where(gte(auditLog.createdAt, weekAgo));
+    .where(and(gte(auditLog.createdAt, weekAgo), visible));
   const [top] = await db
     .select({ code: users.departmentCode, name: departments.name, count: sql<number>`count(*)::int` })
     .from(auditLog)
     .innerJoin(users, eq(users.id, auditLog.userId))
     .innerJoin(departments, eq(departments.code, users.departmentCode))
-    .where(and(gte(auditLog.createdAt, weekStart), lt(auditLog.createdAt, weekEnd)))
+    .where(and(gte(auditLog.createdAt, weekStart), lt(auditLog.createdAt, weekEnd), visible))
     .groupBy(users.departmentCode, departments.name)
     .orderBy(desc(sql`count(*)`), departments.name)
     .limit(1);

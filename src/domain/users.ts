@@ -88,7 +88,7 @@ export async function createUser(ctx: Ctx, input: NewUser): Promise<SessionUser>
       entity: "user",
       entityId: row.id,
       action: "create",
-      summary: `${name} eklendi: ${[title, DEPARTMENT_NAMES[input.departmentCode], LEVEL_NAMES[input.level], email].filter(Boolean).join(", ")}`,
+      summary: `${name} eklendi: ${[title, DEPARTMENT_NAMES[input.departmentCode], LEVEL_NAMES[input.level]].filter(Boolean).join(", ")}`,
     });
     return toSessionUser(row);
   });

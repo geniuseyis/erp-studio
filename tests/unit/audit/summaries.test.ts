@@ -276,7 +276,7 @@ test("kullanıcı: ekleme departman ve düzeyi, güncelleme değişenleri yazar;
     level: "uzman",
     title: "Satış Uzmanı",
   });
-  expect(await only(u.id, "create")).toBe("Yeni Kişi eklendi: Satış Uzmanı, Satış, Uzman, yeni.kisi@baltacioglus.example");
+  expect(await only(u.id, "create")).toBe("Yeni Kişi eklendi: Satış Uzmanı, Satış, Uzman");
 
   await updateUser(bt, u.id, { departmentCode: "depo", level: "mudur", title: "Satış Uzmanı" });
   expect(await only(u.id, "update")).toBe("Yeni Kişi güncellendi: departman Satış → Depo ve Sevkiyat, düzey Uzman → Departman müdürü");

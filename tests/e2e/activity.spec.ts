@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { istanbulDayStart } from "@/domain/production/calendar";
-import { approve, loginAs, navTo, one, sql } from "./helpers";
+import { approve, loginAs, navTo, one, signOut, sql } from "./helpers";
 
 const stat = (page: Page, label: string) =>
   page.locator("div.glass").filter({ has: page.getByText(label, { exact: true }) }).getByTestId("stat-value");
@@ -49,7 +49,7 @@ test("depo kullanıcısı da İşlemler'i görür; sayılar veritabanından; dep
   const dayStart = istanbulDayStart(new Date());
   const weekAgo = new Date(dayStart.getTime() - 6 * 86_400_000);
   const count = async (since: Date) =>
-    (await one<{ n: number }>(page, `select count(*)::int as n from audit_log where created_at >= '${since.toISOString()}'`)).n;
+    (await one<{ n: number }>(page, `select count(*)::int as n from audit_log where entity <> 'user' and created_at >= '${since.toISOString()}'`)).n;
   await expect(stat(page, "Bugün")).toHaveText(String(await count(dayStart)));
   await expect(stat(page, "Son 7 gün")).toHaveText(String(await count(weekAgo)));
 
@@ -67,7 +67,7 @@ test("depo kullanıcısı da İşlemler'i görür; sayılar veritabanından; dep
   for (let i = 0; i < Math.min(shown, 15); i += 1) await expect(rows.nth(i)).toContainText("Satış");
   const satis = await one<{ n: number }>(
     page,
-    "select count(*)::int as n from audit_log a join users u on u.id = a.user_id where u.department_code = 'satis'",
+    "select count(*)::int as n from audit_log a join users u on u.id = a.user_id where u.department_code = 'satis' and a.entity <> 'user'",
   );
   expect(shown).toBe(Math.min(satis.n, 500));
 
@@ -82,7 +82,7 @@ test("depo kullanıcısı da İşlemler'i görür; sayılar veritabanından; dep
   await expect(rows.first()).toContainText("Zeynep Arıkan");
   const zeynep = await sql<{ n: number }>(
     page,
-    "select count(*)::int as n from audit_log a join users u on u.id = a.user_id where u.name = 'Zeynep Arıkan'",
+    "select count(*)::int as n from audit_log a join users u on u.id = a.user_id where u.name = 'Zeynep Arıkan' and a.entity <> 'user'",
   );
   await expect(rows).toHaveCount(Math.min(zeynep[0]?.n ?? 0, 500));
 
@@ -92,6 +92,35 @@ test("depo kullanıcısı da İşlemler'i görür; sayılar veritabanından; dep
   await page.getByRole("button", { name: "Süzgeçleri temizle" }).first().click();
   await expect(page).not.toHaveURL(/kisi=|bas=/);
   await expect(rows.first()).toBeVisible();
+});
+
+test("kullanıcı kayıtları yalnızca Kullanıcılar modülünü görenlere gösterilir: BT görür, atölye görmez", async ({ page }) => {
+  const kindChip = page.getByRole("group", { name: "Kayıt türü" }).getByRole("button", { name: "Kullanıcı", exact: true });
+  const rows = table(page).locator("tbody tr");
+
+  // Demo verisinde kullanıcı kaydı yoktur: BT hesabıyla bir tane yazılır (sonra aynı tarayıcıdan atölye hesabıyla bakılır).
+  await loginAs(page, "Deniz Aydemir");
+  await sql(
+    page,
+    `insert into audit_log (user_id, entity, entity_id, action, summary)
+       select u.id, 'user', u.id::text, 'deactivate', u.name || ' pasife alındı' from users u where u.name = 'Deniz Aydemir'`,
+  );
+  await navTo(page, "İşlemler");
+  await expect(kindChip).toBeVisible({ timeout: 45_000 });
+  await kindChip.click();
+  await expect(page).toHaveURL(/tur=user/);
+  await expect(rows.first()).toContainText("Deniz Aydemir pasife alındı");
+  await signOut(page);
+
+  await loginAs(page, "Cem Doğru");
+  await navTo(page, "İşlemler");
+  await expect(rows.first()).toBeVisible({ timeout: 45_000 });
+  await expect(kindChip).toHaveCount(0);
+  await expect(table(page).getByText("pasife alındı")).toHaveCount(0);
+  await page.goto("/islemler?tur=user");
+  await expect(rows.first()).toBeVisible({ timeout: 45_000 });
+  await expect(table(page).getByText("pasife alındı")).toHaveCount(0);
+  await expect(table(page).getByText("Kullanıcı", { exact: true })).toHaveCount(0);
 });
 
 test("Ctrl+K paletinde İşlemler sayfası var", async ({ page }) => {
