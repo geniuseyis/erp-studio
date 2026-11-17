@@ -266,6 +266,7 @@ h3 {
 .menu-scroll {
   --menu-thumb: rgb(226 165 76 / 0.4);
   --menu-thumb-hover: rgb(226 165 76 / 0.7);
+  scroll-padding-block: 2rem;
 }
 .menu-scroll::-webkit-scrollbar {
   width: 6px;

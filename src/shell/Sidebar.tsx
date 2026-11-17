@@ -68,6 +68,7 @@ export function Sidebar({ user, collapsed = false, onToggle, onNavigate, layoutI
     for (const child of Array.from(nav.children)) observer.observe(child);
     return () => {
       nav.removeEventListener("scroll", onScroll);
+      nav.removeAttribute("data-scrolling");
       observer.disconnect();
       clearTimeout(timer);
     };

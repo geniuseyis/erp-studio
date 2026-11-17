@@ -113,3 +113,28 @@ test("yan menü taşınca kenar geçişleri kaydırma konumunu izler", async ({ 
   await expect(nav).not.toHaveAttribute("data-fade-top", "");
   await expect(nav).not.toHaveAttribute("data-fade-bottom", "");
 });
+
+test("yan menüde klavyeyle gezerken odaklı bağlantı kenar geçişinin altında kalmaz", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await loginAs(page, "Nermin Aksoy");
+  const nav = page.getByRole("navigation", { name: "Ana menü" }).locator("visible=true").first();
+  const links = nav.getByRole("link");
+  const count = await links.count();
+  await links.first().focus();
+  let checked = 0;
+  for (let i = 1; i < count; i++) {
+    await page.keyboard.press("Tab");
+    const r = await nav.evaluate((el) => {
+      const a = document.activeElement as HTMLElement;
+      if (!el.contains(a)) return null;
+      const n = el.getBoundingClientRect();
+      const b = a.getBoundingClientRect();
+      return { top: b.top - n.top, bottom: n.bottom - b.bottom, fadeTop: el.hasAttribute("data-fade-top"), fadeBottom: el.hasAttribute("data-fade-bottom") };
+    });
+    if (!r) break;
+    if (r.fadeTop) expect(r.top, `Tab ${i} üst`).toBeGreaterThanOrEqual(24);
+    if (r.fadeBottom) expect(r.bottom, `Tab ${i} alt`).toBeGreaterThanOrEqual(24);
+    if (r.fadeTop && r.fadeBottom) checked++;
+  }
+  expect(checked).toBeGreaterThan(0);
+});
