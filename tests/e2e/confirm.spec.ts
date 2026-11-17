@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { orderTotals } from "../../src/domain/sales/money";
 import { formatMoney, formatQty } from "../../src/domain/units";
-import { approve, confirmDialog, loginAs, navTo, one, sql } from "./helpers";
+import { approve, confirmDialog, loginAs, navTo, one, signOut, sql } from "./helpers";
 
 // Her işlem türünden bir temsilci: Vazgeç hiçbir şey yazmaz, Enter tek başına onaylamaz, onay yazar.
 
@@ -46,9 +46,17 @@ test("satır sil: metin ürünü ve yeni tutarı söyler; Vazgeç, Esc ve Enter 
   await expect(dialog).toContainText(
     `${target.code} ${target.name} × ${target.qty / 1000} satırı silinecek. Sipariş tutarı ${formatMoney(totals(lines))} → ${formatMoney(totals(lines.slice(1)))} olacak.`,
   );
+  // Ekran okuyucu başlıktan sonra sonucu okur: gövde pencerenin açıklamasıdır.
+  await expect(dialog).toHaveAccessibleDescription(/satırı silinecek. Sipariş tutarı/);
   await enterCancels(page);
   // Odak açan düğmeye döner.
   await expect(remove).toBeFocused();
+  expect(await lineCount()).toBe(lines.length);
+
+  // Klavyeyle: Enter sil düğmesinde pencereyi açar ama aynı tuş basışı onu kapatmaz ya da onaylamaz.
+  await remove.focus();
+  await page.keyboard.press("Enter");
+  await enterCancels(page);
   expect(await lineCount()).toBe(lines.length);
 
   await remove.click();
@@ -228,4 +236,116 @@ test("müşteri düzenleme: değişiklik yoksa kaydet pasif; onay yalnızca değ
   await expect(form).toBeHidden();
   await expect.poll(phone).toBe(next);
   expect(await updates()).toBe(before + 1);
+});
+
+test("sayım: kayıtlı sayımın üzerine yazmak onay ister, Vazgeç eski değeri geri getirir; onay penceresinde Vazgeç sayımı onaylamaz", async ({ page }) => {
+  await loginAs(page, "Onur Tekin");
+  await navTo(page, "Sayım");
+  await page.getByRole("button", { name: "Yeni sayım" }).click();
+  const create = page.getByRole("dialog", { name: "Yeni sayım" });
+  const firstItem = create.getByRole("listitem").first();
+  await create.getByRole("searchbox", { name: "Malzeme ara" }).fill("koli bandı");
+  await expect(firstItem).toContainText("Koli Bandı");
+  await firstItem.getByRole("checkbox").check();
+  await create.getByRole("button", { name: "Sayımı aç" }).click();
+  await approve(page, "Sayımı aç");
+  await expect(page).toHaveURL(/fis=/);
+  const countId = new URL(page.url()).searchParams.get("fis") ?? "";
+  const counted = async () => (await one<{ n: number | null }>(page, `select counted_milli::float8 as n from stock_count_lines where count_id = '${countId}'`)).n;
+
+  const detail = page.getByRole("dialog").filter({ hasText: "SYM-" });
+  const input = detail.getByRole("textbox", { name: /^Sayılan/ });
+  // İlk sayım hiçbir kaydı değiştirmez: onay sorulmaz.
+  await input.fill("7");
+  await input.press("Enter");
+  await expect.poll(counted).toBe(7000);
+  // Ekran kayıtlı sayımı gösterene dek bekle; ancak ondan sonraki giriş üzerine yazmadır.
+  await expect(detail.getByText("1 / 1 kalem sayıldı")).toBeVisible();
+  await expect(confirmDialog(page)).toHaveCount(0);
+
+  // Üzerine yazma: Vazgeç yazmaz ve alana kayıtlı değer döner.
+  await input.fill("8");
+  await input.press("Enter");
+  const dialog = confirmDialog(page);
+  await expect(dialog.getByRole("list", { name: "Değişiklikler" })).toContainText("Sayılan: 7");
+  await expect(dialog.getByRole("list", { name: "Değişiklikler" })).toContainText("→ 8");
+  await dialog.getByRole("button", { name: "Vazgeç" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(input).toHaveValue("7");
+  expect(await counted()).toBe(7000);
+
+  await input.fill("8");
+  await input.press("Enter");
+  await approve(page, "Değiştir");
+  await expect.poll(counted).toBe(8000);
+  await expect(input).toHaveValue("8");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await signOut(page);
+
+  // Müdür onay penceresinde vazgeçerse fark yazılmaz, fiş açık kalır.
+  await loginAs(page, "Sevgi Polat");
+  const adjustments = () => n(page, `select count(*)::int as n from stock_movements where type = 'count_adjust' and ref_id = '${countId}'`);
+  const status = async () => (await one<{ s: string }>(page, `select status as s from stock_counts where id = '${countId}'`)).s;
+  await page.goto(`/stok/sayim?fis=${countId}`);
+  const review = page.getByRole("dialog").filter({ hasText: "SYM-" });
+  await review.getByRole("button", { name: "Onayla" }).click({ timeout: 45_000 });
+  await expect(confirmDialog(page)).toContainText("satırdaki fark stok hareketi olarak yazılacak");
+  await confirmDialog(page).getByRole("button", { name: "Vazgeç" }).click();
+  await expect(confirmDialog(page)).toBeHidden();
+  expect(await adjustments()).toBe(0);
+  expect(await status()).toBe("open");
+  await review.getByRole("button", { name: "Onayla" }).click();
+  await enterCancels(page);
+  expect(await adjustments()).toBe(0);
+  expect(await status()).toBe("open");
+});
+
+test("veriyi sıfırla: Vazgeç ve Enter hiçbir şey silmez, oturum açık kalır", async ({ page }) => {
+  await loginAs(page, "Onur Tekin");
+  await sql(page, "insert into meta (key, value) values ('onay-isaret', '1')");
+  const users = await n(page, "select count(*)::int as n from users");
+  await page.getByRole("button", { name: /Hesap menüsü/ }).click();
+  await page.getByRole("menuitem", { name: "Ayarlar" }).click();
+  const reset = page.getByRole("button", { name: "Veriyi sıfırla" });
+
+  await reset.click();
+  const dialog = confirmDialog(page);
+  await expect(dialog).toContainText("bütün değişiklikler silinecek");
+  await dialog.getByRole("button", { name: "Vazgeç" }).click();
+  await expect(dialog).toBeHidden();
+  await reset.click();
+  await enterCancels(page);
+
+  await expect(page).not.toHaveURL(/\/giris/);
+  expect(await sql(page, "select value from meta where key = 'onay-isaret'")).toEqual([{ value: "1" }]);
+  expect(await n(page, "select count(*)::int as n from users")).toBe(users);
+});
+
+test("onay açıkken sayfa değişirse pencere kapanır, hiçbir şey yazılmaz; sonraki onay yeniden açılır", async ({ page }) => {
+  await loginAs(page, "Onur Tekin");
+  const order = await one<{ id: string; code: string }>(page, "select id, code from sales_orders where status = 'ready' order by code limit 1");
+  const status = async () => (await one<{ s: string }>(page, `select status as s from sales_orders where id = '${order.id}'`)).s;
+  const open = async () => {
+    await navTo(page, "Siparişler");
+    await page.getByRole("searchbox", { name: "Sipariş ara" }).fill(order.code);
+    const rows = page.getByRole("table", { name: "Siparişler" }).locator("tbody tr");
+    await expect.poll(() => rows.count()).toBe(1);
+    await rows.first().click();
+    const drawer = page.getByRole("dialog", { name: order.code });
+    await drawer.getByRole("button", { name: "Sevk et" }).click();
+    await expect(confirmDialog(page)).toBeVisible();
+  };
+
+  await open();
+  // Uygulama içi geri: çekmece ve onun onay penceresi kaldırılır; bekleyen onay vazgeçilmiş sayılır.
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Siparişler", level: 1 })).toHaveCount(0);
+  await expect(confirmDialog(page)).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(await status()).toBe("ready");
+
+  await open();
+  await enterCancels(page);
+  expect(await status()).toBe("ready");
 });

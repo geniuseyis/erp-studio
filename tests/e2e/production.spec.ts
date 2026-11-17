@@ -124,7 +124,7 @@ test("planlama uzmanı iş emrini planlar; adımlara günler yazılır", async (
   await expect(drawer.getByLabel("Başlangıç günü")).toHaveValue(defaultDay);
   const start = istanbulDay(defaultDay);
   await drawer.getByRole("button", { name: "Planla" }).click();
-  await expect(confirmDialog(page)).toContainText(`${wo.code}, ${trDay(start)} gününden başlayarak ${wo.steps} adıma planlanacak.`);
+  await expect(confirmDialog(page)).toContainText(`${wo.code}, ${trDay(start)} gününden başlayarak ${wo.steps} adım olarak planlanacak.`);
   await approve(page, "Planla");
   await expect(page.getByRole("status").filter({ hasText: `${wo.code} planlandı` })).toBeVisible();
 

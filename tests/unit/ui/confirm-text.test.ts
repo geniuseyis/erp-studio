@@ -64,14 +64,14 @@ test("satır ekleme önizlemesi: yeni ürün eklenir, aynı ürün adedi ve veri
 
 test("onay ve sevk metinleri kalem sayısını, KDV dahil tutarı ve sonucu söyler", () => {
   const o = order([line("31", "p31", 2, 150_000), line("12", "p12", 1, 40_000)]);
-  expect(confirmOrderText(o)).toBe(`SIP-2026-0042 onaylanacak: 2 kalem, KDV dahil ${formatMoney(o.totals.totalKurus)}. Stok ayrılır, eksikler için iş emri açılır.`);
+  expect(confirmOrderText(o)).toBe(`SIP-2026-0042 onaylanacak: 2 kalem, KDV dahil ${formatMoney(o.totals.totalKurus)}. Stok ayrılır, stokta olmayan ürünler için iş emri açılır.`);
   expect(shipOrderText(o)).toBe("SIP-2026-0042 sevk edilecek; mamul stoktan düşer. Geri alınamaz.");
 });
 
 test("planlama metni başlangıç gününü ve adım sayısını söyler; hafta sonu pazartesiye kayar", () => {
   // 2026-11-21 cumartesi (İstanbul) → 23.11.2026 pazartesi
   const saturday = new Date(Date.parse("2026-11-21T00:00:00Z") - 3 * 3600_000);
-  expect(planText("IE-2026-0007", saturday, 4)).toBe("IE-2026-0007, 23.11.2026 gününden başlayarak 4 adıma planlanacak.");
+  expect(planText("IE-2026-0007", saturday, 4)).toBe("IE-2026-0007, 23.11.2026 gününden başlayarak 4 adım olarak planlanacak.");
 });
 
 test("atölye metni iş emri, istasyon ve adımı yazar; ilk başlatma tüketimi, son bitiş tamamlanmayı söyler", () => {
@@ -89,6 +89,6 @@ test("stok metni eldeki miktarın öncesini ve sonrasını yazar", () => {
 });
 
 test("sayım onay metni farklı satır sayısını söyler", () => {
-  expect(countApproveText(2)).toBe("2 satırda fark stok hareketi olarak yazılacak.");
+  expect(countApproveText(2)).toBe("2 satırdaki fark stok hareketi olarak yazılacak.");
   expect(countApproveText(0)).toBe("Sayılan miktarlar stokla aynı; stok hareketi yazılmaz.");
 });

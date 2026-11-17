@@ -41,6 +41,7 @@ export function ConfirmDialog({ title, body, confirmLabel, tone = "primary", lar
     <Dialog
       open
       alert
+      bodyIsDescription
       initialFocus={cancelRef}
       onOpenChange={(open) => !open && !busy && onCancel()}
       onPointerDownOutside={(event) => {

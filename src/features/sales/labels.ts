@@ -177,7 +177,7 @@ export function previewAddLine(
 }
 
 export function confirmOrderText(order: ConfirmOrder): string {
-  return `${order.code} onaylanacak: ${order.lines.length} kalem, KDV dahil ${formatMoney(order.totals.totalKurus)}. Stok ayrılır, eksikler için iş emri açılır.`;
+  return `${order.code} onaylanacak: ${order.lines.length} kalem, KDV dahil ${formatMoney(order.totals.totalKurus)}. Stok ayrılır, stokta olmayan ürünler için iş emri açılır.`;
 }
 
 export function shipOrderText(order: { code: string }): string {

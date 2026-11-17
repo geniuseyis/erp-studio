@@ -1,6 +1,6 @@
 "use client";
 
-import { createElement, type MouseEvent, type ReactElement, useCallback, useState } from "react";
+import { createElement, type MouseEvent, type ReactElement, useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog, type ConfirmDialogProps } from "@/ui/ConfirmDialog";
 
 export type ConfirmOptions = Pick<ConfirmDialogProps, "title" | "body" | "confirmLabel" | "tone" | "large"> & {
@@ -20,6 +20,15 @@ type Request = { options: ConfirmOptions; resolve: (ok: boolean) => void };
 export function useConfirm(): { confirm: (options: ConfirmOptions) => Promise<boolean>; element: ReactElement | null; isOpen: boolean } {
   const [request, setRequest] = useState<Request | null>(null);
   const [busy, setBusy] = useState(false);
+  // Açık istek, sahibi kaldırılınca (çekmece kapandı, sayfa değişti) vazgeçilmiş sayılsın diye: bekleyen söz asılı kalmaz.
+  const pending = useRef<Request | null>(null);
+  useEffect(() => {
+    pending.current = request;
+  }, [request]);
+  useEffect(() => {
+    const current = pending;
+    return () => current.current?.resolve(false);
+  }, []);
 
   const confirm = useCallback(
     (options: ConfirmOptions) =>
@@ -35,7 +44,8 @@ export function useConfirm(): { confirm: (options: ConfirmOptions) => Promise<bo
   const close = useCallback(
     (ok: boolean) => {
       request?.resolve(ok);
-      setRequest(null);
+      // Bu arada açılmış daha yeni bir istek düşürülmez.
+      setRequest((current) => (current === request ? null : current));
     },
     [request],
   );

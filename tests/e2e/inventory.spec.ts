@@ -219,7 +219,7 @@ test("sayım: uzman açar ve sayar, müdür onaylar, fark harekete yazılır", a
   const review = page.getByRole("dialog").filter({ hasText: code });
   await review.getByRole("button", { name: "Onayla" }).click();
   const confirm = page.getByRole("alertdialog", { name: "Sayım onaylansın mı?" });
-  await expect(confirm).toContainText("2 satırda fark stok hareketi olarak yazılacak");
+  await expect(confirm).toContainText("2 satırdaki fark stok hareketi olarak yazılacak");
   await confirm.getByRole("button", { name: "Onayla" }).click();
   await expect(page.getByRole("status").filter({ hasText: `${code} onaylandı` })).toBeVisible();
   await expect(review.getByText("Onaylandı", { exact: true })).toBeVisible();

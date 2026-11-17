@@ -22,10 +22,12 @@ type Props = {
   alert?: boolean;
   /** Dışarı tıklama; `event.preventDefault()` pencereyi açık tutar. */
   onPointerDownOutside?: (event: Event) => void;
+  /** Pencerenin gövdesi açıklamadır (onay penceresinin sonuç metni): ekran okuyucu başlıktan sonra bunu okur. */
+  bodyIsDescription?: boolean;
 };
 
 /** Ortada açılan pencere. Odak içeride kalır, Esc kapatır, kapanınca odak açan düğmeye döner. */
-export function Dialog({ open, onOpenChange, title, description, children, footer, size = "sm", initialFocus, alert = false, onPointerDownOutside }: Props) {
+export function Dialog({ open, onOpenChange, title, description, children, footer, size = "sm", initialFocus, alert = false, onPointerDownOutside, bodyIsDescription = false }: Props) {
   const focus = useReturnFocus();
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
@@ -54,7 +56,7 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
               <RadixDialog.Title className="font-display text-xl font-semibold">{title}</RadixDialog.Title>
               {description ? (
                 <RadixDialog.Description className="mt-0.5 text-sm text-fg-muted">{description}</RadixDialog.Description>
-              ) : (
+              ) : bodyIsDescription ? null : (
                 <RadixDialog.Description className="sr-only">{title}</RadixDialog.Description>
               )}
             </div>
@@ -64,7 +66,13 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
               </IconButton>
             </RadixDialog.Close>
           </header>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-3">{children}</div>
+          {bodyIsDescription && !description ? (
+            <RadixDialog.Description asChild>
+              <div className="min-h-0 flex-1 overflow-y-auto px-6 py-3">{children}</div>
+            </RadixDialog.Description>
+          ) : (
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-3">{children}</div>
+          )}
           {footer ? <footer className="flex flex-wrap justify-end gap-2 border-t border-line bg-surface-2/50 px-6 py-4">{footer}</footer> : null}
         </RadixDialog.Content>
       </RadixDialog.Portal>

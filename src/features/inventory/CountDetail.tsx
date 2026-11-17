@@ -286,7 +286,11 @@ function LineRow({ countId, line, editable }: { countId: string; line: StockCoun
               onChange={(e) => setDraft(e.target.value)}
               onBlur={() => void commit()}
               onKeyDown={(e) => {
-                if (e.key === "Enter") void commit();
+                if (e.key !== "Enter") return;
+                // Onay penceresi tuşa basılırken açılır: Enter'ın ardından gelen keypress odaktaki Vazgeç'e düşüp
+                // pencereyi hemen kapatmasın.
+                e.preventDefault();
+                void commit();
               }}
               className="tabular h-9 w-24 rounded-xl border border-line bg-surface px-2.5 text-right transition-colors hover:border-line-strong focus:border-accent aria-[invalid=true]:border-danger"
             />

@@ -87,7 +87,7 @@ export function stepControls(wo: Pick<WorkOrderDetail, "status" | "materialsRese
 
 /** Planlama onayı: hafta sonu seçilirse servis gibi pazartesiden başlar. */
 export function planText(code: string, start: Date, steps: number): string {
-  return `${code}, ${formatDue(addWorkdays(istanbulDayStart(start), 0))} gününden başlayarak ${steps} adıma planlanacak.`;
+  return `${code}, ${formatDue(addWorkdays(istanbulDayStart(start), 0))} gününden başlayarak ${steps} adım olarak planlanacak.`;
 }
 
 /**
