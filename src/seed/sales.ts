@@ -215,7 +215,8 @@ export async function seedSales(db: Db, opts: { now: Date; seed?: number }): Pro
       } else if (o.fate === "waiting") {
         chosen.push(pick(free((i) => !opening.has(i) && usesShort(i))));
       }
-      const total = Math.max(chosen.length, int(1, 3));
+      // Taslakta en az iki satır olur: satır silme gibi akışlar örnek taslaklarla denenebilsin.
+      const total = Math.max(chosen.length, o.fate === "draft" ? 2 : 1, int(1, 3));
       while (chosen.length < total) chosen.push(pick(free(() => true)));
       o.lines = chosen.map((product) => ({ product, qtyMilli: int(1, 4) * 1000 }));
     }

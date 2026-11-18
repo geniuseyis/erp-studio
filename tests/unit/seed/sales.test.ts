@@ -69,6 +69,13 @@ test("her durumdan en az bir sipariş var", async () => {
   expect(rows.filter((o) => o.status === "confirmed" && o.waitingMaterial).length).toBeGreaterThanOrEqual(1);
 });
 
+test("her taslak siparişte en az iki satır var", async () => {
+  const drafts = (await a.select().from(salesOrders)).filter((o) => o.status === "draft");
+  expect(drafts.length).toBeGreaterThanOrEqual(1);
+  const lines = await a.select().from(salesOrderLines);
+  for (const d of drafts) expect(lines.filter((l) => l.orderId === d.id).length, d.code).toBeGreaterThanOrEqual(2);
+});
+
 test("malzeme bekleyen iş emirlerinin eksiği yalnızca kritik arkalık", async () => {
   const waiting = (await a.select().from(workOrders)).filter((w) => w.status === "planned" && !w.materialsReserved);
   expect(waiting.length).toBeGreaterThanOrEqual(1);
