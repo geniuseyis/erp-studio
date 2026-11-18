@@ -4,6 +4,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   getProduct,
   getWorkOrder,
+  kanbanColumns,
   listProducts,
   listStations,
   listWorkOrders,
@@ -63,3 +64,9 @@ export const useRetryMaterials = () => useAction(retryMaterials);
 type StepInput = { workOrderId: string; seq: number };
 export const useStartStep = () => useAction((ctx: Ctx, i: StepInput) => startNextStep(ctx, i.workOrderId, i.seq));
 export const useFinishStep = () => useAction((ctx: Ctx, i: StepInput) => finishCurrentStep(ctx, i.workOrderId, i.seq));
+
+/** İş emirleri kanbanı: sütunlar ve kartları (bugün her sorguda alınır, tamamlandı penceresi için). */
+export function useKanban(enabled = true) {
+  const { db } = useDb();
+  return useQuery({ queryKey: [KEY, "kanban"], queryFn: () => kanbanColumns(db, new Date()), enabled, placeholderData: keepPreviousData });
+}

@@ -3,6 +3,7 @@
 import { WORK_ORDER_STATUSES } from "@/db/schema";
 import type { WorkOrderRow } from "@/domain/production/queries";
 import type { WorkOrderStatus } from "@/domain/production/types";
+import { matchesSearch } from "@/domain/text";
 import { formatNumber } from "@/domain/units";
 import { HeroStat, Page, PageHeader } from "@/shell/AppGuard";
 import { useUrlState } from "@/shell/useUrlState";
@@ -10,11 +11,13 @@ import { Button } from "@/ui/Button";
 import { FilterChip, SearchBox } from "@/ui/Chip";
 import { type Column, DataTable } from "@/ui/DataTable";
 import { EmptyState } from "@/ui/EmptyState";
+import { cn } from "@/ui/cn";
 import { CloseIcon } from "@/ui/icons";
 import { Meter } from "@/ui/Meter";
 import { CountUp } from "@/ui/motion";
-import { useWorkOrders } from "./hooks";
+import { useKanban, useWorkOrders } from "./hooks";
 import { materialStateLabel, WO_STATUS_LABEL } from "./labels";
+import { WorkOrderKanban } from "./WorkOrderKanban";
 import { MaterialState, WorkOrderDrawer, WorkOrderStatusChips } from "./WorkOrderDrawer";
 
 const waiting = (w: Pick<WorkOrderRow, "status" | "materialsReserved">) => w.status === "planned" && !w.materialsReserved;
@@ -91,6 +94,28 @@ function asStatus(value: string | null): WorkOrderStatus | undefined {
   return (WORK_ORDER_STATUSES as readonly string[]).includes(value ?? "") ? (value as WorkOrderStatus) : undefined;
 }
 
+/** Liste ve kanban arasında geçiş: adreste `gorunum=kanban`; öteki süzgeçler olduğu gibi kalır. */
+function ViewSwitch({ view, onChange }: { view: "list" | "kanban"; onChange: (view: "list" | "kanban") => void }) {
+  return (
+    <div role="group" aria-label="Görünüm" className="inline-flex shrink-0 rounded-full bg-surface-2 p-0.5 ring-1 ring-line ring-inset">
+      {(["list", "kanban"] as const).map((v) => (
+        <button
+          key={v}
+          type="button"
+          aria-pressed={view === v}
+          onClick={() => view !== v && onChange(v)}
+          className={cn(
+            "press h-8 rounded-full px-3.5 text-sm font-medium transition-[background-color,color,box-shadow] duration-200",
+            view === v ? "bg-surface text-fg shadow-button ring-1 ring-line ring-inset" : "text-fg-muted hover:text-fg",
+          )}
+        >
+          {v === "list" ? "Liste" : "Kanban"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function WorkOrdersScreen() {
   const [params, setParams] = useUrlState();
   const search = params.get("q") ?? "";
@@ -98,8 +123,15 @@ export function WorkOrdersScreen() {
   const waitingOnly = params.get("bekleyen") === "1";
   // Haftalık plandaki "Planlanmamış" sayısının listesi: aynı koşul (unscheduledWorkOrder).
   const unscheduledOnly = params.get("planlanmamis") === "1";
+  const view = params.get("gorunum") === "kanban" ? "kanban" : "list";
   const openId = params.get("ac");
   const filtered = search !== "" || status !== undefined || waitingOnly || unscheduledOnly;
+
+  const board = useKanban(view === "kanban");
+  // Kanban yalnızca aramayı uygular: durum, bekleyen ve planlanmamış süzgeçleri listeye özgüdür (adreste kalır).
+  const boardColumns = board.data?.map((c) => ({ ...c, items: c.items.filter((w) => matchesSearch([w.code, w.productName, w.orderCode ?? ""], search)) }));
+  const listOnlyFilters = status !== undefined || waitingOnly || unscheduledOnly;
+  const setView = (next: "list" | "kanban") => setParams({ gorunum: next === "kanban" ? "kanban" : null });
 
   const orders = useWorkOrders({ search, status, unscheduled: unscheduledOnly || undefined });
   // Çip sayıları ve özet süzgeçten bağımsızdır: bütün iş emirleri.
@@ -133,6 +165,20 @@ export function WorkOrdersScreen() {
           ) : null
         }
       />
+      {view === "kanban" ? (
+        <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[22px] border border-line bg-surface shadow-card md:min-h-[24rem] md:flex-1">
+          <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
+            <SearchBox label="İş emri ara" value={search} onChange={(q) => setParams({ q })} className="min-w-44 flex-1" />
+            <ViewSwitch view={view} onChange={setView} />
+            {listOnlyFilters ? (
+              <p data-testid="kanban-note" className="w-full text-xs text-fg-muted">
+                Kanban yalnızca aramayı uygular. Durum, Malzeme bekliyor ve Planlanmamış süzgeçleri listede geçerlidir; adreste korunur.
+              </p>
+            ) : null}
+          </div>
+          <WorkOrderKanban columns={boardColumns} onOpen={(id) => setParams({ ac: id })} />
+        </div>
+      ) : (
       <DataTable
         label="İş emirleri"
         rows={rows}
@@ -145,6 +191,7 @@ export function WorkOrdersScreen() {
         toolbar={
           <>
             <SearchBox label="İş emri ara" value={search} onChange={(q) => setParams({ q })} className="min-w-44 flex-1" />
+            <ViewSwitch view={view} onChange={setView} />
             <FilterChip tone="danger" pressed={waitingOnly} count={waitingCount} onClick={() => setParams({ bekleyen: waitingOnly ? null : "1" })}>
               Malzeme bekliyor
             </FilterChip>
@@ -179,6 +226,7 @@ export function WorkOrdersScreen() {
           )
         }
       />
+      )}
       {openId ? <WorkOrderDrawer key={openId} id={openId} onClose={() => setParams({ ac: null })} /> : null}
     </Page>
   );
