@@ -14,3 +14,9 @@ playwright-report/
 Thumbs.db
 *.log
 .shots/
+
+# İç çalışma belgeleri (plan, tasarım, yol haritası) ve asistan talimatları: yalnızca yerelde tutulur
+/docs/superpowers/
+/docs/ROADMAP.md
+/CLAUDE.md
+/AGENTS.md

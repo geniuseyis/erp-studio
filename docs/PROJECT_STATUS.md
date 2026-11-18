@@ -84,4 +84,4 @@ Ayrıca örnek veriyi tarayıcıda servislerle üretmek (2.000'den fazla sorgu) 
 
 ## Sıradaki
 
-Ayrıntılı yol haritası: [ROADMAP.md](ROADMAP.md). Sırada Plan 2B (haftalık plan, termin önerisi, kanban), ardından Plan 3 (satın alma), Plan 4 (raporlar ve 12 aylık veri), Plan 5 (asistan ve yayın).
+Sırada Plan 2B (haftalık plan, termin önerisi, kanban), ardından Plan 3 (satın alma), Plan 4 (raporlar ve 12 aylık veri), Plan 5 (asistan ve yayın).
