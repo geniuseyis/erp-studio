@@ -56,7 +56,20 @@ export function FilterChip({ pressed, onClick, children, count, group, tone = "d
 }
 
 /** Arama kutusu: büyüteç simgeli, `searchbox` rolünde. */
-export function SearchBox({ label, value, onChange, className }: { label: string; value: string; onChange: (value: string) => void; className?: string }) {
+export function SearchBox({
+  label,
+  value,
+  onChange,
+  onSubmit,
+  className,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  /** Verilirse Enter'a basınca çağrılır (gecikmeli aramayı beklemeden uygulamak için). */
+  onSubmit?: (value: string) => void;
+  className?: string;
+}) {
   return (
     <label className={cn("relative block w-full max-w-72", className)}>
       <SearchIcon size={16} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-fg-muted" />
@@ -66,6 +79,7 @@ export function SearchBox({ label, value, onChange, className }: { label: string
         placeholder={label}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onSubmit ? (e) => e.key === "Enter" && onSubmit(e.currentTarget.value) : undefined}
         className="h-9 w-full rounded-full border border-line bg-surface-2/60 pr-3 pl-9 text-sm text-fg transition-colors placeholder:text-fg-muted hover:border-line-strong focus:border-accent focus:bg-surface"
       />
     </label>

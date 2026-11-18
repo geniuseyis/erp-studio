@@ -1,11 +1,11 @@
 // Kayıt çekmecelerindeki "Geçmiş" bölümünün ve İşlemler ekranının sorguları. Yalnızca okur.
-import { and, desc, eq, gte, inArray, lt, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, like, lt, ne, or, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { auditLog, customers, departments, materials, products, salesOrderLines, salesOrders, stockCounts, users, workOrders } from "@/db/schema";
 import { type DepartmentCode, isUuid, type SessionUser } from "./context";
 import { can } from "./permissions";
 import { istanbulDayStart } from "./production/calendar";
-import { matchesSearch } from "./text";
+import { searchKey } from "./text";
 
 export type HistoryEntry = { id: string; at: Date; userName: string; departmentName: string; action: string; summary: string };
 
@@ -136,18 +136,21 @@ const RESOLVERS: Record<string, Resolver> = {
   },
 };
 
+/** LIKE desenindeki özel karakterleri (\, %, _) düz metin yapar. */
+const escapeLike = (text: string) => text.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+
 /** Özetin başındaki belge kodu: "SIP-2026-0077: satır silindi …" → "SIP-2026-0077". */
 const SUMMARY_CODE = /^([A-Z]{2,4}-(?:\d{4}-)?\d{3,})\b/;
 
 /**
  * Bütün kayıtların işlem geçmişi, yeniden eskiye, en çok `limit` (varsayılan 500) satır. Tür, departman, kişi ve tarih
- * (`from` dahil, `to` hariç) veritabanında süzülür; metin araması (özet, kayıt etiketi, kişi adı) etiketler çözüldükten
- * sonra bellekte yapılır ve sınırdan önce uygulanır. Etiketler kayıt türü başına tek sorguyla okunur. Kullanıcılar modülünü
+ * (`from` dahil, `to` hariç) ve metin araması (`search_key`: özet, kişi adı, kayıt kodu; Türkçe harf duyarsız) veritabanında
+ * süzülür, sınır bunlardan sonra yine SQL'de uygulanır. Etiketler kayıt türü başına tek sorguyla okunur. Kullanıcılar modülünü
  * göremeyen `viewer` için `user` kayıtları sorguda dışlanır (sınır ve sayılar dışlamadan sonra hesaplanır).
  */
 export async function listActivity(db: Db, viewer: ActivityViewer, f: ActivityFilter = {}): Promise<ActivityRow[]> {
   const limit = f.limit ?? ACTIVITY_LIMIT;
-  const search = f.search?.trim() ?? "";
+  const key = searchKey(f.search ?? "");
   if (f.userId !== undefined && !isUuid(f.userId)) return [];
 
   const query = db
@@ -174,11 +177,13 @@ export async function listActivity(db: Db, viewer: ActivityViewer, f: ActivityFi
         f.userId ? eq(auditLog.userId, f.userId) : undefined,
         f.from ? gte(auditLog.createdAt, f.from) : undefined,
         f.to ? lt(auditLog.createdAt, f.to) : undefined,
+        key ? like(auditLog.searchKey, `%${escapeLike(key)}%`) : undefined,
       ),
     )
-    .orderBy(desc(auditLog.createdAt), sql`${auditLog}.ctid desc`);
-  // Arama bellekte yapıldığı için sınır ondan sonra uygulanır; aksi hâlde eski bir eşleşme bulunamazdı.
-  const raw = await (search ? query : query.limit(limit));
+    .orderBy(desc(auditLog.createdAt), sql`${auditLog}.ctid desc`)
+    // Arama da veritabanında yapıldığı için sınır bütün süzgeçlerden sonra uygulanır.
+    .limit(limit);
+  const raw = await query;
 
   const idsByKind = new Map<string, Set<string>>();
   for (const r of raw) {
@@ -197,9 +202,7 @@ export async function listActivity(db: Db, viewer: ActivityViewer, f: ActivityFi
   for (const r of raw) {
     const found = resolved.get(r.entity)?.get(r.entityId);
     const recordLabel = found?.label ?? SUMMARY_CODE.exec(r.summary)?.[1] ?? (RESOLVERS[r.entity] ? DELETED_RECORD : null);
-    if (search && !matchesSearch([r.summary, recordLabel ?? "", r.userName], search)) continue;
     rows.push({ ...r, departmentCode: r.departmentCode as DepartmentCode, recordLabel, recordHref: found?.href ?? null });
-    if (rows.length >= limit) break;
   }
   return rows;
 }

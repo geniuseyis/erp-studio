@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ACTIVITY_LIMIT, type ActivityRow } from "@/domain/audit-queries";
 import { DEPARTMENT_NAMES, type DepartmentCode } from "@/domain/context";
 import { can } from "@/domain/permissions";
@@ -10,6 +10,7 @@ import { HeroStat, Page, PageHeader } from "@/shell/AppGuard";
 import { Avatar } from "@/shell/LoginScreen";
 import { visibleNav } from "@/shell/nav";
 import { useSession } from "@/shell/session";
+import { useDebouncedValue } from "@/shell/useDebouncedValue";
 import { useUrlState } from "@/shell/useUrlState";
 import { Button } from "@/ui/Button";
 import { FilterChip, SearchBox } from "@/ui/Chip";
@@ -69,6 +70,27 @@ export function ActivityScreen() {
   const [personQuery, setPersonQuery] = useState("");
 
   const search = params.get("q") ?? "";
+  // Arama kutusu kendi metnini tutar; adres (ve sorgu) tuş durduktan 250 ms sonra güncellenir, Enter hemen uygular.
+  const [text, setText] = useState(search);
+  const debounced = useDebouncedValue(text, 250);
+  const applied = useRef(search);
+  const applySearch = (q: string) => {
+    applied.current = q;
+    setParams({ q });
+  };
+  useEffect(() => {
+    // Adres dışarıdan değişti (süzgeçleri temizle, bağlantı): kutu da onu göstersin.
+    if (search !== applied.current) {
+      applied.current = search;
+      setText(search);
+    }
+  }, [search]);
+  useEffect(() => {
+    if (debounced !== applied.current) {
+      applied.current = debounced;
+      setParams({ q: debounced });
+    }
+  }, [debounced, setParams]);
   const kindParam = params.get("tur");
   // Kullanıcı kayıtları sorguda da dışlanır; burada yalnızca çip ve adres parametresi gizlenir.
   const seesUsers = user !== null && can(user, "users", "view");
@@ -184,7 +206,7 @@ export function ActivityScreen() {
         rowId={(r) => r.id}
         loading={activity.isPending}
         csvFileName="islemler"
-        toolbar={<SearchBox label="İşlem ara" value={search} onChange={(q) => setParams({ q })} className="max-w-96 min-w-44 flex-1" />}
+        toolbar={<SearchBox label="İşlem ara" value={text} onChange={setText} onSubmit={applySearch} className="max-w-96 min-w-44 flex-1" />}
         filters={
           <div className="grid w-full min-w-0 gap-3">
             <div role="group" aria-label="Kayıt türü" className="-mx-1 flex min-w-0 gap-1.5 overflow-x-auto px-1 py-0.5">

@@ -4,10 +4,12 @@ import { randomUUID } from "node:crypto";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { Db } from "@/db/client";
 import { auditLog, MOVEMENT_TYPES, PRODUCT_MOVEMENT_TYPES, salesOrders, stockCounts, workOrders } from "@/db/schema";
+import { logAudit } from "@/domain/audit";
 import { activityStats, listActivity } from "@/domain/audit-queries";
 import type { SessionUser } from "@/domain/context";
+import { searchKey } from "@/domain/text";
 import { actionLabel, ACTION_LABEL, ENTITY_LABEL } from "@/features/activity/labels";
-import { addCustomer, addMaterial, addProduct, addUser } from "../../helpers/fixtures";
+import { addCustomer, addMaterial, addProduct, addUser, ctxFor } from "../../helpers/fixtures";
 import { createTestDb } from "../../helpers/testDb";
 
 let db: Db;
@@ -17,9 +19,20 @@ let bt: SessionUser;
 
 const at = (iso: string) => new Date(`${iso}+03:00`);
 
-async function log(user: SessionUser, entity: string, entityId: string, summary: string, createdAt: Date, action = "update") {
-  await db.insert(auditLog).values({ entity, entityId, action, summary, userId: user.id, createdAt });
+async function log(user: SessionUser, entity: string, entityId: string, summary: string, createdAt: Date, action = "update", code?: string) {
+  await logAudit(ctxFor(db, user, createdAt), { entity, entityId, action, summary, code });
 }
+
+/** Doğrudan toplu ekleme: arama anahtarı logAudit'in yazdığıyla aynı biçimde elle doldurulur. */
+const bulkRow = (user: SessionUser, entity: string, entityId: string, action: string, summary: string, createdAt: Date) => ({
+  entity,
+  entityId,
+  action,
+  summary,
+  searchKey: searchKey(`${summary} ${user.name}`),
+  userId: user.id,
+  createdAt,
+});
 
 beforeEach(async () => {
   db = await createTestDb();
@@ -57,7 +70,7 @@ test("süzgeçler: kayıt türü, departman, kişi ve tarih aralığı (bitiş h
 test("varsayılan sınır 500; sınır verilebilir", async () => {
   const base = at("2026-11-15T09:00:00").getTime();
   await db.insert(auditLog).values(
-    Array.from({ length: 503 }, (_, i) => ({ entity: "customer", entityId: "a", action: "update", summary: `kayıt ${i}`, userId: ayse.id, createdAt: new Date(base + i * 1000) })),
+    Array.from({ length: 503 }, (_, i) => bulkRow(ayse, "customer", "a", "update", `kayıt ${i}`, new Date(base + i * 1000))),
   );
   const rows = await listActivity(db, bt);
   expect(rows).toHaveLength(500);
@@ -65,20 +78,20 @@ test("varsayılan sınır 500; sınır verilebilir", async () => {
   expect((await listActivity(db, bt, { limit: 2 })).map((r) => r.summary)).toEqual(["kayıt 502", "kayıt 501"]);
 });
 
-test("metin araması özet, kayıt etiketi ve kişi adında Türkçe harf duyarsız arar; sınırdan önce uygulanır", async () => {
+test("metin araması özet, kayıt kodu ve kişi adında Türkçe harf duyarsız arar; sınırdan önce uygulanır", async () => {
   const customer = await addCustomer(db, { code: "MUS-0042", name: "Kuzey Mobilya" });
   await log(ayse, "sales_order", "s", "SIP-2026-0001: satır silindi — URN-0031 Adım Ayakkabılık × 2", at("2026-11-10T09:00:00"), "remove_line");
-  await log(ayse, "customer", customer.id, "MUS-0042 güncellendi: telefon boş → 0212", at("2026-11-11T09:00:00"));
+  await log(ayse, "customer", customer.id, "güncellendi: telefon boş → 0212", at("2026-11-11T09:00:00"), "update", "MUS-0042");
   const base = at("2026-11-12T09:00:00").getTime();
   await db.insert(auditLog).values(
-    Array.from({ length: 10 }, (_, i) => ({ entity: "material", entityId: "m", action: "receipt", summary: `MLZ-0001 giriş ${i}`, userId: onur.id, createdAt: new Date(base + i * 1000) })),
+    Array.from({ length: 10 }, (_, i) => bulkRow(onur, "material", "m", "receipt", `MLZ-0001 giriş ${i}`, new Date(base + i * 1000))),
   );
 
   expect((await listActivity(db, bt, { search: "SATIR SILINDI", limit: 3 })).map((r) => r.summary)).toEqual([
     "SIP-2026-0001: satır silindi — URN-0031 Adım Ayakkabılık × 2",
   ]);
-  // Müşterinin adı özette yok; kayıt etiketinden bulunur.
-  expect((await listActivity(db, bt, { search: "kuzey" })).map((r) => r.entityId)).toEqual([customer.id]);
+  // Kod özette yok; logAudit'e verilen kod arama anahtarına girer.
+  expect((await listActivity(db, bt, { search: "mus-0042" })).map((r) => r.entityId)).toEqual([customer.id]);
   expect(await listActivity(db, bt, { search: "ayse demir" })).toHaveLength(2);
   expect(await listActivity(db, bt, { search: "onur", limit: 4 })).toHaveLength(4);
   expect(await listActivity(db, bt, { search: "   " })).toHaveLength(12);
@@ -200,6 +213,56 @@ test("kullanıcı kayıtları yalnızca Kullanıcılar modülünü görenlere ge
   expect(await activityStats(db, bt, now)).toMatchObject({ today: 3, last7Days: 3, topDepartment: { code: "bt", count: 2 } });
   const yonetim = await addUser(db, "yonetim", "mudur", { name: "Nermin Aksoy", email: "nermin@baltacioglus.example" });
   expect(await listActivity(db, yonetim, { entity: "user" })).toHaveLength(2);
+});
+
+test("arama SQL'de: 15.000 kayıtta 'satır silindi' 100 ms altında ve doğru sayıda", async () => {
+  const base = at("2026-11-01T09:00:00").getTime();
+  const rows = Array.from({ length: 15_000 }, (_, i) =>
+    bulkRow(
+      i % 2 === 0 ? ayse : onur,
+      "sales_order",
+      "s",
+      "update",
+      i % 50 === 0 ? `SIP-2026-${i}: satır silindi — URN-0031 Adım Ayakkabılık × 1` : `SIP-2026-${i}: satır güncellendi — URN-${i}`,
+      new Date(base + i * 1000),
+    ),
+  );
+  for (let i = 0; i < rows.length; i += 2000) await db.insert(auditLog).values(rows.slice(i, i + 2000));
+
+  await listActivity(db, bt, { search: "satır silindi", limit: 20_000 });
+  const started = performance.now();
+  const found = await listActivity(db, bt, { search: "satır silindi", limit: 20_000 });
+  const elapsed = performance.now() - started;
+  expect(found).toHaveLength(300);
+  expect(elapsed).toBeLessThan(100);
+});
+
+test.each(["URN-0031", "urn-0031", "ADIM", "adım"])("arama %s silinen satırı bulur", async (query) => {
+  await log(ayse, "sales_order", "s", "SIP-2026-0001: satır silindi — URN-0031 Adım Ayakkabılık × 2", at("2026-11-10T09:00:00"), "remove_line");
+  await log(ayse, "sales_order", "s", "SIP-2026-0001: satır eklendi — URN-0044 Raf × 1", at("2026-11-10T10:00:00"), "add_line");
+  const rows = await listActivity(db, bt, { search: query });
+  expect(rows.map((r) => r.summary)).toEqual(["SIP-2026-0001: satır silindi — URN-0031 Adım Ayakkabılık × 2"]);
+});
+
+test("aramada limit SQL'de uygulanır: limit 3 en yeni 3 eşleşmeyi döner", async () => {
+  const base = at("2026-11-12T09:00:00").getTime();
+  const rows = Array.from({ length: 40 }, (_, i) => bulkRow(onur, "material", "m", "receipt", i % 2 === 0 ? `MLZ-0001 giriş ${i}` : `MLZ-0002 çıkış ${i}`, new Date(base + i * 1000)));
+  await db.insert(auditLog).values(rows);
+  const found = await listActivity(db, bt, { search: "giriş", limit: 3 });
+  expect(found.map((r) => r.summary)).toEqual(["MLZ-0001 giriş 38", "MLZ-0001 giriş 36", "MLZ-0001 giriş 34"]);
+});
+
+test("arama joker karakterleri düz metin sayılır; kullanıcı kayıtları aramada da gizli kalır", async () => {
+  await log(ayse, "customer", "a", "yüzde %50 indirim", at("2026-11-10T09:00:00"));
+  await log(ayse, "customer", "a", "yüzde 50 indirim", at("2026-11-10T10:00:00"));
+  await log(ayse, "customer", "a", "alt_çizgi kodu", at("2026-11-10T11:00:00"));
+  await log(ayse, "customer", "a", "altXçizgi kodu", at("2026-11-10T12:00:00"));
+  expect((await listActivity(db, bt, { search: "%50" })).map((r) => r.summary)).toEqual(["yüzde %50 indirim"]);
+  expect((await listActivity(db, bt, { search: "alt_cizgi" })).map((r) => r.summary)).toEqual(["alt_çizgi kodu"]);
+  expect(await listActivity(db, bt, { search: "\\" })).toEqual([]);
+  await log(bt, "user", onur.id, "Onur Tekin pasife alındı", at("2026-11-10T13:00:00"), "deactivate");
+  expect(await listActivity(db, ayse, { search: "Onur Tekin" })).toEqual([]);
+  expect(await listActivity(db, bt, { search: "Onur Tekin" })).toHaveLength(1);
 });
 
 /** src/domain altındaki bütün logAudit çağrılarının işlem kodları (kaynaktan okunur). */
