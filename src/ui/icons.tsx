@@ -31,6 +31,7 @@ export const CloseIcon = make(<path d="M6 6l12 12M18 6 6 18" />);
 export const ChevronDownIcon = make(<path d="m6 9 6 6 6-6" />);
 export const ChevronUpIcon = make(<path d="m6 15 6-6 6 6" />);
 export const ChevronRightIcon = make(<path d="m9 6 6 6-6 6" />);
+export const ChevronLeftIcon = make(<path d="m15 6-6 6 6 6" />);
 export const SortIcon = make(<path d="m8 9 4-4 4 4M8 15l4 4 4-4" />);
 export const ColumnsIcon = make(<><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16M15 4v16" /></>);
 export const DownloadIcon = make(<path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14" />);
@@ -69,3 +70,5 @@ export const ContactIcon = make(<><rect x="3" y="4" width="18" height="16" rx="2
 export const TruckIcon = make(<><path d="M3 6h11v10H3zM14 9h4l3 3v4h-7" /><circle cx="7" cy="17.5" r="1.75" /><circle cx="17" cy="17.5" r="1.75" /></>);
 export const TrashIcon = make(<path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13M10 11v5M14 11v5" />);
 export const MalletIcon = make(<><path d="m13 11-8.5 8.5a1.5 1.5 0 0 1-2-2L11 9" /><path d="M9.5 7.5 14 3l7 7-4.5 4.5Z" /></>);
+/** Haftalık plan: takvim yaprağı üzerinde gün sütunları ve bir kart. */
+export const PlanIcon = make(<><rect x="3" y="4.5" width="18" height="16" rx="2" /><path d="M8 3v3M16 3v3M3 9.5h18M9 9.5v11M15 9.5v11" /><path d="M10.5 13h3v3h-3z" /></>);

@@ -40,7 +40,7 @@ export function buildItems({ user, query, materials, orders, workOrders, custome
   const sees = (href: string) => nav.some((n) => n.href === href);
 
   const pages: PaletteItem[] = nav
-    .filter((n) => matchesSearch([n.label, n.group], q))
+    .filter((n) => matchesSearch([n.label, n.group, ...(n.keywords ?? [])], q))
     .map((n) => ({ id: `sayfa:${n.href}`, group: "Sayfalar", label: n.label, hint: n.group, run: () => go(n.href) }));
 
   /** Yazılan sorguya uyan kayıtlar; sorgu boşsa ya da ekranı göremiyorsa hiçbiri. */

@@ -3,7 +3,8 @@ import { type Action, can, type Module } from "@/domain/permissions";
 
 export type NavGroup = "Genel" | "Satış" | "Üretim" | "Stok" | "Yönetim";
 /** `action`: maddeyi görmek için gereken işlem; verilmezse görüntüleme. Atölye ekranı yalnızca işlem yapanlara gösterilir. */
-export type NavItem = { href: string; label: string; module: Module; group: NavGroup; action?: Action };
+/** `keywords`: Ctrl+K paletinde sayfayı adı dışında bulduran sözcükler. */
+export type NavItem = { href: string; label: string; module: Module; group: NavGroup; action?: Action; keywords?: string[] };
 
 /** Yan menü. Yalnızca çalışan ekranlar yer alır; yeni modüller hazır olduklarında buraya eklenir. */
 export const NAV: NavItem[] = [
@@ -14,6 +15,8 @@ export const NAV: NavItem[] = [
   { href: "/satis/musteriler", label: "Müşteriler", module: "sales", group: "Satış" },
   { href: "/uretim/urunler", label: "Ürünler", module: "planning", group: "Üretim" },
   { href: "/uretim/is-emirleri", label: "İş emirleri", module: "planning", group: "Üretim" },
+  // Herkes görür; kart taşımak planning:write ister (ekranda sürükleme kapalı, serviste FORBIDDEN).
+  { href: "/uretim/plan", label: "Haftalık plan", module: "planning", group: "Üretim", keywords: ["kapasite", "takvim", "istasyon"] },
   { href: "/atolye", label: "Atölye", module: "shopfloor", group: "Üretim", action: "execute" },
   { href: "/stok/malzemeler", label: "Malzemeler", module: "inventory", group: "Stok" },
   { href: "/stok/hareketler", label: "Stok hareketleri", module: "inventory", group: "Stok" },

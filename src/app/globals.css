@@ -424,3 +424,30 @@ html:focus-within:not([data-scrolling])::-webkit-scrollbar-thumb {
     transition: none;
   }
 }
+/*
+ * Plan ızgarası: istasyon sütunu yapışkan. Sol geçiş sütunun sağ kenarından başlar (istasyon adları solmaz, kartlar
+ * sütunun altına süzülerek girer); odaklanan kart sütunun ve gün başlığının altında kalmaz.
+ */
+.plan-scroll {
+  scroll-padding-inline: calc(var(--plan-station) + 24px) 24px;
+  scroll-padding-block-start: 4.5rem;
+}
+.scroll-x.plan-scroll[data-fade-left] {
+  mask-image:
+    linear-gradient(to right, #000 var(--plan-station), transparent var(--plan-station), #000 calc(var(--plan-station) + 24px)),
+    linear-gradient(#000, #000),
+    linear-gradient(#000, #000);
+}
+.scroll-x.plan-scroll[data-fade-left][data-fade-right] {
+  mask-image:
+    linear-gradient(
+      to right,
+      #000 var(--plan-station),
+      transparent var(--plan-station),
+      #000 calc(var(--plan-station) + 24px),
+      #000 calc(100% - 24px),
+      transparent 100%
+    ),
+    linear-gradient(#000, #000),
+    linear-gradient(#000, #000);
+}

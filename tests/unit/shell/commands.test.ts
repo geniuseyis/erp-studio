@@ -131,3 +131,11 @@ test("İşlemler sayfası Sayfalar grubunda; 'islem' yazınca bulunur", () => {
   page?.run();
   expect(go).toHaveBeenCalledWith("/islemler");
 });
+
+test.each(["plan", "kapasite", "takvim"])("'%s' yazınca Haftalık plan sayfası bulunur", (q) => {
+  const { items, go } = build(user("satis", "uzman"), q);
+  const page = items.find((i) => i.label === "Haftalık plan");
+  expect(page).toMatchObject({ group: "Sayfalar", hint: "Üretim" });
+  page?.run();
+  expect(go).toHaveBeenCalledWith("/uretim/plan");
+});

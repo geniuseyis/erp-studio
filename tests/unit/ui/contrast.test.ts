@@ -58,6 +58,7 @@ const NON_TEXT_PAIRS: [string, string][] = [
   ["focus", "sidebar-bg"],
   ["line-strong", "surface"],
   ["honey", "hero-via"],
+  ["brass", "surface-2"],
 ];
 
 for (const [name, selector] of [

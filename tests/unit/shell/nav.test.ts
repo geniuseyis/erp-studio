@@ -27,14 +27,14 @@ test("satış ekranları 'Satış' grubunda, ana panelin hemen ardından", () =>
   expect(labels(user("depo", "uzman"))).toContain("Siparişler");
 });
 
-test("üretim ekranları 'Üretim' grubunda, satıştan sonra; plan ekranı henüz yok", () => {
+test("üretim ekranları 'Üretim' grubunda, satıştan sonra; haftalık plan iş emirlerinin hemen ardından", () => {
   const production = NAV.filter((n) => n.group === "Üretim").map((n) => n.href);
-  expect(production).toEqual(["/uretim/urunler", "/uretim/is-emirleri", "/atolye"]);
+  expect(production).toEqual(["/uretim/urunler", "/uretim/is-emirleri", "/uretim/plan", "/atolye"]);
   expect(NAV_GROUPS.slice(0, 3)).toEqual(["Genel", "Satış", "Üretim"]);
-  expect(NAV.some((n) => n.href === "/uretim/plan")).toBe(false);
-  // Ürünler ve iş emirleri herkese görünür (görüntüleme serbest).
+  expect(NAV.find((n) => n.href === "/uretim/plan")).toMatchObject({ label: "Haftalık plan", module: "planning" });
+  // Ürünler, iş emirleri ve plan herkese görünür (görüntüleme serbest; plan taşıma planning:write ister).
   for (const dept of ["satis", "depo", "planlama", "atolye"] as const) {
-    expect(labels(user(dept, "uzman"))).toEqual(expect.arrayContaining(["Ürünler", "İş emirleri"]));
+    expect(labels(user(dept, "uzman"))).toEqual(expect.arrayContaining(["Ürünler", "İş emirleri", "Haftalık plan"]));
   }
 });
 

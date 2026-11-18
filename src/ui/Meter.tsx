@@ -8,7 +8,8 @@ type Props = {
   max: number;
   /** Cetvel üzerindeki eşik çentiği (ör. yeniden sipariş noktası). */
   mark?: number;
-  tone?: Tone;
+  /** `honey`: bal tonundan pirince giden dolgu (plan ızgarasında kapasite içi yük). */
+  tone?: Tone | "honey";
   /** Ekran okuyucu için: "Kullanılabilir 420 adet, yeniden sipariş noktası 1.000 adet". */
   label: string;
   /** `sm`: tablo hücresi için ince sürüm. */
@@ -16,12 +17,14 @@ type Props = {
   className?: string;
 };
 
-const FILL: Record<Tone, string> = {
+const FILL: Record<Tone | "honey", string> = {
   neutral: "from-brass/70 to-brass",
   ok: "from-ok/70 to-ok",
   warn: "from-warn/60 to-warn",
   danger: "from-danger/70 to-danger",
   info: "from-info/70 to-info",
+  // Uç pirinçtir: dolu kısım yüzeyde 3:1 seçilir (contrast.test: brass / surface-2).
+  honey: "from-honey/80 to-brass",
 };
 
 /**
