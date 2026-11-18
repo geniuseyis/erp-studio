@@ -320,3 +320,80 @@ h3 {
     transition: none;
   }
 }
+
+/*
+ * Bütün kaydırma alanları (sayfa, tablo kapları, çekmeceler, pencereler, palet, listeler) menüyle aynı çubuğu kullanır:
+ * 6 px, yuvarlak tutamak, iz ve ok düğmesi yok. Tutamak yalnızca üzerine gelince, odak alan içindeyken ya da
+ * kaydırırken (`data-scrolling`, useScrollActivity) görünür. Renkler tokens.css'teki --scroll-thumb* değişkenlerindendir.
+ * Ceviz zeminlerde bal tonu kullanılır.
+ */
+.walnut,
+.menu-scroll {
+  --scroll-thumb: rgb(226 165 76 / 0.4);
+  --scroll-thumb-hover: rgb(226 165 76 / 0.7);
+}
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+  background: transparent;
+}
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 9999px;
+  transition: background-color 0.2s;
+}
+*:hover::-webkit-scrollbar-thumb,
+*:focus-within::-webkit-scrollbar-thumb,
+*[data-scrolling]::-webkit-scrollbar-thumb {
+  background-color: var(--scroll-thumb);
+}
+/* Sayfanın kendisi her zaman "üzerinde" ve "odakta" sayılır; yalnızca kaydırırken görünür. */
+html:hover:not([data-scrolling])::-webkit-scrollbar-thumb,
+html:focus-within:not([data-scrolling])::-webkit-scrollbar-thumb {
+  background-color: transparent;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scroll-thumb-hover);
+}
+/* Firefox (::-webkit-scrollbar yoksa): Chromium'da standart özellikler webkit biçimini ezeceği için ayrı tutulur. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  *:hover,
+  *:focus-within,
+  *[data-scrolling] {
+    scrollbar-color: var(--scroll-thumb) transparent;
+  }
+  html:not([data-scrolling]) {
+    scrollbar-color: transparent transparent;
+  }
+}
+/* Yatay kayan alanlar: odaklanan öğe kenar geçişinin altında kalmaz; içerik sürüyorsa kenar 24 px'te yumuşar (useEdgeFades). */
+.scroll-x {
+  scroll-padding-inline: 24px;
+}
+.scroll-x[data-fade-left] {
+  mask-image: linear-gradient(to right, transparent 0, #000 24px);
+}
+.scroll-x[data-fade-right] {
+  mask-image: linear-gradient(to left, transparent 0, #000 24px);
+}
+.scroll-x[data-fade-left][data-fade-right] {
+  mask-image: linear-gradient(to right, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
+}
+@media (prefers-reduced-motion: reduce) {
+  *::-webkit-scrollbar-thumb {
+    transition: none;
+  }
+}

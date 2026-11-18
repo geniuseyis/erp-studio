@@ -8,6 +8,7 @@ import { loadSnapshot, type Snapshot } from "@/seed/snapshot";
 import { BootScreen } from "./BootScreen";
 import { DbContext, listenForChanges, queryClient } from "./db-context";
 import { restoreSession } from "./session";
+import { useScrollActivity } from "./useScrollActivity";
 
 type Boot = { status: "booting"; step: BootStep } | { status: "ready"; handle: DbHandle } | { status: "error" };
 
@@ -16,6 +17,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
   const [boot, setBoot] = useState<Boot>({ status: "booting", step: "engine" });
   const [attempt, setAttempt] = useState(0);
   const mounted = useRef(false);
+  useScrollActivity();
 
   useEffect(() => {
     mounted.current = true;

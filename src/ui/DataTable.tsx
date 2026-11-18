@@ -1,13 +1,14 @@
 "use client";
 
 import { DropdownMenu } from "radix-ui";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 import { Button } from "./Button";
 import { cn } from "./cn";
 import { downloadCsv, toCsv } from "./csv";
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon, ColumnsIcon, DownloadIcon, SortIcon } from "./icons";
 import { Skeleton } from "./Skeleton";
 import { type Column, sortRows } from "./table-types";
+import { useEdgeFades } from "./useEdgeFades";
 
 export type { Column } from "./table-types";
 
@@ -53,6 +54,9 @@ export function DataTable<T>({
   const [sort, setSort] = useState<{ id: string; desc: boolean } | null>(initialSort ?? null);
   const [hidden, setHidden] = useState<Set<string>>(() => new Set(columns.filter((c) => c.defaultHidden).map((c) => c.id)));
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEdgeFades(scrollRef);
 
   const visible = columns.filter((c) => !hidden.has(c.id));
   const sorted = useMemo(() => {
@@ -135,7 +139,7 @@ export function DataTable<T>({
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div ref={scrollRef} className="scroll-x min-h-0 flex-1 overflow-auto">
         <table aria-label={label} aria-busy={loading || undefined} className="w-full border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-surface-2/95 text-left text-xs text-fg-muted backdrop-blur">
             <tr>
