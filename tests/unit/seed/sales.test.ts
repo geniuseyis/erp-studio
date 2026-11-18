@@ -1,5 +1,5 @@
 import { asc } from "drizzle-orm";
-import { beforeAll, expect, test } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
 import type { Db } from "@/db/client";
 import {
   bomLines,
@@ -16,14 +16,15 @@ import {
   workOrderSteps,
 } from "@/db/schema";
 import { verifyLedger } from "@/domain/inventory/ledger";
-import { isWorkday } from "@/domain/production/calendar";
+import { DAY_MS as DAY, isWorkday, istanbulDayStart } from "@/domain/production/calendar";
 import { verifyProductLedger } from "@/domain/production/productLedger";
-import { getWorkOrder, stationQueue } from "@/domain/production/queries";
+import { getWorkOrder, kanbanColumns, listWorkOrders, stationQueue } from "@/domain/production/queries";
+import { weekPlan, weekStartOf } from "@/domain/production/schedule";
 import { listOrders } from "@/domain/sales/queries";
 import { seedBase } from "@/seed/base";
 import { SEED_PRODUCTS, STATIONS } from "@/seed/data/products";
 import { seedSales } from "@/seed/sales";
-import { SNAPSHOT_NOW } from "@/seed/snapshot";
+import { exportSnapshot, loadSnapshot, SNAPSHOT_NOW } from "@/seed/snapshot";
 import { createTestDb } from "../../helpers/testDb";
 
 const now = SNAPSHOT_NOW;
@@ -175,6 +176,80 @@ test("aynı tohum aynı veriyi üretir", async () => {
     };
   };
   expect(await projection(a)).toEqual(await projection(b));
+});
+
+describe("bu hafta senaryoları (örnek veri hangi gün açılırsa açılsın)", () => {
+  // Anlık görüntü pazar günü alınır; yükleme tarihleri iş günü olarak kaydırır. Pazartesiden pazara her gün açılış denenir.
+  const OPEN_DAYS = ["2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20", "2026-11-21", "2026-11-22"];
+  const loads = new Map<string, { db: Db; now: Date }>();
+
+  beforeAll(async () => {
+    const snapshot = await exportSnapshot(a, SNAPSHOT_NOW);
+    for (const day of OPEN_DAYS) {
+      const opened = new Date(`${day}T10:00:00+03:00`);
+      const db = await createTestDb({ fresh: true });
+      await loadSnapshot(db, snapshot, opened);
+      loads.set(day, { db, now: opened });
+    }
+  }, 300_000);
+
+  const eachOpening = async (check: (db: Db, now: Date, label: string) => Promise<void>) => {
+    for (const [day, { db, now: opened }] of loads) await check(db, opened, day);
+  };
+
+  test("haftanın planında en az bir hücre kapasiteyi aşıyor", async () => {
+    await eachOpening(async (db, opened, day) => {
+      const plan = await weekPlan(db, weekStartOf(opened));
+      expect(plan.cells.some((c) => c.loadMinutes > c.capacityMin), day).toBe(true);
+    });
+  });
+
+  test("en az bir iş emri, termininden sonraki güne planlı", async () => {
+    await eachOpening(async (db, opened, day) => {
+      const plan = await weekPlan(db, weekStartOf(opened));
+      const late = plan.cells.flatMap((c) => c.steps).filter((s) => s.late && s.state !== "done");
+      expect(late.length, day).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  test("en az bir planlanmamış iş emri var ve planlanmamış süzgeci aynı sayıyı verir", async () => {
+    await eachOpening(async (db, opened, day) => {
+      const plan = await weekPlan(db, weekStartOf(opened));
+      expect(plan.unscheduled, day).toBeGreaterThanOrEqual(1);
+      expect((await listWorkOrders(db, { unscheduled: true })).length, day).toBe(plan.unscheduled);
+    });
+  });
+
+  test("kanbanda Malzeme bekliyor sütununda planlı, malzemesi eksik en az bir iş emri var", async () => {
+    await eachOpening(async (db, opened, day) => {
+      const columns = await kanbanColumns(db, opened);
+      const waiting = columns.find((c) => c.key === "waiting_material");
+      expect(waiting?.items.length, day).toBeGreaterThanOrEqual(1);
+      expect(
+        waiting?.items.every((w) => w.status === "planned" && !w.materialsReserved),
+        day,
+      ).toBe(true);
+    });
+  });
+
+  test("bugünden başlayan dört iş gününün her birinde ızgara dolu: toplam yük en az 1500 dakika, en az 4 istasyonda iş", async () => {
+    await eachOpening(async (db, opened, day) => {
+      const today = istanbulDayStart(opened).getTime();
+      const thisWeek = weekStartOf(opened);
+      const nextWeek = new Date(thisWeek.getTime() + 7 * DAY);
+      const cells = [...(await weekPlan(db, thisWeek)).cells, ...(await weekPlan(db, nextWeek)).cells].filter((c) => c.day.getTime() >= today);
+      const days = [...new Set(cells.map((c) => c.day.getTime()))].sort((x, y) => x - y).slice(0, 4);
+      expect(days, day).toHaveLength(4);
+      for (const d of days) {
+        const ofDay = cells.filter((c) => c.day.getTime() === d);
+        expect(
+          ofDay.reduce((n, c) => n + c.loadMinutes, 0),
+          `${day} ${new Date(d).toISOString()} yük`,
+        ).toBeGreaterThanOrEqual(1500);
+        expect(ofDay.filter((c) => c.loadMinutes > 0).length, `${day} ${new Date(d).toISOString()} istasyon`).toBeGreaterThanOrEqual(4);
+      }
+    });
+  });
 });
 
 test("ürün adı kataloğun adıdır; kategori adda iki kez geçmez", async () => {

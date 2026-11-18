@@ -181,7 +181,7 @@ export async function seedSales(db: Db, opts: { now: Date; seed?: number }): Pro
     for (let back = HISTORY_DAYS; back >= 1; back--) {
       const day = daysAgo(back);
       if (!isWorkday(day)) continue;
-      const minutes = Array.from({ length: int(1, 3) }, () => int(8 * 60 + 45, 15 * 60 + 45)).sort((x, y) => x - y);
+      const minutes = Array.from({ length: int(1, 2) }, () => int(8 * 60 + 45, 15 * 60 + 45)).sort((x, y) => x - y);
       for (const minute of minutes) {
         plan.push({ day, minute, customer: int(0, customerIds.length - 1), fate: "shipped", lines: [], dueOffset: int(7, 21) });
       }
@@ -240,7 +240,7 @@ export async function seedSales(db: Db, opts: { now: Date; seed?: number }): Pro
     type Live = { plan: PlannedOrder; id: string; openWorkOrders: number; lastDay: Date };
 
     /** Onaydan önce, aynı gün 08:30'da tedarikçi girişi: eksik kalan ya da sipariş noktasının altına inecek malzeme. */
-    const supplyBeforeConfirm = async (live: Live, day: Date) => {
+    const supplyBeforeConfirm = async (live: Live, day: Date, holdWaiting = false) => {
       const lines = await tx
         .select()
         .from(salesOrderLines)
@@ -250,6 +250,14 @@ export async function seedSales(db: Db, opts: { now: Date; seed?: number }): Pro
       const mats = await tx.select().from(materials).orderBy(asc(materials.code));
       const info = new Map(mats.map((m) => [m.id, m]));
       const available = new Map(mats.map((m) => [m.id, m.onHandMilli - m.reservedMilli]));
+      if (holdWaiting) {
+        // Malzemesini bekleyen iş emirlerinin eksik olmayan kalemleri ayrılmamıştır; sonraki siparişler onları tüketmesin.
+        for (const w of (await tx.select().from(workOrders)).filter((x) => x.status === "planned" && !x.materialsReserved)) {
+          for (const n of await materialNeeds(tx, w.productId, w.qtyMilli)) {
+            if (n.materialId !== shortId) available.set(n.materialId, (available.get(n.materialId) ?? 0) - n.neededMilli);
+          }
+        }
+      }
       const receipts = new Map<string, number>();
       for (const line of lines) {
         const reserve = Math.min(Math.max(productFree.get(line.productId) ?? 0, 0), line.qtyMilli);
@@ -418,6 +426,82 @@ export async function seedSales(db: Db, opts: { now: Date; seed?: number }): Pro
       });
     }
 
+    while (queue.length > 0) await (queue.shift() as Event).run();
+
+    // ---- Haftanın yoğunluğu: son üç iş gününde açılan siparişler ----------------------------------------------
+    // Yukarıdaki geçmiş son günlerde seyrektir; haftalık plan, kanban ve termin önerisi gerçekçi bir atölye
+    // haftası göstersin diye bu siparişler ayrıca eklenir. Her biri yine gerçek servislerle ve kendi anında
+    // yapılır. Dört tür var:
+    //   busy      onaylı, iş emirleri önümüzdeki günlerden başlayarak planlı (ızgarayı doldurur, bazı hücreleri aştırır)
+    //   late      terminine yetişmeyen: iş emri geçen hafta başladı, bir adımı hâlâ sürüyor, kalanlar terminden sonra
+    //   unplanned onaylı ama planlamacı henüz planlamadı (planlanmamış iş emri)
+    //   waiting   planlı ama kritik arkalık gelmedi (kanbanda "Malzeme bekliyor")
+    // Önümüzdeki günler `now`'a göre belirlendiği için senaryolar anlık görüntü hangi gün açılırsa açılsın geçerlidir:
+    // yükleme tarihleri iş günü olarak birlikte kaydırır (snapshot.ts makeDateShift).
+    type Extra = { kind: "busy" | "late" | "unplanned" | "waiting"; day: Date; minute: number; due: Date; start?: Date; products: number[]; qty: number[] };
+    const recentDays: Date[] = [];
+    for (let d = workdayOnOrBefore(daysAgo(1)); recentDays.length < 3; d = workdayOnOrBefore(new Date(d.getTime() - DAY))) recentDays.unshift(d);
+    const [dayA, dayB, dayC] = recentDays as [Date, Date, Date]; // dayC: son iş günü
+    const ahead = (n: number) => addWorkdays(today, n);
+    const unusedProduct = (taken: number[], ok: (i: number) => boolean) => pick(indices.filter((i) => !opening.has(i) && !taken.includes(i) && ok(i)));
+    const mix = (count: number, ok: (i: number) => boolean = () => true) => {
+      const products: number[] = [];
+      while (products.length < count) products.push(unusedProduct(products, ok));
+      return { products, qty: products.map(() => int(1, 3) * 1000) };
+    };
+    const extras: Extra[] = [];
+    const busyDays = [dayA, dayA, dayA, dayB, dayB, dayB, dayC, dayC, dayC];
+    const busyStarts = [0, 0, 1, 0, 1, 2, 0, 1, 3];
+    for (const [k, day] of busyDays.entries()) {
+      extras.push({ kind: "busy", day, minute: int(14 * 60, 15 * 60 + 30), due: addWorkdays(day, int(7, 12)), start: ahead(busyStarts[k] as number), ...mix(int(2, 3)) });
+    }
+    // Toplu iş: sürmekte olan ikinci adım istasyonun günlük kapasitesini tek başına aşar (geçen haftanın ızgarasında da kırmızı hücre kalır).
+    const secondStep = (i: number) => SEED_PRODUCTS[i]?.routing[1];
+    const bulk = mix(1, (i) => routeOf(i).length >= 4 && !usesShort(i) && (secondStep(i)?.minutesPerUnit ?? 0) >= 20);
+    const bulkStep = secondStep(bulk.products[0] as number) as { station: string; minutesPerUnit: number };
+    const bulkCapacity = STATIONS.find((s) => s.code === bulkStep.station)?.dailyCapacityMin ?? 0;
+    bulk.qty = [Math.ceil((bulkCapacity + 60) / bulkStep.minutesPerUnit) * 1000];
+    extras.push({ kind: "late", day: dayA, minute: 14 * 60 + 10, due: addWorkdays(dayA, 1), start: dayB, ...bulk });
+    extras.push({ kind: "late", day: dayC, minute: 14 * 60 + 20, due: addWorkdays(dayC, 1), start: ahead(0), ...mix(1, (i) => routeOf(i).length >= 3 && !usesShort(i)) });
+    extras.push({ kind: "unplanned", day: dayC, minute: 15 * 60 + 40, due: addWorkdays(dayC, 9), ...mix(2) });
+    extras.push({ kind: "unplanned", day: dayC, minute: 16 * 60 + 5, due: addWorkdays(dayC, 11), ...mix(1) });
+    extras.push({ kind: "waiting", day: dayB, minute: 15 * 60, due: addWorkdays(dayB, 10), start: ahead(0), ...mix(1, usesShort) });
+    extras.push({ kind: "waiting", day: dayC, minute: 15 * 60 + 15, due: addWorkdays(dayC, 12), start: ahead(1), ...mix(1, usesShort) });
+
+    for (const x of extras) {
+      const seller = pick(sellers);
+      const customer = customerIds[int(0, customerIds.length - 1)] as string;
+      const createdAt = take(x.day, x.minute);
+      schedule(createdAt, async () => {
+        const created = await createOrder(ctx(seller, createdAt), { customerId: customer, dueAt: x.due });
+        const shell: PlannedOrder = { day: x.day, minute: x.minute, customer: 0, fate: x.kind === "waiting" ? "waiting" : "in_production", lines: [], dueOffset: 0 };
+        const live: Live = { plan: shell, id: created.id, openWorkOrders: 0, lastDay: x.day };
+        let minute = x.minute;
+        for (const [k, product] of x.products.entries()) {
+          minute += int(1, 3);
+          await addLine(ctx(seller, take(x.day, minute)), { orderId: created.id, productId: pid(product), qtyMilli: x.qty[k] as number });
+        }
+        const confirmAt = take(x.day, minute + int(20, 80));
+        schedule(confirmAt, async () => {
+          await supplyBeforeConfirm(live, x.day, true);
+          await confirmOrder(ctx(seller, confirmAt), created.id);
+          const lineIds = (
+            await tx.select({ id: salesOrderLines.id }).from(salesOrderLines).where(eq(salesOrderLines.orderId, created.id)).orderBy(asc(salesOrderLines.createdAt))
+          ).map((l) => l.id);
+          const wos = await tx.select().from(workOrders).where(inArray(workOrders.salesOrderLineId, lineIds)).orderBy(asc(workOrders.code));
+          if (x.kind !== "busy" && wos.length === 0) throw new Error(`${x.kind}: iş emri oluşmadı`);
+          if (x.kind === "waiting" && !wos.some((w) => !w.materialsReserved)) throw new Error("malzeme bekleyen iş emri oluşmadı");
+          if (x.kind === "unplanned") return;
+          const planAt = take(x.day, Math.min(minuteOf(confirmAt, x.day) + int(10, 40), DAY_LAST));
+          schedule(planAt, async () => {
+            for (const wo of wos) await planWorkOrder(ctx(planner, planAt), { workOrderId: wo.id, start: x.start as Date });
+            if (x.kind !== "late") return;
+            live.openWorkOrders = wos.length;
+            for (const wo of wos) runSteps(live, wo.id, await stepsOf(wo.id), 0, 1, true);
+          });
+        });
+      });
+    }
     while (queue.length > 0) await (queue.shift() as Event).run();
   });
 }
