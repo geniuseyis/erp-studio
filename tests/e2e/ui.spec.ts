@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { loginAs } from "./helpers";
 
 test.beforeEach(async ({ page }) => {
@@ -180,9 +180,13 @@ test.describe("kaydırma çubuğu", () => {
     await expect(box).toHaveAttribute("data-fade-right", "");
     await expect(box).not.toHaveAttribute("data-fade-left", "");
 
-    await box.evaluate((el) => el.scrollTo(el.scrollWidth, 0));
-    await expect(box).toHaveAttribute("data-fade-left", "");
-    await expect(box).not.toHaveAttribute("data-fade-right", "");
+    // Satır animasyonları genişliği oynatabilir: uca her denemede yeniden kaydırılır.
+    await expect
+      .poll(async () => {
+        await box.evaluate((el) => el.scrollTo(el.scrollWidth, 0));
+        return box.evaluate((el) => [el.hasAttribute("data-fade-left"), el.hasAttribute("data-fade-right")]);
+      })
+      .toEqual([true, false]);
   });
 
   test("Tab ile gelen hücre kabın kenarından en az 24 px içeride kalır", async ({ page }) => {
@@ -221,7 +225,7 @@ test.describe("kaydırma çubuğu", () => {
       .toBeGreaterThanOrEqual(23);
   });
 
-  test("tutamak renkleri her iki temada tanımlıdır ve kaydırma alanlarına küresel kural uygulanır", async ({ page }) => {
+  test("tutamak renkleri her iki temada tanımlıdır ve ceviz zeminde bal tonudur", async ({ page }) => {
     const read = () =>
       page.evaluate(() => {
         const s = getComputedStyle(document.documentElement);
@@ -242,16 +246,27 @@ test.describe("kaydırma çubuğu", () => {
       return value;
     });
     expect(honey.toLowerCase()).toMatch(/e2a54c|226 165 76/);
-    // Sayfa kaydırması tarayıcının varsayılan çubuğunu göstermez: kural bütün öğelere (html dahil) uygulanır.
-    const rule = await page.evaluate(() =>
-      Array.from(document.styleSheets).some((sheet) => {
-        try {
-          return Array.from(sheet.cssRules).some((r) => /^\*?::-webkit-scrollbar-thumb\s*\{/.test(r.cssText));
-        } catch {
-          return false;
-        }
-      }),
-    );
-    expect(rule).toBe(true);
+  });
+  test("varsayılan çubuk hiçbir kaydırma alanında kalmaz: çubuk 6 px ve özel", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 600 });
+    const box = await openMaterialsTable(page);
+    const width = (loc: Locator) => loc.evaluate((el) => getComputedStyle(el, "::-webkit-scrollbar").width);
+
+    expect(await width(page.locator("main"))).toBe("6px");
+    expect(await width(page.locator("html"))).toBe("6px");
+    expect(await width(box)).toBe("6px");
+
+    await page.getByRole("table", { name: "Malzemeler" }).locator("tbody tr").first().click();
+    const drawer = page.getByRole("dialog").filter({ hasText: "MLZ-0001" });
+    await expect(drawer).toBeVisible();
+    const body = drawer.locator("div.overflow-y-auto");
+    expect(await width(body)).toBe("6px");
+    await page.keyboard.press("Escape");
+    await expect(drawer).toBeHidden();
+
+    await page.keyboard.press("Control+k");
+    const palette = page.getByRole("dialog", { name: "Ara ve git" });
+    await expect(palette).toBeVisible();
+    expect(await width(palette.locator("[cmdk-list]"))).toBe("6px");
   });
 });
