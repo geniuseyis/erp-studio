@@ -6,7 +6,7 @@ import { formatNumber } from "@/domain/units";
 const OFFSET_MS = 3 * 60 * 60 * 1000;
 const MONTHS = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
 const WEEKDAYS = ["pazar", "pazartesi", "salı", "çarşamba", "perşembe", "cuma", "cumartesi"];
-export const WEEKDAY_SHORT = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
+const WEEKDAY_SHORT = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
 
 /** İstanbul duvar saatinde gün, ay, yıl ve haftanın günü. */
 function wall(d: Date) {
@@ -87,7 +87,7 @@ export function stepLabel(s: PlanStep, station: string): string {
   const parts = [`${s.code} ${station}`, s.productName, `${formatNumber(s.qtyMilli / 1000)} adet`, `${formatNumber(s.minutes)} dk`, `adım ${s.position}/${s.totalSteps}`];
   if (s.state === "running") parts.push("çalışıyor");
   if (s.state === "done") parts.push("bitti");
-  if (s.late && s.dueAt) parts.push(`termin ${dayMonth(s.dueAt)} geçiyor`);
+  if (s.late && s.dueAt) parts.push(`termine yetişmiyor (termin ${dayMonth(s.dueAt)})`);
   return parts.join(", ");
 }
 

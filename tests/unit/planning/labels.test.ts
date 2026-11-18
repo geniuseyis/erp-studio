@@ -70,7 +70,7 @@ const step = (over: Partial<PlanStep>): PlanStep => ({
 
 test("kart etiketi ekran okuyucuya bütün bilgiyi söyler", () => {
   expect(stepLabel(step({}), "Montaj")).toBe("IE-2026-0042 Montaj, Eksen Gardırop, 3 adet, 120 dk, adım 2/5");
-  expect(stepLabel(step({ late: true, state: "running" }), "Montaj")).toBe("IE-2026-0042 Montaj, Eksen Gardırop, 3 adet, 120 dk, adım 2/5, çalışıyor, termin 12.12 geçiyor");
+  expect(stepLabel(step({ late: true, state: "running" }), "Montaj")).toBe("IE-2026-0042 Montaj, Eksen Gardırop, 3 adet, 120 dk, adım 2/5, çalışıyor, termine yetişmiyor (termin 12.12)");
   expect(stepLabel(step({ state: "done" }), "Montaj")).toContain(", bitti");
 });
 

@@ -293,10 +293,10 @@ export function PlanScreen() {
               />
               <HeroStat
                 index={2}
-                label="Termini geçen"
+                label="Termine yetişmeyen"
                 tone={summary.lateOrders > 0 ? "alert" : "default"}
                 value={<CountUp value={summary.lateOrders} format={String} />}
-                hint="bu haftadaki iş emri"
+                hint="son adımı terminden sonra"
               />
               <HeroStat
                 index={3}
@@ -394,7 +394,7 @@ function Legend() {
       </span>
       <span className={item}>
         <span aria-hidden="true" className="h-3 w-3 rounded-[4px] border-2 border-danger" />
-        Termin geçiyor
+        Termine yetişmiyor
       </span>
     </div>
   );
