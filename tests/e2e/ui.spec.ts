@@ -38,12 +38,15 @@ test("çekmece sağdan açılır ve Esc ile kapanır", async ({ page }) => {
   await page.getByRole("button", { name: "Çekmeceyi aç" }).click();
   const drawer = page.getByRole("dialog", { name: "MDF Lam 18 mm" });
   await expect(drawer).toBeVisible();
-  const box = await drawer.boundingBox();
   const width = page.viewportSize()?.width ?? 0;
-  // Masaüstünde panel sağ kenardan 8 px içeride yüzer; sağa yaslı olmalı.
-  const gap = width - Math.round((box?.x ?? 0) + (box?.width ?? 0));
-  expect(gap).toBeGreaterThanOrEqual(0);
-  expect(gap).toBeLessThanOrEqual(12);
+  // Masaüstünde panel sağ kenardan 8 px içeride yüzer; sağa yaslı olmalı. Kayarak girdiği için yerine oturması beklenir.
+  await expect
+    .poll(async () => {
+      const box = await drawer.boundingBox();
+      const gap = width - Math.round((box?.x ?? 0) + (box?.width ?? 0));
+      return gap >= 0 && gap <= 12;
+    })
+    .toBe(true);
   await page.keyboard.press("Escape");
   await expect(drawer).toBeHidden();
 });
