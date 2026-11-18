@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { auditLog, salesOrderLines, salesOrders, stockCounts, workOrders } from "@/db/schema";
 import { type Ctx, isUuid } from "./context";
+import { lookupSearchLabel, searchText } from "./audit-labels";
 import { searchKey } from "./text";
 
 /**
@@ -13,9 +14,10 @@ export async function logAudit(
   e: { entity: string; entityId: string; action: string; summary: string; code?: string },
 ): Promise<void> {
   const { code, ...row } = e;
+  const label = await lookupSearchLabel(ctx.db, e.entity, e.entityId);
   await ctx.db.insert(auditLog).values({
     ...row,
-    searchKey: searchKey(`${e.summary} ${ctx.user.name} ${code ?? ""}`),
+    searchKey: searchKey(searchText({ summary: e.summary, userName: ctx.user.name, label, code })),
     userId: ctx.user.id,
     createdAt: ctx.now,
   });

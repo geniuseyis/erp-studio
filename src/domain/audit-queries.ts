@@ -1,5 +1,5 @@
 // Kayıt çekmecelerindeki "Geçmiş" bölümünün ve İşlemler ekranının sorguları. Yalnızca okur.
-import { and, desc, eq, gte, inArray, like, lt, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, ne, or, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { auditLog, customers, departments, materials, products, salesOrderLines, salesOrders, stockCounts, users, workOrders } from "@/db/schema";
 import { type DepartmentCode, isUuid, type SessionUser } from "./context";
@@ -177,7 +177,7 @@ export async function listActivity(db: Db, viewer: ActivityViewer, f: ActivityFi
         f.userId ? eq(auditLog.userId, f.userId) : undefined,
         f.from ? gte(auditLog.createdAt, f.from) : undefined,
         f.to ? lt(auditLog.createdAt, f.to) : undefined,
-        key ? like(auditLog.searchKey, `%${escapeLike(key)}%`) : undefined,
+        key ? sql`${auditLog.searchKey} like ${`%${escapeLike(key)}%`} escape '\\'` : undefined,
       ),
     )
     .orderBy(desc(auditLog.createdAt), sql`${auditLog}.ctid desc`)

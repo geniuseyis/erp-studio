@@ -27,6 +27,7 @@ import {
   workOrderSteps,
   workOrders,
 } from "@/db/schema";
+import { recordSearchLabel, searchText } from "@/domain/audit-labels";
 import { searchKey } from "@/domain/text";
 import { istanbulDayStart, isWorkday, prevWorkday, shiftWorkdays, workdaysBetween } from "@/domain/production/calendar";
 import { mulberry32 } from "./rng";
@@ -201,12 +202,37 @@ export async function loadSnapshot(db: Db, snapshot: Snapshot, now: Date): Promi
   const ids: string[] = [];
   const uuid = (index: number) => (ids[index] ??= deterministicUuid(index));
   await db.transaction(async (tx) => {
-    const userNames = new Map<string, string>();
+    // audit_log'dan önce yüklenen tabloların satırları kimliğe göre tutulur: arama anahtarı için kayıt adları buradan çıkar.
+    const byId = new Map<string, Map<string, Record<string, unknown>>>();
+    const text = (name: string, id: unknown, key: string) => String(byId.get(name)?.get(String(id))?.[key] ?? "");
+    const label = (entity: string, id: string): string => {
+      switch (entity) {
+        case "customer":
+          return recordSearchLabel(entity, text("customers", id, "code"), text("customers", id, "name"));
+        case "product":
+          return recordSearchLabel(entity, text("products", id, "code"), text("products", id, "name"));
+        case "material":
+          return recordSearchLabel(entity, text("materials", id, "code"), text("materials", id, "name"));
+        case "work_order":
+          return recordSearchLabel(entity, text("work_orders", id, "code"), text("products", byId.get("work_orders")?.get(id)?.productId, "name"));
+        case "sales_order":
+          return recordSearchLabel(entity, text("sales_orders", id, "code"), text("customers", byId.get("sales_orders")?.get(id)?.customerId, "name"));
+        case "stock_count":
+          return recordSearchLabel(entity, text("stock_counts", id, "code"));
+        case "user":
+          return recordSearchLabel(entity, text("users", id, "name"));
+        default:
+          return "";
+      }
+    };
     for (const table of TABLES) {
       const shifted = decodeRows(snapshot, table, shift, uuid);
-      if (table === users) for (const u of shifted) userNames.set(String(u.id), String(u.name));
+      byId.set(getTableName(table), new Map(shifted.filter((r) => typeof r.id === "string").map((r) => [String(r.id), r])));
       if (table === auditLog) {
-        for (const row of shifted) row.searchKey = searchKey(`${row.summary} ${userNames.get(String(row.userId)) ?? ""}`);
+        for (const row of shifted) {
+          const userName = text("users", row.userId, "name");
+          row.searchKey = searchKey(searchText({ summary: String(row.summary), userName, label: label(String(row.entity), String(row.entityId)) }));
+        }
       }
       for (let i = 0; i < shifted.length; i += CHUNK) {
         await tx.insert(table).values(shifted.slice(i, i + CHUNK) as never);

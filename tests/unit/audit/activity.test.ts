@@ -8,6 +8,7 @@ import { logAudit } from "@/domain/audit";
 import { activityStats, listActivity } from "@/domain/audit-queries";
 import type { SessionUser } from "@/domain/context";
 import { searchKey } from "@/domain/text";
+import { exportSnapshot, loadSnapshot } from "@/seed/snapshot";
 import { actionLabel, ACTION_LABEL, ENTITY_LABEL } from "@/features/activity/labels";
 import { addCustomer, addMaterial, addProduct, addUser, ctxFor } from "../../helpers/fixtures";
 import { createTestDb } from "../../helpers/testDb";
@@ -78,10 +79,10 @@ test("varsayılan sınır 500; sınır verilebilir", async () => {
   expect((await listActivity(db, bt, { limit: 2 })).map((r) => r.summary)).toEqual(["kayıt 502", "kayıt 501"]);
 });
 
-test("metin araması özet, kayıt kodu ve kişi adında Türkçe harf duyarsız arar; sınırdan önce uygulanır", async () => {
+test("metin araması özet, kayıt etiketi ve kişi adında Türkçe harf duyarsız arar; sınırdan önce uygulanır", async () => {
   const customer = await addCustomer(db, { code: "MUS-0042", name: "Kuzey Mobilya" });
   await log(ayse, "sales_order", "s", "SIP-2026-0001: satır silindi — URN-0031 Adım Ayakkabılık × 2", at("2026-11-10T09:00:00"), "remove_line");
-  await log(ayse, "customer", customer.id, "güncellendi: telefon boş → 0212", at("2026-11-11T09:00:00"), "update", "MUS-0042");
+  await log(ayse, "customer", customer.id, "MUS-0042 güncellendi: telefon boş → 0212", at("2026-11-11T09:00:00"));
   const base = at("2026-11-12T09:00:00").getTime();
   await db.insert(auditLog).values(
     Array.from({ length: 10 }, (_, i) => bulkRow(onur, "material", "m", "receipt", `MLZ-0001 giriş ${i}`, new Date(base + i * 1000))),
@@ -90,8 +91,8 @@ test("metin araması özet, kayıt kodu ve kişi adında Türkçe harf duyarsız
   expect((await listActivity(db, bt, { search: "SATIR SILINDI", limit: 3 })).map((r) => r.summary)).toEqual([
     "SIP-2026-0001: satır silindi — URN-0031 Adım Ayakkabılık × 2",
   ]);
-  // Kod özette yok; logAudit'e verilen kod arama anahtarına girer.
-  expect((await listActivity(db, bt, { search: "mus-0042" })).map((r) => r.entityId)).toEqual([customer.id]);
+  // Müşterinin adı özette yok; kayıt adı arama anahtarına yazıldığı için bulunur.
+  expect((await listActivity(db, bt, { search: "kuzey" })).map((r) => r.entityId)).toEqual([customer.id]);
   expect(await listActivity(db, bt, { search: "ayse demir" })).toHaveLength(2);
   expect(await listActivity(db, bt, { search: "onur", limit: 4 })).toHaveLength(4);
   expect(await listActivity(db, bt, { search: "   " })).toHaveLength(12);
@@ -250,6 +251,53 @@ test("aramada limit SQL'de uygulanır: limit 3 en yeni 3 eşleşmeyi döner", as
   await db.insert(auditLog).values(rows);
   const found = await listActivity(db, bt, { search: "giriş", limit: 3 });
   expect(found.map((r) => r.summary)).toEqual(["MLZ-0001 giriş 38", "MLZ-0001 giriş 36", "MLZ-0001 giriş 34"]);
+});
+
+test("logAudit'e verilen kod, özette olmasa da arama anahtarına girer", async () => {
+  await log(ayse, "settings", "x", "ayar değişti", at("2026-11-10T09:00:00"), "update", "AYR-0001");
+  expect(await listActivity(db, bt, { search: "ayr-0001" })).toHaveLength(1);
+});
+
+/** Kayıt adıyla aranabilen satırlar: özet adı içermez; ad kayıttan çözülür. */
+async function seedNamedRows() {
+  const customer = await addCustomer(db, { code: "MUS-0042", name: "Kuzey Mobilya" });
+  const product = await addProduct(db, { code: "URN-0031", name: "Adım Ayakkabılık" });
+  const material = await addMaterial(db, { code: "MLZ-0007", name: "Lacivert Kum" });
+  const [order] = await db.insert(salesOrders).values({ code: "SIP-2026-0009", customerId: customer.id, dueAt: at("2026-12-01T12:00:00"), createdBy: ayse.id }).returning();
+  const [wo] = await db.insert(workOrders).values({ code: "IE-2026-0004", productId: product.id, qtyMilli: 1000, createdBy: ayse.id }).returning();
+  const [count] = await db.insert(stockCounts).values({ code: "SAY-2026-0002", createdBy: onur.id }).returning();
+  if (!order || !wo || !count) throw new Error("kayıt eklenemedi");
+  const t = at("2026-11-15T09:00:00");
+  await log(ayse, "sales_order", order.id, "SIP-2026-0009 sevk edildi: 2 kalem", t, "ship");
+  await log(ayse, "work_order", wo.id, "IE-2026-0004 Kesim başladı", t, "step_start");
+  await log(onur, "product", product.id, "URN-0031 üretimden giriş: 3 adet", t, "production_in");
+  await log(onur, "material", material.id, "MLZ-0007 Stok girişi: 5 kg", t, "receipt");
+  await log(onur, "stock_count", count.id, "SAY-2026-0002 iptal edildi: 4 kalem", t, "cancel");
+  await log(ayse, "customer", customer.id, "MUS-0042 güncellendi: telefon boş → 0212", t);
+  return { order, wo, product, material, count, customer };
+}
+
+async function expectNamedSearches() {
+  const entities = async (search: string) => (await listActivity(db, bt, { search })).map((r) => r.entity).sort();
+  expect(await entities("Adım Ayakkabılık")).toEqual(["product", "work_order"]);
+  expect(await entities("adim ayakkabilik")).toEqual(["product", "work_order"]);
+  expect(await entities("kuzey mobilya")).toEqual(["customer", "sales_order"]);
+  expect(await entities("lacivert kum")).toEqual(["material"]);
+  expect(await entities("SAY-2026-0002")).toEqual(["stock_count"]);
+}
+
+test("kayıt adıyla arama: ürün adı ürün defteri ve iş emri adımını, müşteri adı siparişin sevk satırını bulur", async () => {
+  await seedNamedRows();
+  await expectNamedSearches();
+});
+
+test("anlık görüntüden yüklenen veritabanında da kayıt adıyla arama aynı sonucu verir", async () => {
+  await seedNamedRows();
+  const copy = await createTestDb({ fresh: true });
+  const now = new Date("2026-11-15T09:00:00+03:00");
+  await loadSnapshot(copy, await exportSnapshot(db, now), now);
+  db = copy;
+  await expectNamedSearches();
 });
 
 test("arama joker karakterleri düz metin sayılır; kullanıcı kayıtları aramada da gizli kalır", async () => {
