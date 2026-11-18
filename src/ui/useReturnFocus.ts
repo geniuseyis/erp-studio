@@ -17,6 +17,15 @@ export function useReturnFocus() {
       if (target?.isConnected) {
         event.preventDefault();
         target.focus();
+        return;
+      }
+      // Açan düğme onaylanan işlemle ekrandan kalktı (Sevk et, Satırı sil, Bitti): odak body'ye düşmesin. Önce hâlâ
+      // açık olan çekmecenin başlığına, çekmece yoksa sayfanın main öğesine gider.
+      const titles = [...document.querySelectorAll<HTMLElement>("[data-drawer-title]")].filter((t) => t.closest('[role="dialog"]')?.getAttribute("data-state") === "open");
+      const fallback = titles.at(-1) ?? document.querySelector<HTMLElement>("main");
+      if (fallback) {
+        event.preventDefault();
+        fallback.focus();
       }
     },
   };

@@ -35,7 +35,7 @@ export function Drawer({ open, onOpenChange, title, subtitle, badge, hero, child
             <div className="flex items-start gap-3">
               {badge ? <div className="shrink-0">{badge}</div> : null}
               <div className="min-w-0 flex-1">
-                <RadixDialog.Title className="font-display text-xl leading-tight font-semibold break-words text-hero-fg">{title}</RadixDialog.Title>
+                <RadixDialog.Title tabIndex={-1} data-drawer-title className="font-display text-xl leading-tight font-semibold break-words text-hero-fg outline-none">{title}</RadixDialog.Title>
                 <RadixDialog.Description asChild>
                   <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-hero-fg-muted">{subtitle ?? <span className="sr-only">{title}</span>}</div>
                 </RadixDialog.Description>

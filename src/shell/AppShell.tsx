@@ -108,7 +108,7 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
           </p>
         ) : null}
 
-        <main className="min-h-0 flex-1 overflow-auto">{children}</main>
+        <main tabIndex={-1} className="min-h-0 flex-1 overflow-auto outline-none">{children}</main>
         <CommandPalette user={user} open={paletteOpen} onOpenChange={setPaletteOpen} />
       </div>
     </div>
