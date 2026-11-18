@@ -3,6 +3,7 @@ import { and, asc, desc, eq, inArray, type SQL, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { bomLines, materials, products, routings, salesOrderLines, salesOrders, stations, users, workOrders, workOrderSteps } from "@/db/schema";
 import { isUuid } from "../context";
+import { istanbulDayStart } from "./calendar";
 import type { MaterialCategory } from "../inventory/types";
 import { matchesSearch } from "../text";
 import { laborCostKurus } from "./costing";
@@ -114,8 +115,13 @@ export type WorkOrderRow = {
   orderCode: string | null;
   /** Çalışan adımın, yoksa sıradaki adımın istasyon adı; iş emri bitmiş ya da adımsızsa null. */
   currentStation: string | null;
+  /** `currentStation`ın kodu; kanban sütunu bununla seçilir. */
+  currentStationCode: string | null;
   doneSteps: number;
   totalSteps: number;
+  /** Bağlı siparişin termini; stok için açılan iş emrinde null. */
+  dueAt: Date | null;
+  completedAt: Date | null;
 };
 /**
  * Planlanmamış iş emri: açık (planlı ya da üretimde) ve planlı günü olmayan en az bir adımı var. Haftalık planın
@@ -135,7 +141,7 @@ type StepRecord = typeof workOrderSteps.$inferSelect;
 
 async function workOrderRows(db: Db, id?: string): Promise<WorkOrderRow[]> {
   const rows = await db
-    .select({ wo: workOrders, productCode: products.code, productName: products.name, orderCode: salesOrders.code })
+    .select({ wo: workOrders, productCode: products.code, productName: products.name, orderCode: salesOrders.code, dueAt: salesOrders.dueAt })
     .from(workOrders)
     .innerJoin(products, eq(products.id, workOrders.productId))
     .leftJoin(salesOrderLines, eq(salesOrderLines.id, workOrders.salesOrderLineId))
@@ -145,12 +151,12 @@ async function workOrderRows(db: Db, id?: string): Promise<WorkOrderRow[]> {
   if (rows.length === 0) return [];
 
   const steps = await db
-    .select({ step: workOrderSteps, stationName: stations.name })
+    .select({ step: workOrderSteps, stationName: stations.name, stationCode: stations.code })
     .from(workOrderSteps)
     .innerJoin(stations, eq(stations.id, workOrderSteps.stationId))
     .where(id ? eq(workOrderSteps.workOrderId, id) : undefined)
     .orderBy(asc(workOrderSteps.seq));
-  const byOrder = new Map<string, { step: StepRecord; stationName: string }[]>();
+  const byOrder = new Map<string, { step: StepRecord; stationName: string; stationCode: string }[]>();
   for (const s of steps) byOrder.set(s.step.workOrderId, [...(byOrder.get(s.step.workOrderId) ?? []), s]);
 
   return rows.map((r) => {
@@ -170,6 +176,9 @@ async function workOrderRows(db: Db, id?: string): Promise<WorkOrderRow[]> {
       plannedStart: wo.plannedStart,
       orderCode: r.orderCode,
       currentStation: current?.stationName ?? null,
+      currentStationCode: current?.stationCode ?? null,
+      dueAt: r.dueAt,
+      completedAt: wo.completedAt,
       doneSteps: mine.filter((s) => s.step.finishedAt !== null).length,
       totalSteps: mine.length,
     };
@@ -337,4 +346,58 @@ export async function stationQueue(db: Db, stationCode: string): Promise<QueueIt
 
 export function listStations(db: Db): Promise<Station[]> {
   return db.select().from(stations).orderBy(asc(stations.seq), asc(stations.code));
+}
+
+export type KanbanColumn = { key: "waiting_material" | "unplanned" | `station:${string}` | "completed"; title: string; items: WorkOrderRow[] };
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Tamamlandı sütununun penceresi: bugün dahil son 7 İstanbul günü. */
+const COMPLETED_DAYS = 7;
+
+/**
+ * İş emirleri kanbanı. Her açık (planlı ya da üretimde) iş emri tam bir sütuna düşer; öncelik sırası:
+ *   1. Planlanmadı: unscheduledWorkOrder koşulu (haftalık planın "Planlanmamış" sayısı ve `planlanmamis=1` listesiyle
+ *      aynı). Malzemesi de bekliyorsa yine buradadır: sayı o koşuldan ayrışmasın diye plansızlık malzemeden önce gelir
+ *      (kartta "Malzeme bekliyor" çipi görünür kalır). Rotasız (adımsız) açık iş emri de istasyonu olmadığı için buraya düşer.
+ *   2. Malzeme bekliyor: planlanmış (bütün adımlarının günü var) ama planlı ve malzemesi ayrılmamış.
+ *   3. İstasyon: çalışan adımın, yoksa sıradaki adımın istasyonu (rota sırasıyla).
+ * Tamamlandı yalnızca son 7 İstanbul gününde bitenleri alır; eski tamamlananlar ve iptaller hiçbir sütunda yoktur.
+ * Açık sütunlar termine (termini olmayan sonda), sonra koda göre; Tamamlandı en son biteni üstte dizer.
+ */
+export async function kanbanColumns(db: Db, now: Date): Promise<KanbanColumn[]> {
+  const [rows, stationList, unscheduledRows] = await Promise.all([
+    workOrderRows(db),
+    listStations(db),
+    db.select({ id: workOrders.id }).from(workOrders).where(unscheduledWorkOrder()),
+  ]);
+  const unscheduled = new Set(unscheduledRows.map((r) => r.id));
+  const since = istanbulDayStart(now).getTime() - (COMPLETED_DAYS - 1) * DAY_MS;
+
+  const waiting: WorkOrderRow[] = [];
+  const unplanned: WorkOrderRow[] = [];
+  const completed: WorkOrderRow[] = [];
+  const byStation = new Map<string, WorkOrderRow[]>(stationList.map((s) => [s.code, []]));
+
+  for (const w of rows) {
+    if (w.status === "completed") {
+      if (w.completedAt && w.completedAt.getTime() >= since) completed.push(w);
+      continue;
+    }
+    if (w.status === "cancelled") continue;
+    const station = w.currentStationCode ? byStation.get(w.currentStationCode) : undefined;
+    if (unscheduled.has(w.id) || !station) unplanned.push(w);
+    else if (w.status === "planned" && !w.materialsReserved) waiting.push(w);
+    else station.push(w);
+  }
+
+  const due = (w: WorkOrderRow) => w.dueAt?.getTime() ?? Number.POSITIVE_INFINITY;
+  const byDue = (a: WorkOrderRow, b: WorkOrderRow) => due(a) - due(b) || a.code.localeCompare(b.code);
+  completed.sort((a, b) => (b.completedAt?.getTime() ?? 0) - (a.completedAt?.getTime() ?? 0) || a.code.localeCompare(b.code));
+
+  return [
+    { key: "waiting_material", title: "Malzeme bekliyor", items: waiting.sort(byDue) },
+    { key: "unplanned", title: "Planlanmadı", items: unplanned.sort(byDue) },
+    ...stationList.map((s): KanbanColumn => ({ key: `station:${s.code}`, title: s.name, items: (byStation.get(s.code) ?? []).sort(byDue) })),
+    { key: "completed", title: "Tamamlandı", items: completed },
+  ];
 }

@@ -1,10 +1,10 @@
-import { eq } from "drizzle-orm";
-import { beforeEach, expect, test } from "vitest";
+import { and, eq } from "drizzle-orm";
+import { beforeEach, describe, expect, test } from "vitest";
 import type { Db } from "@/db/client";
-import { workOrders } from "@/db/schema";
+import { workOrders, workOrderSteps } from "@/db/schema";
 import type { Ctx } from "@/domain/context";
 import { receiveStock } from "@/domain/inventory/ledger";
-import { getProduct, getWorkOrder, listProducts, listStations, listWorkOrders, stationQueue } from "@/domain/production/queries";
+import { getProduct, getWorkOrder, kanbanColumns, listProducts, listStations, listWorkOrders, stationQueue } from "@/domain/production/queries";
 import { finishCurrentStep, planWorkOrder, retryMaterials, startNextStep } from "@/domain/production/workOrders";
 import { addLine, confirmOrder, createOrder } from "@/domain/sales/orders";
 import { addBomLine, addCustomer, addMaterial, addProduct, addRouting, addStation, addUser, ctxFor } from "../../helpers/fixtures";
@@ -227,4 +227,96 @@ test("iptal ya da tamamlanmış iş emrinde malzeme eksiği gösterilmez", async
     expect(detail?.materialsReserved, status).toBe(false);
     expect(detail?.shortages, status).toEqual([]);
   }
+});
+
+describe("kanbanColumns", () => {
+  const NOW = new Date("2026-11-18T12:00:00+03:00");
+
+  /** Onaylanmış siparişten gelen iş emirlerini kodla açar; her biri üç adımlıdır. */
+  async function makeOrders(n: number) {
+    for (let i = 0; i < n; i += 1) await order(1000, `Müşteri ${i}`);
+    return [...(await listWorkOrders(db))].sort((a, b) => a.code.localeCompare(b.code));
+  }
+  const schedule = (id: string) => db.update(workOrderSteps).set({ plannedDay: day("2026-11-20") }).where(eq(workOrderSteps.workOrderId, id));
+  const set = (id: string, patch: Partial<typeof workOrders.$inferInsert>) => db.update(workOrders).set(patch).where(eq(workOrders.id, id));
+  const idsOf = (cols: Awaited<ReturnType<typeof kanbanColumns>>, key: string) => cols.find((c) => c.key === key)?.items.map((w) => w.id) ?? [];
+
+  test("her açık iş emri tam bir sütunda; iptal hiçbir yerde, tamamlanan yalnızca son yedi günde", async () => {
+    const wos = await makeOrders(8);
+    const [planned, running, waiting, unplannedWaiting, unplanned, recent, old, cancelled] = wos.map((w) => w.id) as string[];
+    // Planlı + malzemesi ayrılmış + günleri var: ilk adımın istasyonu.
+    await set(planned!, { materialsReserved: true });
+    await schedule(planned!);
+    // Üretimde: ikinci adım çalışıyor.
+    await set(running!, { status: "in_progress", materialsReserved: true });
+    await schedule(running!);
+    await db.update(workOrderSteps).set({ startedAt: NOW, finishedAt: NOW }).where(and(eq(workOrderSteps.workOrderId, running!), eq(workOrderSteps.seq, 1)));
+    await db.update(workOrderSteps).set({ startedAt: NOW }).where(and(eq(workOrderSteps.workOrderId, running!), eq(workOrderSteps.seq, 2)));
+    // Malzeme bekliyor, ama günleri var.
+    await schedule(waiting!);
+    // Hem malzeme bekliyor hem planlanmamış (adımların günü yok): Planlanmadı kazanır.
+    // unplannedWaiting: varsayılan; malzeme ayrılmamış, gün yok. unplanned: malzeme ayrılmış, gün yok.
+    await set(unplanned!, { materialsReserved: true });
+    // Tamamlananlar: yedi günlük pencerenin içi (6 gün önce) ve dışı (7 gün önce).
+    await set(recent!, { status: "completed", completedAt: new Date("2026-11-12T10:00:00+03:00") });
+    await set(old!, { status: "completed", completedAt: new Date("2026-11-11T23:59:00+03:00") });
+    await set(cancelled!, { status: "cancelled" });
+
+    const cols = await kanbanColumns(db, NOW);
+    expect(cols.map((c) => c.key)).toEqual(["waiting_material", "unplanned", ...stationCodes.map((c) => `station:${c}`), "completed"]);
+    expect(cols.map((c) => c.title)).toEqual(["Malzeme bekliyor", "Planlanmadı", ...(await listStations(db)).map((s) => s.name), "Tamamlandı"]);
+
+    expect(idsOf(cols, "waiting_material")).toEqual([waiting]);
+    expect(idsOf(cols, "unplanned").sort()).toEqual([unplannedWaiting, unplanned].sort());
+    expect(idsOf(cols, `station:${stationCodes[0]}`)).toEqual([planned]);
+    expect(idsOf(cols, `station:${stationCodes[1]}`)).toEqual([running]);
+    expect(idsOf(cols, `station:${stationCodes[2]}`)).toEqual([]);
+    expect(idsOf(cols, "completed")).toEqual([recent]);
+
+    // Her açık iş emri tam bir sütunda; iptal ve eski tamamlanan hiçbirinde.
+    const placed = cols.flatMap((c) => c.items.map((w) => w.id));
+    for (const id of [planned, running, waiting, unplannedWaiting, unplanned, recent]) expect(placed.filter((p) => p === id), id).toHaveLength(1);
+    expect(placed).not.toContain(cancelled);
+    expect(placed).not.toContain(old);
+    expect(placed).toHaveLength(new Set(placed).size);
+  });
+
+  test("Planlanmadı sütunu planlanmamış süzgeciyle ve planın sayısıyla aynı koşulu kullanır", async () => {
+    const wos = await makeOrders(4);
+    await set(wos[0]!.id, { materialsReserved: true });
+    await schedule(wos[0]!.id);
+    await schedule(wos[1]!.id); // malzeme bekliyor ama planlı
+    // wos[2], wos[3]: günsüz; biri malzeme bekliyor, biri ayrılmış
+    await set(wos[3]!.id, { materialsReserved: true });
+    const cols = await kanbanColumns(db, NOW);
+    const listed = (await listWorkOrders(db, { unscheduled: true })).map((w) => w.id).sort();
+    expect(idsOf(cols, "unplanned").sort()).toEqual(listed);
+    expect(listed).toHaveLength(2);
+    expect(idsOf(cols, "waiting_material")).toEqual([wos[1]!.id]);
+  });
+
+  test("tamamlandı yalnızca son 7 İstanbul günü: sınır gün başlangıcında", async () => {
+    const wos = await makeOrders(4);
+    // now = 18 Kasım; pencere 12 Kasım 00:00 (İstanbul) ile başlar.
+    await set(wos[0]!.id, { status: "completed", completedAt: new Date("2026-11-12T00:00:00+03:00") });
+    await set(wos[1]!.id, { status: "completed", completedAt: new Date("2026-11-11T23:59:59+03:00") });
+    await set(wos[2]!.id, { status: "completed", completedAt: new Date("2026-11-18T09:00:00+03:00") });
+    await set(wos[3]!.id, { status: "completed", completedAt: null });
+    const done = idsOf(await kanbanColumns(db, NOW), "completed");
+    expect(done.sort()).toEqual([wos[0]!.id, wos[2]!.id].sort());
+    // Gün geçince pencere kayar.
+    const later = idsOf(await kanbanColumns(db, new Date("2026-11-19T09:00:00+03:00")), "completed");
+    expect(later).toEqual([wos[2]!.id]);
+  });
+
+  test("kartlar termin ve sipariş bilgisini taşır; açık sütunlar termine göre dizilir", async () => {
+    const early = await createOrder(satis, { customerId: (await addCustomer(db, { name: "Erken" })).id, dueAt: day("2026-11-25") });
+    await addLine(satis, { orderId: early.id, productId, qtyMilli: 2000 });
+    await confirmOrder(satis, early.id);
+    await order();
+    const cols = await kanbanColumns(db, NOW);
+    const items = cols.find((c) => c.key === "unplanned")!.items;
+    expect(items.map((w) => w.dueAt)).toEqual([day("2026-11-25"), day("2026-12-15")]);
+    expect(items[0]).toMatchObject({ orderCode: early.code, qtyMilli: 2000, doneSteps: 0, totalSteps: 3 });
+  });
 });
