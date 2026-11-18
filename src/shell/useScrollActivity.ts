@@ -18,7 +18,7 @@ export function useScrollActivity(): void {
       // Sayfa kaydırmasında hedef `document`'tir; çubuk `html` öğesine aittir.
       const el = target instanceof Document ? target.documentElement : target instanceof Element ? target : null;
       if (!el) return;
-      el.setAttribute("data-scrolling", "");
+      if (!el.hasAttribute("data-scrolling")) el.setAttribute("data-scrolling", "");
       clearTimeout(timers.get(el));
       timers.set(
         el,

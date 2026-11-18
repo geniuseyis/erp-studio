@@ -383,14 +383,41 @@ html:focus-within:not([data-scrolling])::-webkit-scrollbar-thumb {
 .scroll-x {
   scroll-padding-inline: 24px;
 }
+/*
+ * Maske kaydırıcının çubuklarını da kapsar; geçişin sağ ve alt kenarına 6 px'lik opak şerit eklenir
+ * (katmanlar birleşir) ki dikey ve yatay tutamak geçişin altında kaybolmasın.
+ */
+.scroll-x[data-fade-left],
+.scroll-x[data-fade-right] {
+  mask-size:
+    100% 100%,
+    6px 100%,
+    100% 6px;
+  mask-position:
+    0 0,
+    100% 0,
+    0 100%;
+  mask-repeat: no-repeat;
+  mask-origin: border-box;
+  mask-clip: border-box;
+}
 .scroll-x[data-fade-left] {
-  mask-image: linear-gradient(to right, transparent 0, #000 24px);
+  mask-image:
+    linear-gradient(to right, transparent 0, #000 24px),
+    linear-gradient(#000, #000),
+    linear-gradient(#000, #000);
 }
 .scroll-x[data-fade-right] {
-  mask-image: linear-gradient(to left, transparent 0, #000 24px);
+  mask-image:
+    linear-gradient(to left, transparent 0, #000 24px),
+    linear-gradient(#000, #000),
+    linear-gradient(#000, #000);
 }
 .scroll-x[data-fade-left][data-fade-right] {
-  mask-image: linear-gradient(to right, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
+  mask-image:
+    linear-gradient(to right, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%),
+    linear-gradient(#000, #000),
+    linear-gradient(#000, #000);
 }
 @media (prefers-reduced-motion: reduce) {
   *::-webkit-scrollbar-thumb {

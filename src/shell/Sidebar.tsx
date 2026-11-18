@@ -46,32 +46,23 @@ export function Sidebar({ user, collapsed = false, onToggle, onNavigate, layoutI
   const items = visibleNav(user);
   const navRef = useRef<HTMLElement>(null);
 
-  // Kenar geçişleri ve kaydırma çubuğunun görünürlüğü doğrudan öznitelikle yönetilir; her kaydırmada yeniden çizim olmaz.
+  // Kenar geçişleri doğrudan öznitelikle yönetilir; her kaydırmada yeniden çizim olmaz. Çubuğun görünürlüğü useScrollActivity'dedir.
   useEffect(() => {
     const nav = navRef.current;
     if (!nav) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
     const sync = () => {
       const max = nav.scrollHeight - nav.clientHeight;
       nav.toggleAttribute("data-fade-top", nav.scrollTop > 1);
       nav.toggleAttribute("data-fade-bottom", max - nav.scrollTop > 1);
     };
-    const onScroll = () => {
-      sync();
-      nav.setAttribute("data-scrolling", "");
-      clearTimeout(timer);
-      timer = setTimeout(() => nav.removeAttribute("data-scrolling"), 800);
-    };
     sync();
-    nav.addEventListener("scroll", onScroll, { passive: true });
+    nav.addEventListener("scroll", sync, { passive: true });
     const observer = new ResizeObserver(sync);
     observer.observe(nav);
     for (const child of Array.from(nav.children)) observer.observe(child);
     return () => {
-      nav.removeEventListener("scroll", onScroll);
-      nav.removeAttribute("data-scrolling");
+      nav.removeEventListener("scroll", sync);
       observer.disconnect();
-      clearTimeout(timer);
     };
   }, [collapsed, items.length]);
 

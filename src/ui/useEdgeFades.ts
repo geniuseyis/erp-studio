@@ -7,6 +7,7 @@ import { type RefObject, useEffect } from "react";
  * (`.scroll-x` sınıfı kenarı 24 px'te yumuşatır). Öznitelikle çalışır; her kaydırmada yeniden çizim olmaz.
  * İlk durum, boyut değişimi ve kaydırma sırasında güncellenir.
  */
+// Not: ref hedefi koşulsuz bağlanmalıdır; etki yalnızca bağlanma anında bir kez kurulur.
 export function useEdgeFades(ref: RefObject<HTMLElement | null>): void {
   useEffect(() => {
     const el = ref.current;
