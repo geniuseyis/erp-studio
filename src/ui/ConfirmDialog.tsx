@@ -1,6 +1,6 @@
 "use client";
 
-import { type MouseEvent, type ReactNode, useEffect, useRef } from "react";
+import { type MouseEvent, type ReactNode, useEffect, useLayoutEffect, useRef } from "react";
 import { Button } from "./Button";
 import type { Change } from "./changes";
 import { cn } from "./cn";
@@ -35,6 +35,19 @@ export function ConfirmDialog({ title, body, confirmLabel, tone = "primary", lar
   useEffect(() => {
     openedAt.current = performance.now();
   }, []);
+  // Esc pencere DOM'a girdiği anda onundur. Radix en üst katmanı birkaç render sonra günceller; o arada basılan Esc
+  // alttaki çekmeceye gidip onu (ve onunla bu pencereyi) kapatıyordu. Pencere yalnızca düğme taşır, içinde Esc'i
+  // kendine alan başka katman yoktur; bu yüzden Esc burada yakalanır ve aşağı geçmez. İş sürerken hiçbir şey kapanmaz.
+  useLayoutEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!busy) onCancel();
+    };
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
+  }, [busy, onCancel]);
   const size = large ? "lg" : "md";
 
   return (

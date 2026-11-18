@@ -73,6 +73,44 @@ test("satır sil: metin ürünü ve yeni tutarı söyler; Vazgeç, Esc ve Enter 
   await expect(remove).toHaveCount(0);
 });
 
+test("onay penceresi göründüğü anda basılan Esc yalnızca onayı kapatır; altındaki çekmece açık kalır", async ({ page }) => {
+  await loginAs(page, "Elif Karaca");
+  const order = await one<{ id: string; code: string }>(
+    page,
+    `select o.id, o.code from sales_orders o where o.status = 'draft'
+       and (select count(*) from sales_order_lines l where l.order_id = o.id) >= 2 order by o.code limit 1`,
+  );
+  const lineCount = () => n(page, `select count(*)::int as n from sales_order_lines where order_id = '${order.id}'`);
+  const before = await lineCount();
+  await page.goto(`/satis/siparisler?ac=${order.id}`);
+  const drawer = page.getByRole("dialog", { name: order.code });
+  const remove = drawer.getByRole("button", { name: /^Satırı sil/ }).first();
+  await expect(remove).toBeVisible({ timeout: 45_000 });
+
+  // Yavaş makinede Esc, pencere ekrana girdiği karede gelebilir: Radix katman sırasını ancak sonraki render'larda
+  // günceller. Bu an kesin olarak üretilir: pencere DOM'a girer girmez, odaktaki öğeye Esc gönderilir.
+  const focused = await remove.evaluate(
+    (button) =>
+      new Promise<string | undefined>((resolve) => {
+        const observer = new MutationObserver(() => {
+          if (!document.querySelector('[role="alertdialog"]')) return;
+          observer.disconnect();
+          const target = document.activeElement;
+          target?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+          resolve(target?.textContent?.trim());
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        (button as HTMLButtonElement).click();
+      }),
+  );
+  expect(focused).toBe("Vazgeç");
+  await expect(confirmDialog(page)).toHaveCount(0);
+  await expect(drawer).toBeVisible();
+  // Odak sayfaya düşmez, çekmecede kalır.
+  await expect.poll(() => drawer.evaluate((el) => el.contains(document.activeElement))).toBe(true);
+  expect(await lineCount()).toBe(before);
+});
+
 test("sevk: Vazgeç sevk etmez; onaya çift tıklamak tek sevk yazar", async ({ page }) => {
   await loginAs(page, "Onur Tekin");
   const order = await one<{ id: string; code: string }>(page, "select id, code from sales_orders where status = 'ready' order by code limit 1");
