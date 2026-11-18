@@ -353,6 +353,71 @@ test.describe("liste ekranlarında yerleşim ayarı", () => {
     await expect.poll(() => page.locator("main").evaluate((el) => el.scrollHeight > el.clientHeight + 4)).toBe(true);
   });
 
+  test("sürükleme metin seçmez; kıpırdamadan tıklamak ayarı sabitlemez, kap pencereyi doldurmaya devam eder", async ({ page }) => {
+    const { handle, root } = await openActivity(page);
+    const before = await settledHeight(root);
+    const box = await handle.boundingBox();
+    if (!box) throw new Error("tutamaç yok");
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.up();
+    await page.mouse.click(x, y);
+    await expect(handle).toBeFocused();
+    expect(await page.evaluate(() => window.localStorage.getItem("erp:table-h:islemler"))).toBeNull();
+    await page.setViewportSize({ width: 1440, height: 1200 });
+    await expect.poll(() => settledHeight(root)).toBeGreaterThan(before + 150);
+
+    // Sürükleme sırasında seçim oluşmaz.
+    const moved = await handle.boundingBox();
+    if (!moved) throw new Error("tutamaç yok");
+    await page.mouse.move(moved.x + 20, moved.y + 3);
+    await page.mouse.down();
+    await page.mouse.move(moved.x + 20, moved.y - 60, { steps: 5 });
+    await page.mouse.up();
+    expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).toBe("");
+    expect(await page.evaluate(() => document.body.style.userSelect)).toBe("");
+  });
+
+  test("PageUp/PageDown 160 px, End pencereyi doldurur ve altta tam 20 px boşluk bırakır", async ({ page }) => {
+    const { handle, root } = await openActivity(page);
+    const auto = await settledHeight(root);
+    await handle.focus();
+    await page.keyboard.press("PageUp");
+    await expect.poll(async () => auto - (await settledHeight(root))).toBeGreaterThanOrEqual(158);
+    expect(auto - (await settledHeight(root))).toBeLessThanOrEqual(162);
+    await page.keyboard.press("PageDown");
+    await page.keyboard.press("PageDown");
+    await expect.poll(async () => (await settledHeight(root)) - auto).toBeGreaterThanOrEqual(158);
+    expect((await settledHeight(root)) - auto).toBeLessThanOrEqual(162);
+
+    await page.keyboard.press("End");
+    const gap = () =>
+      page.evaluate(() => {
+        const main = document.querySelector("main") as HTMLElement;
+        const card = document.querySelector('[role="separator"]')?.parentElement as HTMLElement;
+        return { gap: main.getBoundingClientRect().bottom - card.getBoundingClientRect().bottom, spill: main.scrollHeight - main.clientHeight };
+      });
+    await expect.poll(async () => Math.abs((await gap()).gap - 20)).toBeLessThanOrEqual(1);
+    expect((await gap()).spill).toBeLessThanOrEqual(1);
+
+    // Alan aşılınca main kayar ve en altta da kabın altında tam 20 px boşluk kalır (padding değil, son öğe).
+    for (let i = 0; i < 3; i++) await page.keyboard.press("PageDown");
+    await expect.poll(async () => (await gap()).spill).toBeGreaterThan(400);
+    await page.locator("main").evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    await expect.poll(async () => Math.abs((await gap()).gap - 20)).toBeLessThanOrEqual(1);
+  });
+
+  test("1280×720'de bant daraltılmış başlar; kayıtlı 'açık' seçim yenilemeden sonra kazanır", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await openActivity(page);
+    await expect(page.getByRole("button", { name: "Özeti göster" })).toBeVisible();
+    await page.evaluate(() => window.localStorage.setItem("erp:hero:islemler", "0"));
+    await openActivity(page, true);
+    await expect(page.getByRole("button", { name: "Özeti gizle" })).toBeVisible();
+  });
+
   test("1280×720'de varsayılan durumda tablo kabı en az 24rem", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     const { root } = await openActivity(page);

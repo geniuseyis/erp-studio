@@ -100,7 +100,7 @@ export function DataTable<T>({
       // Ayar yokken kap kalan yüksekliği doldurur ama 24rem'den kısalmaz (kalan alan azsa sayfa kayar); ayarlıyken sabit yükseklik, en az 16rem.
       className={cn(
         "flex min-w-0 flex-col overflow-hidden rounded-[22px] border border-line bg-surface shadow-card",
-        fixed ? "min-h-[16rem] md:mb-5" : fill ? "min-h-0 md:min-h-[24rem] md:flex-1" : "min-h-0",
+        fixed ? "min-h-[16rem]" : fill ? "min-h-0 md:min-h-[24rem] md:flex-1" : "min-h-0",
       )}
       style={fixed ? { height: resize.height ?? undefined, flex: "none" } : undefined}
     >

@@ -67,7 +67,13 @@ type PageHeaderProps = {
 export function PageHeader({ title, description, actions, stats, kicker }: PageHeaderProps) {
   const fill = useContext(PageFillContext);
   const { ref, collapsed, toggle } = useHeroCollapse(fill?.screen ?? null);
-  const statsId = useId();
+  const regionId = useId();
+  // Daraltılmış bantta özet kutusu başlıkla eylemler arasında, açıkken satırın altındadır; DOM sırası görsel sıradır.
+  const statsBlock = stats ? (
+    <div id={regionId} className={collapsed ? "flex min-w-0" : "mt-6 grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4"}>
+      <HeroCollapsedContext.Provider value={collapsed}>{stats}</HeroCollapsedContext.Provider>
+    </div>
+  ) : null;
   return (
     <div
       ref={ref}
@@ -75,17 +81,22 @@ export function PageHeader({ title, description, actions, stats, kicker }: PageH
       className="page-hero walnut shrink-0 overflow-hidden rounded-[28px] px-5 pt-6 pb-[4.5rem] shadow-card animate-[rise-in_520ms_var(--ease-spring)] data-[collapsed]:pt-4 sm:px-8 sm:pt-7 sm:data-[collapsed]:pt-4"
     >
       <div className={cn("flex flex-wrap gap-x-6 gap-y-4", collapsed ? "items-center" : "items-start")}>
-        <div className={cn("min-w-0 flex-1", collapsed ? "order-[-2] basis-40" : "basis-72")}>
+        <div className={cn("min-w-0 flex-1", collapsed ? "basis-40" : "basis-72")}>
           {kicker && !collapsed ? <div className="mb-1.5 text-sm text-hero-fg-muted">{kicker}</div> : null}
           <h1 className={cn("leading-tight font-semibold tracking-tight text-hero-fg", collapsed ? "truncate text-xl sm:text-2xl" : "text-[1.75rem] sm:text-3xl")}>{title}</h1>
-          {description && !collapsed ? <p className="mt-1.5 max-w-prose text-hero-fg-muted">{description}</p> : null}
+          {description && !collapsed ? (
+            <p id={stats ? undefined : regionId} className="mt-1.5 max-w-prose text-hero-fg-muted">
+              {description}
+            </p>
+          ) : null}
         </div>
+        {collapsed ? statsBlock : null}
         {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
         {fill ? (
           <button
             type="button"
             aria-expanded={!collapsed}
-            aria-controls={stats ? statsId : undefined}
+            aria-controls={stats || description ? regionId : undefined}
             onClick={toggle}
             className="press inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-medium text-hero-fg-muted transition-colors hover:bg-white/[0.1] hover:text-hero-fg"
           >
@@ -93,15 +104,8 @@ export function PageHeader({ title, description, actions, stats, kicker }: PageH
             {collapsed ? "Özeti göster" : "Özeti gizle"}
           </button>
         ) : null}
-        {stats ? (
-          <div
-            id={statsId}
-            className={cn(collapsed ? "order-[-1] flex min-w-0" : "order-1 grid w-full grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4", !collapsed && "mt-2")}
-          >
-            <HeroCollapsedContext.Provider value={collapsed}>{stats}</HeroCollapsedContext.Provider>
-          </div>
-        ) : null}
       </div>
+      {collapsed ? null : statsBlock}
       <span className="walnut-ruler" aria-hidden="true" />
     </div>
   );
@@ -193,12 +197,16 @@ export function HeroStat({ label, value, hint, href, tone = "default", index = 0
   );
 }
 
-/** Ekran gövdesi: kenar boşlukları ve dikey aralık. `fill` tablo gibi kalan yüksekliği dolduran ekranlar içindir. */
+/**
+ * Ekran gövdesi: kenar boşlukları ve dikey aralık. `fill` tablo gibi kalan yüksekliği dolduran ekranlar içindir.
+ * Fill'de alt boşluk padding değil, boş bir son öğedir (ara boşluk 20 px, öğenin kutusu üste binen -mt-5): `h-full` kabın dışına taşan
+ * içerikte padding kaybolur, öğenin kutusu ise kaydırılabilir alana girer; böylece alt boşluk iki durumda da 20 px kalır.
+ */
 export function Page({ children, fill = false }: { children: ReactNode; fill?: boolean }) {
   const screen = screenKey(usePathname());
   const fillValue = useMemo(() => ({ screen }), [screen]);
   const body = (
-    <div className={fill ? "flex flex-col gap-5 px-3 pb-5 sm:px-6 md:h-full md:min-h-[44rem]" : "grid grid-cols-[minmax(0,1fr)] gap-5 px-3 pb-8 sm:px-6"}>
+    <div className={fill ? "flex flex-col gap-5 px-3 after:-mt-5 after:block after:shrink-0 after:h-5 after:content-[''] sm:px-6 md:h-full md:min-h-[44rem]" : "grid grid-cols-[minmax(0,1fr)] gap-5 px-3 pb-8 sm:px-6"}>
       {children}
     </div>
   );
