@@ -14,7 +14,9 @@ Mobilya üretimi yapan bir atölye için kurumsal kaynak planlama (ERP) uygulama
 - **Siparişler:** taslaktan sevke; satır ekleme, KDV hariç ve dahil toplam, onayda stok ayrılır ya da iş emri açılır, malzeme eksikse "Malzeme bekliyor". Durum çipleri, termin ve geciken işareti.
 - **Müşteriler:** kurgusal müşteriler (gerçek il ve ilçeler), müşterinin siparişleri ve açık tutarı.
 - **Ürünler:** mobilya kataloğundan ürünler; reçete, rota, mamul stoğu ve birim maliyet.
-- **İş emirleri:** adım çizelgesi, ayrılan malzemeler, eksik listesi; planlama başlangıç gününü verir.
+- **İş emirleri:** adım çizelgesi, ayrılan malzemeler, eksik listesi; planlama başlangıç gününü verir. Liste ya da kanban (Malzeme bekliyor, Planlanmadı, istasyon sütunları, Tamamlandı).
+- **Haftalık plan:** istasyon × gün ızgarası, kapasite çubuğu; kart fareyle sürüklenir ya da klavyeyle taşınır, her taşıma önce onay ister ve işlem geçmişine yazılır. Taslak siparişte istasyon kapasitesine göre önerilen termin.
+- **İşlemler:** her değişikliğin kaydı; tür, departman, kişi, tarih ve metinle süzme, CSV.
 - **Atölye:** istasyonun kuyruğu, tablette rahat büyük Başla ve Bitti düğmeleri; son adım bitince mamul stoğa girer, sipariş Hazır olur, depo sevk eder.
 - **Kullanıcı yönetimi:** bilgi işlem ve yönetim kullanıcı ekler, düzenler, pasife alır, parola sıfırlar.
 - **Ctrl+K paleti:** sayfaya git; sipariş, iş emri, müşteri, ürün ya da malzeme ara ve çekmecesini aç; "Yeni sipariş" (satışta); temayı değiştir.
@@ -35,6 +37,18 @@ Satış ve üretim (Aşama 2A):
 | ![İş emri çekmecesi](docs/screens/asama-2/06-is-emri-cekmecesi.png) | ![Atölye tablet](docs/screens/asama-2/08-atolye-tablet.png) | ![Siparişler telefon](docs/screens/asama-2/09-telefon-siparisler.png) |
 
 Diğer görüntüler `docs/screens/asama-2` klasöründe: müşteriler, ürün çekmecesi, iş emirleri ve masaüstü atölye.
+
+Haftalık plan ve termin önerisi (Aşama 2B):
+
+| Haftalık plan | Taşıma onayı |
+|---|---|
+| ![Haftalık plan](docs/screens/asama-2b/01-haftalik-plan.png) | ![Taşıma onayı](docs/screens/asama-2b/04-tasima-onayi.png) |
+
+| İş emirleri kanbanı | Termin önerisi |
+|---|---|
+| ![Kanban](docs/screens/asama-2b/05-kanban.png) | ![Termin önerisi](docs/screens/asama-2b/06-termin-onerisi.png) |
+
+Tablet ve telefon görüntüleri ile özeti gizlenmiş liste `docs/screens/asama-2b` klasöründe.
 
 ## Çalıştırma
 
@@ -76,10 +90,10 @@ npm run test:e2e   # tarayıcı testleri (Playwright, başsız Chrome)
 npm run verify     # tür denetimi, lint, birim testleri ve üretim derlemesi
 ```
 
-431 birim testi ve 75 tarayıcı testi var. Tarayıcı testleri siparişten sevke beş departmanlı akışı, yetkileri, Türkçe aramayı, çift tıklamayı, iki sekmeyi, kapalı tarayıcı deposunu, klavye odağını ve telefon genişliğini kapsar.
+602 birim testi ve 132 tarayıcı testi var. Tarayıcı testleri siparişten sevke beş departmanlı akışı, haftalık planda sürükle-bırak ve klavyeyle taşımayı, kanbanı, yetkileri, Türkçe aramayı, çift tıklamayı, iki sekmeyi, kapalı tarayıcı deposunu, klavye odağını ve telefon genişliğini kapsar.
 
 ## Durum
 
-Plan 1 (temel, stok ve kullanıcılar) ve Plan 2A (satış ve üretim: siparişten sevke) tamam. Sırada haftalık üretim planı ve termin önerisi (2B), ardından satın alma, raporlar ve yapay zekâ destekli yardımcı var.
+Plan 1 (temel, stok ve kullanıcılar), Plan 2A (satış ve üretim: siparişten sevke) ve Plan 2B (haftalık üretim planı, termin önerisi, kanban) tamam; Aşama 2 bitti. Sırada satın alma, ardından raporlar ve yapay zekâ destekli yardımcı var.
 
 Bu bir vitrin sürümüdür: kişi ve firma adları kurgusaldır, fiyatların bir kısmı tahmindir.

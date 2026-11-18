@@ -1,6 +1,6 @@
 # Proje durumu
 
-Son güncelleme: 2026-11-18 (Plan 2A: satış ve üretim tamamlandı ve `main`'e birleştirildi)
+Son güncelleme: 2026-11-18 (Plan 2B: haftalık plan, termin önerisi ve kanban tamamlandı; Aşama 2 bitti)
 
 ## Yapılanlar (Plan 1: temel)
 
@@ -24,13 +24,27 @@ Son güncelleme: 2026-11-18 (Plan 2A: satış ve üretim tamamlandı ve `main`'e
 - Yan menüde tasarıma uygun ince kaydırma çubuğu ve kenar geçişleri.
 - Ekran görüntüleri: `docs/screens/asama-2`.
 
+## Yapılanlar (Plan 2B: haftalık plan)
+
+- **Örnek veri küçüldü:** anlık görüntü 958 KB'tan 615 KB'a indi (kimlikler dosyada yazılmıyor, `deterministicUuid` ile yüklemede üretiliyor; `audit_log.search_key` yüklemede türetiliyor). Test sınırı 700 KB.
+- **İşlemler araması SQL'de:** süzgeç ve arama veritabanında (`search_key`, açık `ESCAPE`); 222 ms'den 6,8 ms'ye. Aramada kayıt adı da (müşteri, ürün, malzeme) eşleşir.
+- **Odak ve adım konumu:** çekmece ve pencere kapanınca odak tetikleyen öğeye döner (yoksa ana alana); iş emri adımları "2/5" biçiminde konumunu gösterir.
+- **Planlama iş kuralları (`src/domain/production/schedule.ts`):** `weekPlan` (5 iş günü × istasyon, dört sorgu), `stationLoad`, `previewMove` ve `moveStep` (rota sırası bozulamaz, geçmiş güne taşınamaz, kapasite aşımı uyarı olarak döner, `planning:write`), `suggestDueDate` (stok, istasyon kapasitesi ve malzeme temin süresine göre en erken ulaşılabilir termin).
+- **Termin önerisi:** taslak siparişin çekmecesinde "Önerilen termin" bölümü; termin öneriden önceyse uyarı ve "Öneriyi uygula" (onay penceresi, işlem geçmişine eski → yeni termin). Termin öneriden sonraysa yalnızca bilgi. `updateOrderDue` yalnızca taslakta çalışır.
+- **Haftalık plan (`/uretim/plan`):** istasyon × gün ızgarası, kapasite çubuğu, aşan hücre kırmızı, termini geçen kart işaretli. Kart fareyle sürüklenir ya da klavyeyle taşınır (Space tutar, sol ve sağ ok gün değiştirir, Enter bırakır, Esc vazgeçer; cuma kartı sağa gidince sonraki haftaya geçilir). Her taşıma onay penceresi açar, pencerede hedef hücrenin yükü yazar; çalışan ve biten adım taşınamaz. Başlıktaki "Planlanmamış" sayısı `?planlanmamis=1` listesine götürür. Satış ızgarayı görür ama sürükleyemez. Telefonda sayfa taşmaz, ızgara kendi kabında yatay kayar.
+- **İş emirleri kanbanı (`?gorunum=kanban`):** Malzeme bekliyor, Planlanmadı, altı istasyon ve Tamamlandı sütunları; her açık iş emri tam bir sütuna düşer (öncelik: planlanmamış, malzeme bekleyen, istasyon).
+- **Kaydırma çubukları:** bütün kaydırma alanlarında yan menüdeki ince tasarım ve kenar geçişleri.
+- **Liste ekranlarında yer:** başlık bandı daraltılabilir ("Özeti gizle", seçim yenilemede kalır; 720 px yükseklikte kapalı başlar), tablo yüksekliği sürüklenerek ya da klavyeyle (ok, PgUp, PgDn, Home, End) ayarlanır, varsayılan en az 24 rem.
+- **Örnek veride hafta senaryoları:** son üç iş gününe 15 sipariş eklendi (yoğun hafta, termini kaçan toplu iş, planlanmamış iş emirleri, arkalığı gelmemiş planlı iş emirleri). Senaryolar anlık görüntünün alındığı güne değil, yükleme gününe göre aranır: birim testi pazartesiden pazara her açılış gününde hücre aşımı, termin sonrası planlı iş emri, planlanmamış iş emri, kanbanda "Malzeme bekliyor" kartı ve bugünden başlayan dört iş gününün dolu olduğunu denetler. Geçmişin günlük sipariş sayısı 1–3'ten 1–2'ye indi (dosya boyutu için).
+- Ekran görüntüleri: `docs/screens/asama-2b` (haftalık plan masaüstü, tablet ve telefon; taşıma onayı; kanban; termin önerisi; özeti gizlenmiş liste).
+
 ## Testler
 
 | Tür | Sayı | Not |
 |---|---|---|
-| Birim (Vitest) | 513 | Gerçek PGlite veritabanıyla; dosya başına paylaşılan veritabanı |
-| Tarayıcı (Playwright) | 95 (+1 elle çalıştırılan: ekran görüntüsü) | Başsız Chrome, "hareketi azalt" açık |
-| Üretim dolaşımı | `scripts/walkthrough.mjs` | Giriş, stok girişi, sayım, palet, siparişten sevke (satış, planlama, atölye, depo), kullanıcı ekleme, sıfırlama; konsol hatası ve 4xx yok |
+| Birim (Vitest) | 602 | Gerçek PGlite veritabanıyla; dosya başına paylaşılan veritabanı |
+| Tarayıcı (Playwright) | 132 (+1 elle çalıştırılan: ekran görüntüsü) | Başsız Chrome, "hareketi azalt" açık |
+| Üretim dolaşımı | `scripts/walkthrough.mjs` | Giriş, stok girişi, sayım, palet, siparişten sevke (satış, planlama, atölye, depo), haftalık planda klavyeyle bir adım taşıma, kullanıcı ekleme, sıfırlama; konsol hatası ve 4xx yok |
 
 ## Tarayıcıda PostgreSQL
 
@@ -39,7 +53,7 @@ Son güncelleme: 2026-11-18 (Plan 2A: satış ve üretim tamamlandı ve `main`'e
 - **Çok sekme:** PGlite sekmelerden birini lider seçer, diğerleri sorgularını ona yollar. Kurulum ve örnek veri yüklemesi Web Locks ile tek sekmede çalışır. Bir sekmedeki değişiklik `BroadcastChannel` ile diğer sekmelerin sorgularını yeniler.
 - **Depolama kapalıysa** (OPFS yok, ya da site verisi engellendiği için Worker içinde reddediliyor): veritabanı bellekte açılır (`persistent: false`) ve ekranda kalıcı bir uyarı durur. Worker reddi açıkça bildirir; sessizce takılırsa 60 sn sonra bellekte devam edilir.
 - **Sıfırlama ve sürüm değişimi:** `public` şeması silinip yeniden kurulur.
-- **Örnek veri:** derleme sırasında üretilen anlık görüntüden (`src/seed/snapshot.generated.json`, ~960 KB; 1 MB sınırına yakın, Plan 2B'nin başında küçültülecek) tablo başına toplu INSERT ile yüklenir; tarihler yükleme anına iş günü olarak kaydırılır, hiçbir kayıt hafta sonuna düşmez. Anlık görüntü `npm run seed:snapshot` ile yenilenir; güncel olup olmadığını bir birim testi denetler.
+- **Örnek veri:** derleme sırasında üretilen anlık görüntüden (`src/seed/snapshot.generated.json`, 615 KB; test sınırı 700 KB) tablo başına toplu INSERT ile yüklenir; tarihler yükleme anına iş günü olarak kaydırılır, hiçbir kayıt hafta sonuna düşmez. Anlık görüntü `npm run seed:snapshot` ile yenilenir; güncel olup olmadığını bir birim testi denetler.
 
 ### Neden bu depolama (2026-11-15 ölçümleri, başsız Chrome, RTX 4070 makine)
 
@@ -55,17 +69,20 @@ Ayrıca örnek veriyi tarayıcıda servislerle üretmek (2.000'den fazla sorgu) 
 
 | Ölçüm | Değer |
 |---|---|
-| Soğuk açılış (giriş ekranı görünene kadar) | 3,0–5,1 sn (sınır 8 sn; 2026-11-16, Plan 2A sonrası 9 ölçüm) |
-| Yenilemede açılış | 1,4–3,4 sn (dokuz ölçümün sekizinde 1,4–1,5 sn) |
+| Soğuk açılış (giriş ekranı görünene kadar) | 3,0–3,5 sn (sınır 8 sn; 2026-11-18, Plan 2B sonrası altı ölçüm: 2,97–3,47 sn; Plan 2A sonrası 3,0–5,1 sn) |
+| Yenilemede açılış | 1,4 sn (Plan 2B sonrası altı ölçüm: 1,40–1,43 sn; Plan 2A sonrası 1,4–3,4 sn) |
 | İndirilen PostgreSQL dosyaları | `pglite.wasm` 9,1 MB + `pglite.data` 6,2 MB (sıkıştırılmamış) |
 
 ## Bilinen sınırlar
 
-**Plan 2B'ye kalanlar** (`/uretim/plan` menüde henüz yok):
+**Bilinçle ertelenenler (2B):**
 
-- Haftalık plan ızgarası (istasyon × gün), sürükle-bırak ve klavyeyle taşıma, kapasite çubuğu.
-- Termin önerisi (istasyon kapasitesine göre en erken teslim tarihi).
-- İş emirleri için kanban görünümü (istasyona göre sütunlar).
+- Haftalık plan: hafta sonu açılışta görünen hafta, biten haftadır (pazartesi başlangıçlı hafta); ileri haftaya "Sonraki" ile geçilir. Telefonda gün başlıkları yapışkan değil. "Şimdi" sayfa açılışında sabitlenir: gece yarısını geçen açık sayfada gün kendiliğinden değişmez (kanban ve termin önerisi de "şimdi"yi sorgu başına okur).
+- Termin önerisi iş günü ve istasyon kapasitesine bakar; vardiya, bakım duruşu ve tatil günü yok. Öneri en erken ulaşılabilir gündür, taahhüt değildir.
+- Plan taşıma tek adımdır; iş emrinin sonraki adımlarını kendiliğinden kaydırmaz (rota sırası bozulursa taşıma reddedilir).
+- İşlemler aramasında kayıt adları yazıldıkları anda dondurulur (`search_key`): sonradan adı değişen müşteri eski adıyla da bulunur.
+- Kodla odaklanan bazı öğelerde (`outline-none`) görünür odak halkası yok.
+- Kanban kart notunun aria-label'ı ve "Adım kalmadı" notu tarayıcı testiyle kapsanmadı.
 
 **Bilinçle ertelenenler (2A):**
 
@@ -84,4 +101,4 @@ Ayrıca örnek veriyi tarayıcıda servislerle üretmek (2.000'den fazla sorgu) 
 
 ## Sıradaki
 
-Sırada Plan 2B (haftalık plan, termin önerisi, kanban), ardından Plan 3 (satın alma), Plan 4 (raporlar ve 12 aylık veri), Plan 5 (asistan ve yayın).
+Aşama 2 (satış ve üretim) tamam. Sırada Aşama 3 (satın alma), ardından Aşama 4 (raporlar ve 12 aylık veri) ve Aşama 5 (asistan ve yayın).
