@@ -1,13 +1,14 @@
 import { and, asc, eq, gte, inArray, isNull, lt, ne, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
-import { products, salesOrderLines, salesOrders, stations, workOrders, workOrderSteps } from "@/db/schema";
+import { materials, products, routings, salesOrderLines, salesOrders, stations, workOrders, workOrderSteps } from "@/db/schema";
 import { logAudit } from "../audit";
 import { type Ctx, inTx, isUuid } from "../context";
 import { DomainError } from "../errors";
 import { assertCan } from "../permissions";
-import { istanbulDayStart, isWorkday } from "./calendar";
+import { addWorkdays, istanbulDayStart, isWorkday, workdaysBetween } from "./calendar";
 import { stepPosition } from "./queries";
 import type { WorkOrderStep } from "./types";
+import { materialNeeds } from "./workOrders";
 
 export type PlanStep = {
   workOrderId: string;
@@ -254,4 +255,121 @@ export async function moveStep(ctx: Ctx, i: MoveInput): Promise<MoveResult> {
     });
     return { step, ...result };
   });
+}
+
+// ---- Termin önerisi -------------------------------------------------------------------------------------
+
+export type DueSuggestion = { dueAt: Date; basis: "stok" | "kapasite" | "malzeme"; detail: string };
+
+/** Önerinin arayacağı en uzak gün: sonraki iş gününden itibaren 60 iş günü. */
+const HORIZON_WORKDAYS = 60;
+
+/** Günden (İstanbul günü) kesinlikle sonraki ilk iş günü. */
+function nextWorkday(d: Date): Date {
+  return addWorkdays(new Date(istanbulDayStart(d).getTime() + DAY_MS), 0);
+}
+
+type LineSuggestion = DueSuggestion & { overflow: boolean };
+
+/**
+ * Siparişin satırları için en erken gerçekçi termin. Satır başına: kullanılabilir mamul yetiyorsa sonraki iş günü. Yetmeyen
+ * adet üretilir: başlangıç sonraki iş günü, malzeme eksikse en uzun tedarik süresi (iş günü) sonrasının ertesi iş günü.
+ * Rota adımları sırayla, her biri öncekinden en az bir iş günü sonra ve istasyonun o günkü yükü (planlı adımlar + bu
+ * hesabın önceki satır ve adımlarla geçici yerleştirdikleri) + adım dakikası kapasiteyi aşmayan ilk güne konur; kapasiteden
+ * büyük adım yükü olmayan ilk güne kendi başına konur. Termin = son adım günü + 1 iş günü. Sipariş termini satırların en
+ * geç önerisidir; `detail` belirleyici satırı söyler. Hiçbir şey yazmaz.
+ */
+export async function suggestDueDate(db: Db, i: { lines: { productId: string; qtyMilli: number }[]; now: Date }): Promise<DueSuggestion> {
+  const first = nextWorkday(i.now);
+  const horizonEnd = addWorkdays(first, HORIZON_WORKDAYS - 1);
+  const productAvail = new Map<string, number>();
+  const materialUsed = new Map<string, number>();
+  const tentative = new Map<string, number>();
+  const loads = new Map<string, number>();
+  const stationRows = await db.select().from(stations);
+  const stationById = new Map(stationRows.map((s) => [s.id, s]));
+
+  const loadOn = async (stationId: string, d: Date) => {
+    const key = `${stationId}|${d.getTime()}`;
+    let base = loads.get(key);
+    if (base === undefined) {
+      base = await stationLoad(db, stationId, d);
+      loads.set(key, base);
+    }
+    return base + (tentative.get(key) ?? 0);
+  };
+
+  let result: LineSuggestion | null = null;
+  for (const line of i.lines) {
+    const [product] = isUuid(line.productId) ? await db.select().from(products).where(eq(products.id, line.productId)) : [];
+    if (!product) throw new DomainError("NOT_FOUND", "Ürün bulunamadı");
+    const avail = productAvail.get(product.id) ?? Math.max(product.onHandMilli - product.reservedMilli, 0);
+    const fromStock = Math.min(avail, line.qtyMilli);
+    productAvail.set(product.id, avail - fromStock);
+    const make = line.qtyMilli - fromStock;
+    const label = `${product.code} × ${line.qtyMilli / 1000}`;
+
+    let s: LineSuggestion;
+    if (make === 0) {
+      s = { dueAt: first, basis: "stok", detail: "stokta var", overflow: false };
+    } else {
+      // Malzeme: önceki satırların ihtiyacı kullanılabilir stoktan düşülür.
+      const needs = await materialNeeds(db, product.id, make);
+      const rows = needs.length
+        ? await db.select().from(materials).where(inArray(materials.id, needs.map((n) => n.materialId))).orderBy(asc(materials.code))
+        : [];
+      let slowest: (typeof rows)[number] | null = null;
+      for (const m of rows) {
+        const needed = needs.filter((n) => n.materialId === m.id).reduce((a, n) => a + n.neededMilli, 0);
+        const used = materialUsed.get(m.id) ?? 0;
+        if (m.onHandMilli - m.reservedMilli - used < needed && (!slowest || m.leadTimeDays > slowest.leadTimeDays)) slowest = m;
+        materialUsed.set(m.id, used + needed);
+      }
+      const start = slowest ? nextWorkday(addWorkdays(istanbulDayStart(i.now), slowest.leadTimeDays)) : first;
+
+      const route = await db.select().from(routings).where(eq(routings.productId, product.id)).orderBy(asc(routings.seq));
+      let earliest = start;
+      let last: Date | null = null;
+      let pushed: string | null = null;
+      let overflow = false;
+      for (const r of route) {
+        const minutes = r.minutesPerUnit * (make / 1000);
+        const capacity = stationById.get(r.stationId)?.dailyCapacityMin ?? 0;
+        let placed: Date | null = null;
+        for (let d = earliest; d.getTime() <= horizonEnd.getTime(); d = addWorkdays(d, 1)) {
+          const current = await loadOn(r.stationId, d);
+          if (minutes > capacity ? current === 0 : current + minutes <= capacity) {
+            placed = d;
+            break;
+          }
+          pushed ??= `${stationById.get(r.stationId)?.name ?? "İstasyon"} ${dayMonth(d)}'de dolu`;
+        }
+        // Kapasiteden büyük adıma ufukta boş gün yoksa en erken güne konur; sığan adım sığmıyorsa ufkun dışındayız.
+        if (!placed && minutes > capacity && earliest.getTime() <= horizonEnd.getTime()) placed = earliest;
+        if (!placed) {
+          overflow = true;
+          break;
+        }
+        const key = `${r.stationId}|${placed.getTime()}`;
+        tentative.set(key, (tentative.get(key) ?? 0) + minutes);
+        last = placed;
+        earliest = addWorkdays(placed, 1);
+      }
+
+      if (overflow) {
+        s = { dueAt: addWorkdays(horizonEnd, 1), basis: "kapasite", detail: `${HORIZON_WORKDAYS} iş günü içinde yer yok`, overflow: true };
+      } else if (!last) {
+        s = { dueAt: start, basis: "kapasite", detail: `${label}: rota tanımlı değil`, overflow: false };
+      } else {
+        const dueAt = addWorkdays(last, 1);
+        if (pushed) s = { dueAt, basis: "kapasite", detail: `${label}: ${pushed}`, overflow: false };
+        else if (slowest) s = { dueAt, basis: "malzeme", detail: `${slowest.code} ${slowest.name} için ${slowest.leadTimeDays} iş günü tedarik`, overflow: false };
+        else s = { dueAt, basis: "kapasite", detail: `${label}: üretim ${workdaysBetween(start, last) + 1} iş günü`, overflow: false };
+      }
+    }
+    if (!result || (s.overflow && !result.overflow) || (s.overflow === result.overflow && s.dueAt.getTime() > result.dueAt.getTime())) result = s;
+  }
+
+  if (!result) return { dueAt: first, basis: "stok", detail: "stokta var" };
+  return { dueAt: result.dueAt, basis: result.basis, detail: result.detail };
 }
