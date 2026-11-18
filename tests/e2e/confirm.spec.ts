@@ -71,6 +71,8 @@ test("satır sil: metin ürünü ve yeni tutarı söyler; Vazgeç, Esc ve Enter 
   await approve(page, "Satırı sil");
   await expect.poll(lineCount).toBe(lines.length - 1);
   await expect(remove).toHaveCount(0);
+  // Açan düğme gitti: odak sayfaya düşmez, çekmece başlığına gider.
+  await expect(drawer.getByRole("heading", { name: order.code })).toBeFocused();
 });
 
 test("onay penceresi göründüğü anda basılan Esc yalnızca onayı kapatır; altındaki çekmece açık kalır", async ({ page }) => {
@@ -137,14 +139,17 @@ test("sevk: Vazgeç sevk etmez; onaya çift tıklamak tek sevk yazar", async ({ 
   await expect(dialog).toBeHidden();
   await expect.poll(status).toBe("shipped");
   expect(await ships()).toBe(1);
+  // Sevk et düğmesi kalktı: odak çekmece başlığında.
+  await expect(ship).toHaveCount(0);
+  await expect(drawer.getByRole("heading", { name: order.code })).toBeFocused();
 });
 
 test("atölye Başla: büyük düğmeli onay iş emrini, istasyonu ve adımı yazar; Vazgeç başlatmaz", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 });
   await loginAs(page, "Cem Doğru");
-  const pick = await one<{ id: string; code: string; seq: number; total: number; station: string; name: string }>(
+  const pick = await one<{ id: string; code: string; seq: number; pos: number; total: number; station: string; name: string }>(
     page,
-    `select w.id, w.code, s.seq, (select count(*)::int from work_order_steps a where a.work_order_id = w.id) as total, st.code as station, st.name
+    `select w.id, w.code, s.seq, (select count(*)::int from work_order_steps a where a.work_order_id = w.id and a.seq <= s.seq) as pos, (select count(*)::int from work_order_steps a where a.work_order_id = w.id) as total, st.code as station, st.name
        from work_orders w
        join work_order_steps s on s.work_order_id = w.id
        join stations st on st.id = s.station_id
@@ -161,7 +166,7 @@ test("atölye Başla: büyük düğmeli onay iş emrini, istasyonu ve adımı ya
 
   await start.click();
   const dialog = confirmDialog(page);
-  await expect(dialog).toContainText(`${pick.code} · ${pick.name} adımı başlatılacak (adım ${pick.seq}/${pick.total}).`);
+  await expect(dialog).toContainText(`${pick.code} · ${pick.name} adımı başlatılacak (adım ${pick.pos}/${pick.total}).`);
   for (const name of ["Vazgeç", "Başlat"]) {
     expect(await settledHeight(dialog.getByRole("button", { name, exact: true })), name).toBeGreaterThanOrEqual(48);
   }

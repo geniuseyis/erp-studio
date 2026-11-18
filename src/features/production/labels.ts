@@ -79,7 +79,7 @@ export function stepControls(wo: Pick<WorkOrderDetail, "status" | "materialsRese
     return { start: null, finish: running.stationName, reason: next ? `Önce ${running.stationName} adımını bitirin.` : null };
   }
   if (!next) return { start: null, finish: null, reason: wo.steps.length === 0 ? "Bu iş emrinin rotası yok." : null };
-  if (next.seq === wo.steps[0]?.seq && !wo.materialsReserved) {
+  if (next === wo.steps[0] && !wo.materialsReserved) {
     return { start: null, finish: null, reason: "Malzeme ayrılmadı: planlama malzemeyi ayırmadan üretim başlamaz." };
   }
   return { start: next.stationName, finish: null, reason: null };
@@ -94,9 +94,9 @@ export function planText(code: string, start: Date, steps: number): string {
  * Atölye onayı: iş emri, istasyon ve adım. İlk adımın başlaması ayrılmış malzemeyi tüketir; son adımın bitmesi iş
  * emrini tamamlar ve mamulü stoğa alır (startNextStep, finishCurrentStep).
  */
-export function stepText(i: { code: string; station: string; seq: number; totalSteps: number; qtyMilli: number; kind: "start" | "finish" }): string {
-  const head = `${i.code} · ${i.station} adımı ${i.kind === "start" ? "başlatılacak" : "bitirilecek"} (adım ${i.seq}/${i.totalSteps}).`;
-  if (i.kind === "start" && i.seq === 1) return `${head} Ayrılan malzemeler tüketilecek.`;
-  if (i.kind === "finish" && i.seq === i.totalSteps) return `${head} İş emri tamamlanır, ${formatNumber(i.qtyMilli / 1000)} adet mamul stoğa girer.`;
+export function stepText(i: { code: string; station: string; position: number; totalSteps: number; qtyMilli: number; kind: "start" | "finish" }): string {
+  const head = `${i.code} · ${i.station} adımı ${i.kind === "start" ? "başlatılacak" : "bitirilecek"} (adım ${i.position}/${i.totalSteps}).`;
+  if (i.kind === "start" && i.position === 1) return `${head} Ayrılan malzemeler tüketilecek.`;
+  if (i.kind === "finish" && i.position === i.totalSteps) return `${head} İş emri tamamlanır, ${formatNumber(i.qtyMilli / 1000)} adet mamul stoğa girer.`;
   return head;
 }

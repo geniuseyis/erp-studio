@@ -75,11 +75,11 @@ test("planlama metni başlangıç gününü ve adım sayısını söyler; hafta 
 });
 
 test("atölye metni iş emri, istasyon ve adımı yazar; ilk başlatma tüketimi, son bitiş tamamlanmayı söyler", () => {
-  const base = { code: "IE-2026-0007", station: "Kesim", seq: 1, totalSteps: 4, qtyMilli: 2000 };
+  const base = { code: "IE-2026-0007", station: "Kesim", position: 1, totalSteps: 4, qtyMilli: 2000 };
   expect(stepText({ ...base, kind: "start" })).toBe("IE-2026-0007 · Kesim adımı başlatılacak (adım 1/4). Ayrılan malzemeler tüketilecek.");
-  expect(stepText({ ...base, seq: 2, kind: "start" })).toBe("IE-2026-0007 · Kesim adımı başlatılacak (adım 2/4).");
-  expect(stepText({ ...base, seq: 2, kind: "finish" })).toBe("IE-2026-0007 · Kesim adımı bitirilecek (adım 2/4).");
-  expect(stepText({ ...base, seq: 4, kind: "finish" })).toBe("IE-2026-0007 · Kesim adımı bitirilecek (adım 4/4). İş emri tamamlanır, 2 adet mamul stoğa girer.");
+  expect(stepText({ ...base, position: 2, kind: "start" })).toBe("IE-2026-0007 · Kesim adımı başlatılacak (adım 2/4).");
+  expect(stepText({ ...base, position: 2, kind: "finish" })).toBe("IE-2026-0007 · Kesim adımı bitirilecek (adım 2/4).");
+  expect(stepText({ ...base, position: 4, kind: "finish" })).toBe("IE-2026-0007 · Kesim adımı bitirilecek (adım 4/4). İş emri tamamlanır, 2 adet mamul stoğa girer.");
 });
 
 test("stok metni eldeki miktarın öncesini ve sonrasını yazar", () => {

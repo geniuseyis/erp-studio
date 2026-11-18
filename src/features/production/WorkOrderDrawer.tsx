@@ -110,7 +110,7 @@ export function WorkOrderDrawer({ id, onClose }: { id: string; onClose: () => vo
     });
 
   const stepInfo = (seq: number, station: string, kind: "start" | "finish") =>
-    w ? stepText({ code: w.code, station, seq: w.steps.findIndex((s) => s.seq === seq) + 1, totalSteps: w.steps.length, qtyMilli: w.qtyMilli, kind }) : "";
+    w ? stepText({ code: w.code, station, position: w.steps.findIndex((s) => s.seq === seq) + 1, totalSteps: w.steps.length, qtyMilli: w.qtyMilli, kind }) : "";
 
   const onStart = (e: MouseEvent) =>
     w &&

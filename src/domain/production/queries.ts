@@ -243,6 +243,8 @@ export type QueueItem = {
   productName: string;
   qtyMilli: number;
   seq: number;
+  /** Rotadaki 1 tabanlı sıra; `seq` boşluklu olabilir, ekranda bu gösterilir. */
+  position: number;
   totalSteps: number;
   minutes: number;
   state: "waiting" | "running";
@@ -297,6 +299,7 @@ export async function stationQueue(db: Db, stationCode: string): Promise<QueueIt
       productName: r.productName,
       qtyMilli: r.wo.qtyMilli,
       seq: r.step.seq,
+      position: index + 1,
       totalSteps: all.length,
       minutes: r.step.minutes,
       state,

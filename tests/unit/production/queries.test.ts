@@ -157,8 +157,34 @@ test("istasyon kuyruğu: ilk adımı bekleyen yalnızca malzemesi ayrılmış i�
   await reserve(wo.id);
   const q = await stationQueue(db, stationCodes[0] as string);
   expect(q).toHaveLength(1);
-  expect(q[0]).toMatchObject({ workOrderId: wo.id, state: "waiting", seq: 1, totalSteps: 3, minutes: 20, productName: "Sükût Komodin", qtyMilli: 1000 });
+  expect(q[0]).toMatchObject({ workOrderId: wo.id, state: "waiting", seq: 1, position: 1, totalSteps: 3, minutes: 20, productName: "Sükût Komodin", qtyMilli: 1000 });
   expect(q[0]?.dueAt).toEqual(day("2026-12-15"));
+});
+
+test("seq 10, 20, 30 olan rotada konumlar 1, 2, 3", async () => {
+  const gapped = (await addProduct(db, { name: "Boşluklu Rota" })).id;
+  const codes: string[] = [];
+  for (const seq of [10, 20, 30]) {
+    const st = await addStation(db);
+    codes.push(st.code);
+    await addRouting(db, { productId: gapped, seq, stationId: st.id, minutesPerUnit: 5 });
+  }
+  await addBomLine(db, { productId: gapped, materialId, qtyMilli: 1000 });
+  const o = await createOrder(satis, { customerId: (await addCustomer(db, { name: "Rota" })).id, dueAt: day("2026-12-15") });
+  await addLine(satis, { orderId: o.id, productId: gapped, qtyMilli: 1000 });
+  await confirmOrder(satis, o.id);
+  const wo = (await listWorkOrders(db)).find((w) => w.productName === "Boşluklu Rota");
+  if (!wo) throw new Error("iş emri yok");
+  await reserve(wo.id);
+  const positions: number[] = [];
+  for (const code of codes) {
+    const item = (await stationQueue(db, code))[0];
+    positions.push(item?.position ?? 0);
+    expect(item?.totalSteps).toBe(3);
+    await startNextStep(atolye, wo.id);
+    await finishCurrentStep(atolye, wo.id);
+  }
+  expect(positions).toEqual([1, 2, 3]);
 });
 
 test("kuyrukta önceki adımı bitmemiş iş görünmez; çalışan adım running olur", async () => {

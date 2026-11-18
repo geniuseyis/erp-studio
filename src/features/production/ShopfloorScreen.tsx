@@ -88,7 +88,7 @@ export function ShopfloorScreen() {
           <p className="font-semibold">
             {item.productName} × {formatNumber(item.qtyMilli / 1000)} adet
           </p>
-          <p>{stepText({ code: item.code, station: station.name, seq: item.seq, totalSteps: item.totalSteps, qtyMilli: item.qtyMilli, kind: starting ? "start" : "finish" })}</p>
+          <p>{stepText({ code: item.code, station: station.name, position: item.position, totalSteps: item.totalSteps, qtyMilli: item.qtyMilli, kind: starting ? "start" : "finish" })}</p>
         </>
       ),
       confirmLabel: starting ? "Başlat" : "Bitir",
@@ -177,7 +177,7 @@ function QueueCard({ item, canExecute, busy, onAct }: { item: QueueItem; canExec
         </p>
         <dl className="tabular grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
           <Fact label="Adım">
-            {item.seq}/{item.totalSteps}
+            {item.position}/{item.totalSteps}
           </Fact>
           <Fact label="Süre">{formatMinutes(item.minutes)}</Fact>
           <Fact label="Planlanan gün">{item.plannedDay ? formatDue(item.plannedDay) : "Verilmedi"}</Fact>
