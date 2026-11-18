@@ -115,7 +115,10 @@ test("dışa aktar → yükle: bütün tablolar kimlikler sıra numarasına eşl
   let textIds = 0;
   for (const table of SNAPSHOT_TABLES) {
     const all = getTableColumns(table);
-    const original = (await generated.select().from(table)) as Record<string, unknown>[];
+    // Dışa aktarma birincil anahtara göre sıralı numaralar; beklenen eşleme de aynı sırayla kurulur (heap sırasına bağlı değil).
+    const primary = Object.values(all).find((column) => column.primary);
+    const read = generated.select().from(table).$dynamic();
+    const original = (await (primary ? read.orderBy(primary) : read)) as Record<string, unknown>[];
     const expected = original.map((row) =>
       Object.fromEntries(
         Object.entries(row).map(([key, value]) => {

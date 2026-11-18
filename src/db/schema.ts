@@ -392,6 +392,8 @@ export const auditLog = pgTable(
     entityId: text("entity_id").notNull(),
     action: text("action").notNull(),
     summary: text("summary").notNull(),
+    /** Aranan metin: searchKey(özet + kişi adı + kayıt kodu). İşlemler araması bunu LIKE ile süzer. */
+    searchKey: text("search_key").notNull().default(""),
     createdAt: createdAt(),
   },
   (t) => [index("audit_log_entity_idx").on(t.entity, t.entityId)],

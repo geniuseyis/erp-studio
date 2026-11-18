@@ -5,6 +5,7 @@ CREATE TABLE "audit_log" (
 	"entity_id" text NOT NULL,
 	"action" text NOT NULL,
 	"summary" text NOT NULL,
+	"search_key" text DEFAULT '' NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint

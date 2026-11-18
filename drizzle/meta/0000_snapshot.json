@@ -1,5 +1,5 @@
 {
-  "id": "5a3a2265-5388-4107-908a-a4e6cacb2acb",
+  "id": "3e8ba151-a6ae-412c-ab0d-575ae11cfc9b",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -44,6 +44,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "search_key": {
+          "name": "search_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
         },
         "created_at": {
           "name": "created_at",

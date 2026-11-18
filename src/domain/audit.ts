@@ -2,13 +2,23 @@ import { eq } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { auditLog, salesOrderLines, salesOrders, stockCounts, workOrders } from "@/db/schema";
 import { type Ctx, isUuid } from "./context";
+import { searchKey } from "./text";
 
-/** İşlem geçmişine "kim, neyi, ne yaptı" satırı yazar. Değişikliği yapan transaction içinde çağrılır. */
+/**
+ * İşlem geçmişine "kim, neyi, ne yaptı" satırı yazar. Değişikliği yapan transaction içinde çağrılır.
+ * Arama anahtarı özet, kişi adı ve (özet içermiyorsa) `code`: kaydın kodu ile oluşur.
+ */
 export async function logAudit(
   ctx: Ctx,
-  e: { entity: string; entityId: string; action: string; summary: string },
+  e: { entity: string; entityId: string; action: string; summary: string; code?: string },
 ): Promise<void> {
-  await ctx.db.insert(auditLog).values({ ...e, userId: ctx.user.id, createdAt: ctx.now });
+  const { code, ...row } = e;
+  await ctx.db.insert(auditLog).values({
+    ...row,
+    searchKey: searchKey(`${e.summary} ${ctx.user.name} ${code ?? ""}`),
+    userId: ctx.user.id,
+    createdAt: ctx.now,
+  });
 }
 
 /** Özet için alan tanımı: Türkçe etiket ve değeri yazma biçimi (verilmezse metin olarak; boş metin "boş"). */

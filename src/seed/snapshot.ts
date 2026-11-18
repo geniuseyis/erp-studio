@@ -27,6 +27,7 @@ import {
   workOrderSteps,
   workOrders,
 } from "@/db/schema";
+import { searchKey } from "@/domain/text";
 import { istanbulDayStart, isWorkday, prevWorkday, shiftWorkdays, workdaysBetween } from "@/domain/production/calendar";
 import { mulberry32 } from "./rng";
 
@@ -55,6 +56,8 @@ const TABLES: PgTable[] = [
   settings,
 ];
 const CHUNK = 400;
+/** Dosyaya yazılmayan, yüklemede türetilen sütunlar (dosya boyutu için): audit_log.search_key özet ve kişi adından üretilir. */
+const DERIVED: Record<string, string[]> = { audit_log: ["searchKey"] };
 
 /** Yükleme sırası; testler aynı sırayla gezer. */
 export const SNAPSHOT_TABLES: readonly PgTable[] = TABLES;
@@ -101,12 +104,16 @@ export async function exportSnapshot(db: Db, takenAt: Date): Promise<Snapshot> {
   const tables: Snapshot["tables"] = {};
   for (const table of TABLES) {
     const all = getTableColumns(table);
-    const columns = Object.keys(all);
+    const derived = new Set(DERIVED[getTableName(table)] ?? []);
+    const columns = Object.keys(all).filter((key) => !derived.has(key));
     const dates = new Set(dateColumns(table));
     // Yalnızca uuid ve düz metin sütunları sıkıştırılır; json/jsonb değerleri karışık türde olabilir, dokunulmaz.
     const internable = new Set(columns.filter((key) => INTERNABLE.has(all[key]?.columnType ?? "")));
     const uuidColumns = new Set<string>();
-    const rows = ((await db.select().from(table)) as Record<string, unknown>[]).map((row) =>
+    // Kimlik numaraları satırların okunma sırasına bağlıdır; birincil anahtara göre sıralanınca heap sırasından bağımsız, kararlı olur.
+    const primary = Object.values(all).find((column) => column.primary);
+    const read = db.select().from(table as PgTable).$dynamic();
+    const rows = ((await (primary ? read.orderBy(primary) : read)) as Record<string, unknown>[]).map((row) =>
       columns.map((key) => {
         const value = row[key];
         if (dates.has(key) && value instanceof Date) return value.getTime();
@@ -194,8 +201,13 @@ export async function loadSnapshot(db: Db, snapshot: Snapshot, now: Date): Promi
   const ids: string[] = [];
   const uuid = (index: number) => (ids[index] ??= deterministicUuid(index));
   await db.transaction(async (tx) => {
+    const userNames = new Map<string, string>();
     for (const table of TABLES) {
       const shifted = decodeRows(snapshot, table, shift, uuid);
+      if (table === users) for (const u of shifted) userNames.set(String(u.id), String(u.name));
+      if (table === auditLog) {
+        for (const row of shifted) row.searchKey = searchKey(`${row.summary} ${userNames.get(String(row.userId)) ?? ""}`);
+      }
       for (let i = 0; i < shifted.length; i += CHUNK) {
         await tx.insert(table).values(shifted.slice(i, i + CHUNK) as never);
       }
