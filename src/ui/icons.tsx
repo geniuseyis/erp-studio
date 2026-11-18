@@ -72,3 +72,4 @@ export const TrashIcon = make(<path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13M10 
 export const MalletIcon = make(<><path d="m13 11-8.5 8.5a1.5 1.5 0 0 1-2-2L11 9" /><path d="M9.5 7.5 14 3l7 7-4.5 4.5Z" /></>);
 /** Haftalık plan: takvim yaprağı üzerinde gün sütunları ve bir kart. */
 export const PlanIcon = make(<><rect x="3" y="4.5" width="18" height="16" rx="2" /><path d="M8 3v3M16 3v3M3 9.5h18M9 9.5v11M15 9.5v11" /><path d="M10.5 13h3v3h-3z" /></>);
+export const GripIcon = make(<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" strokeWidth={2.6} />);

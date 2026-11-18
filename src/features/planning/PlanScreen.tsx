@@ -1,33 +1,93 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useEffectEvent, useId, useRef, useState } from "react";
+import { istanbulDayStart, shiftWorkdays } from "@/domain/production/calendar";
 import { type PlanStep, weekStartOf } from "@/domain/production/schedule";
+import { DomainError } from "@/domain/errors";
+import { can } from "@/domain/permissions";
 import { HeroStat, Page, PageHeader } from "@/shell/AppGuard";
+import { useSession } from "@/shell/session";
+import { errorMessage, useGuardedRun } from "@/shell/useAction";
+import { useConfirm } from "@/shell/useConfirm";
 import { useUrlState } from "@/shell/useUrlState";
 import { Button } from "@/ui/Button";
-import { ChevronLeftIcon, ChevronRightIcon } from "@/ui/icons";
+import { AlertIcon, ChevronLeftIcon, ChevronRightIcon } from "@/ui/icons";
 import { CountUp } from "@/ui/motion";
 import { Skeleton } from "@/ui/Skeleton";
+import { useToast } from "@/ui/Toast";
 import { useEdgeFades } from "@/ui/useEdgeFades";
-import { useWeekPlan } from "./hooks";
-import { loadText, parseWeek, weekKey, weekLabel, weekSummary } from "./labels";
-import { PlanGrid } from "./PlanGrid";
+import { useMoveStep, usePreviewMove, useWeekPlan } from "./hooks";
+import { announceDay, capacityWarning, dayMonth, loadText, longDay, moveQuestion, parseWeek, weekKey, weekLabel, weekSummary } from "./labels";
+import type { DragData } from "./PlanCard";
+import { stepKey } from "./PlanCard";
+import { type Ghost, PlanGrid } from "./PlanGrid";
 
-/** Haftalık üretim planı: istasyon × gün ızgarası, hücrede kapasite çubuğu ve adım kartları. */
+/** Klavyeyle tutulan kart: kaynağı ve şu an üzerinde durduğu gün (başka haftada olabilir). */
+type Held = DragData & { toDay: Date; fromWeek: Date };
+
+const sameDay = (a: Date, b: Date) => istanbulDayStart(a).getTime() === istanbulDayStart(b).getTime();
+const NOT_MOVABLE: Record<PlanStep["state"], string> = {
+  running: "adım çalışıyor",
+  done: "adım bitti",
+  planned: "iş emri açık değil",
+};
+
+/**
+ * Kartı odaklar. Onay penceresi kapanırken Radix odağı açan öğeye (ya da main'e) geri verir; kart taşındıysa yeni
+ * hücrede yeni bir öğedir. Pencere ekrandan kalkıp iki kare sakin geçince kart bulunur ve odaklanır.
+ */
+function focusStep(key: string) {
+  const started = performance.now();
+  let calm = 0;
+  const tick = () => {
+    calm = document.querySelector('[role="alertdialog"]') ? 0 : calm + 1;
+    const el = document.querySelector<HTMLElement>(`[data-step-key="${CSS.escape(key)}"]`);
+    if (el && calm >= 2) {
+      el.focus();
+      return;
+    }
+    if (performance.now() - started < 3000) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+/**
+ * Haftalık üretim planı: istasyon × gün ızgarası, hücrede kapasite çubuğu ve adım kartları. Planlama yetkisi olan
+ * kartı aynı istasyonda başka güne sürükler ya da klavyeyle taşır; her taşıma önizlenir ve onay ister.
+ */
 export function PlanScreen() {
   const router = useRouter();
+  const { user } = useSession();
+  const toast = useToast();
   const [params, setParams] = useUrlState();
-  // Ekranın açıldığı an: bugün sütunu ve "bu hafta".
+  // Ekranın açıldığı an: bugün sütunu ve "bu hafta". Taşımanın kuralları her istekte güncel saatle denetlenir.
   const [now] = useState(() => new Date());
   const thisWeek = weekStartOf(now);
   const weekStart = parseWeek(params.get("hafta"), now);
   const query = useWeekPlan(weekStart);
   const plan = query.data;
   const stale = plan !== undefined && plan.weekStart.getTime() !== weekStart.getTime();
+  const canWrite = user ? can(user, "planning", "write") : false;
+
+  const preview = usePreviewMove();
+  const move = useMoveStep();
+  const ask = useConfirm();
+  const { run: guarded } = useGuardedRun<"move">();
+  // Tutulan kart hem çizim için durumda hem de tuş dinleyicisi için ref'te: art arda basılan oklar bir sonraki çizimi beklemez.
+  const [held, setHeld] = useState<Held | null>(null);
+  const heldRef = useRef<Held | null>(null);
+  const hold = (h: Held | null) => {
+    heldRef.current = h;
+    setHeld(h);
+  };
+  const [pending, setPending] = useState<Ghost | null>(null);
+  const [message, setMessage] = useState("");
+  const instructionsId = useId();
   const scrollRef = useRef<HTMLDivElement>(null);
   useEdgeFades(scrollRef);
 
+  const say = useCallback((text: string) => setMessage(text), []);
   const goWeek = useCallback(
     (day: Date) => {
       const start = weekStartOf(day);
@@ -35,7 +95,167 @@ export function PlanScreen() {
     },
     [setParams, now],
   );
+
   const openOrder = (step: PlanStep) => router.push(`/uretim/is-emirleri?ac=${step.workOrderId}`);
+
+  /** Bırakılan taşıma: önce yazmadan önizlenir; kural ihlalinde bildirim, yoksa onay penceresi ve moveStep. */
+  async function requestMove(d: DragData, toDay: Date, keyboard: { fromWeek: Date } | null) {
+    const key = stepKey(d.step);
+    const label = `${d.step.code} ${d.stationName}: ${longDay(toDay)} gününe taşınacak`;
+    setPending({ key, stationId: d.stationId, day: istanbulDayStart(toDay), step: d.step, label });
+    const back = () => {
+      if (!keyboard) return;
+      if (weekStartOf(toDay).getTime() !== keyboard.fromWeek.getTime()) goWeek(keyboard.fromWeek);
+      focusStep(key);
+    };
+    let result: Awaited<ReturnType<typeof preview>>;
+    try {
+      result = await preview({ workOrderId: d.step.workOrderId, seq: d.step.seq, toDay });
+    } catch (error) {
+      setPending(null);
+      toast.error(errorMessage(error));
+      back();
+      return;
+    }
+    if (result.error) {
+      setPending(null);
+      toast.error(errorMessage(new DomainError("VALIDATION", result.error)));
+      back();
+      return;
+    }
+    const moved = await ask.confirm({
+      title: "Adım taşınsın mı?",
+      body: (
+        <>
+          <p>{moveQuestion(d.step.code, d.stationName, d.day, toDay)}</p>
+          {result.overCapacity ? (
+            <p className="flex items-start gap-2.5 rounded-2xl bg-danger-bg px-3.5 py-3 text-sm text-danger ring-1 ring-danger/25 ring-inset">
+              <AlertIcon size={18} className="mt-px shrink-0" />
+              <span>
+                <span className="font-semibold">Kapasite aşılıyor.</span> {capacityWarning(d.stationName, toDay, result.loadMinutes, result.capacityMin)}
+              </span>
+            </p>
+          ) : (
+            <p className="text-sm text-fg-muted">
+              {d.stationName} {dayMonth(toDay)}: {loadText(result.loadMinutes, result.capacityMin)}
+            </p>
+          )}
+        </>
+      ),
+      confirmLabel: "Taşı",
+      action: () =>
+        guarded("move", async () => {
+          await move.mutateAsync({ workOrderId: d.step.workOrderId, seq: d.step.seq, toDay });
+          toast.success(`${d.step.code} ${d.stationName} ${dayMonth(toDay)} gününe taşındı`);
+        }),
+    });
+    setPending(null);
+    if (moved) {
+      if (keyboard) focusStep(key);
+    } else back();
+  }
+
+  function pickUp(d: DragData) {
+    hold({ ...d, toDay: d.day, fromWeek: weekStartOf(d.day) });
+    say(`${d.step.code} ${d.stationName} tutuldu, ${longDay(d.day)} üzerinde. Sol ve sağ okla gün değiştirin, Enter ile bırakın, Esc ile vazgeçin.`);
+  }
+
+  function onCardKey(e: KeyboardEvent<HTMLDivElement>, d: DragData) {
+    if (held) return;
+    if (e.key === "Enter" && e.shiftKey) {
+      e.preventDefault();
+      openOrder(d.step);
+      return;
+    }
+    if (e.key !== " " && e.key !== "Enter") return;
+    e.preventDefault();
+    if (e.repeat) return;
+    if (!canWrite) {
+      openOrder(d.step);
+      return;
+    }
+    if (!d.step.movable || stale) {
+      say(`${d.step.code} ${d.stationName} taşınamaz: ${NOT_MOVABLE[d.step.state]}`);
+      return;
+    }
+    pickUp(d);
+  }
+
+  /** Tutmayı bırakır; kart başka haftadaysa görünüm kaynağın haftasına döner, odak karta gelir. */
+  function cancelHold(h: Held) {
+    hold(null);
+    say(`Taşımadan vazgeçildi; ${h.step.code} ${h.stationName} yerinde kaldı.`);
+    if (weekStartOf(h.toDay).getTime() !== h.fromWeek.getTime()) goWeek(h.fromWeek);
+    focusStep(stepKey(h.step));
+  }
+
+  // Tutulan kart: tuşlar sayfanın neresinde olursa olsun buraya gelir (hafta değişince asıl kart ekrandan kalkar).
+  const onHeldKey = useEffectEvent((e: globalThis.KeyboardEvent) => {
+    const h = heldRef.current;
+    if (!h) return;
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      e.stopPropagation();
+      const toDay = shiftWorkdays(h.toDay, e.key === "ArrowRight" ? 1 : -1);
+      hold({ ...h, toDay });
+      if (weekStartOf(toDay).getTime() !== weekStartOf(h.toDay).getTime()) goWeek(toDay);
+      say(announceDay(h.step.code, h.stationName, toDay));
+    } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      e.preventDefault();
+      e.stopPropagation();
+      say(`Adım yalnızca kendi istasyonunda (${h.stationName}) gün değiştirir.`);
+    } else if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.repeat) return;
+      if (sameDay(h.toDay, h.day)) return cancelHold(h);
+      hold(null);
+      void requestMove(h, h.toDay, { fromWeek: h.fromWeek });
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      cancelHold(h);
+    } else if (e.key === "Tab") {
+      cancelHold(h);
+    }
+  });
+  // Başka bir yere tıklamak tutmayı bırakır.
+  const onHeldPointer = useEffectEvent(() => {
+    if (heldRef.current) cancelHold(heldRef.current);
+  });
+  const holding = held !== null;
+  useEffect(() => {
+    if (!holding) return;
+    const key = (e: globalThis.KeyboardEvent) => onHeldKey(e);
+    const pointer = () => onHeldPointer();
+    window.addEventListener("keydown", key, { capture: true });
+    window.addEventListener("pointerdown", pointer, { capture: true });
+    return () => {
+      window.removeEventListener("keydown", key, { capture: true });
+      window.removeEventListener("pointerdown", pointer, { capture: true });
+    };
+  }, [holding]);
+
+  // Hafta değişti ve tutulan kartın kaynağı ekranda değil: odak hedef hücredeki gölge karta geçer.
+  const heldWeek = held ? weekStartOf(held.toDay).getTime() : null;
+  useEffect(() => {
+    const h = heldRef.current;
+    if (heldWeek === null || !h || stale || !plan) return;
+    if (document.querySelector(`[data-step-key="${CSS.escape(stepKey(h.step))}"]`)) return;
+    document.querySelector<HTMLElement>("[data-ghost]")?.focus();
+  }, [heldWeek, stale, plan]);
+
+  const ghost: Ghost | null = held
+    ? sameDay(held.toDay, held.day)
+      ? null
+      : {
+          key: stepKey(held.step),
+          stationId: held.stationId,
+          day: istanbulDayStart(held.toDay),
+          step: held.step,
+          label: `${announceDay(held.step.code, held.stationName, held.toDay)}. Enter ile bırakın, Esc ile vazgeçin.`,
+        }
+    : pending;
 
   const summary = plan && !stale ? weekSummary(plan) : null;
   const isThisWeek = weekStart.getTime() === thisWeek.getTime();
@@ -45,7 +265,7 @@ export function PlanScreen() {
     <Page fill>
       <PageHeader
         title="Haftalık plan"
-        description="İstasyonların günlük yükü ve iş emri adımları: hangi gün hangi istasyon dolu, hangi iş termini aşıyor."
+        description="İstasyonların günlük yükü ve iş emri adımları. Kartı aynı istasyonda başka bir güne taşıyın; her taşıma önce onay ister."
         stats={
           summary ? (
             <>
@@ -87,7 +307,11 @@ export function PlanScreen() {
               {weekLabel(weekStart)}
               {isThisWeek ? <span className="ml-2 align-middle text-xs font-semibold text-accent">bu hafta</span> : null}
             </h2>
-            <p className="mt-0.5 text-xs text-fg-muted">Kart iş emrini açar.</p>
+            <p id={instructionsId} className="mt-0.5 text-xs text-fg-muted">
+              {canWrite
+                ? "Kartı sürükleyin ya da odaklayıp Space ile tutun; sol ve sağ okla gün değiştirin, Enter ile bırakın, Esc ile vazgeçin. Shift+Enter iş emrini açar."
+                : "Yalnızca görüntüleme: kartları taşımak planlama yetkisi ister. Kart iş emrini açar."}
+            </p>
           </div>
           <div role="group" aria-label="Hafta seçimi" className="flex items-center gap-1.5">
             <Button size="sm" aria-label="Önceki hafta" icon={<ChevronLeftIcon size={15} />} onClick={() => shift(-1)}>
@@ -107,7 +331,18 @@ export function PlanScreen() {
           className="scroll-x plan-scroll relative min-h-0 overflow-auto overscroll-x-contain [--plan-station:7.5rem] sm:[--plan-station:10.5rem] md:flex-1"
         >
           {plan ? (
-            <PlanGrid plan={plan} stale={stale} today={now} onOpen={openOrder} />
+            <PlanGrid
+              plan={plan}
+              stale={stale}
+              today={now}
+              canWrite={canWrite}
+              heldKey={held ? stepKey(held.step) : null}
+              ghost={ghost}
+              instructionsId={instructionsId}
+              onDrop={(d, toDay) => void requestMove(d, toDay, null)}
+              onOpen={openOrder}
+              onCardKey={onCardKey}
+            />
           ) : (
             <div aria-busy="true" className="grid gap-3 p-4">
               {Array.from({ length: 6 }, (_, i) => (
@@ -118,6 +353,10 @@ export function PlanScreen() {
         </div>
         <Legend />
       </section>
+      <div role="status" aria-label="Plan duyurusu" aria-live="assertive" aria-atomic="true" className="sr-only">
+        {message}
+      </div>
+      {ask.element}
     </Page>
   );
 }
@@ -137,7 +376,7 @@ function Legend() {
       </span>
       <span className={item}>
         <span aria-hidden="true" className="h-3 w-1 rounded-full bg-warn" />
-        Çalışıyor
+        Çalışıyor (taşınamaz)
       </span>
       <span className={item}>
         <span aria-hidden="true" className="h-3 w-1 rounded-full bg-ok/60" />
