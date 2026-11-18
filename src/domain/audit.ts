@@ -7,17 +7,19 @@ import { searchKey } from "./text";
 
 /**
  * İşlem geçmişine "kim, neyi, ne yaptı" satırı yazar. Değişikliği yapan transaction içinde çağrılır.
- * Arama anahtarı özet, kişi adı ve (özet içermiyorsa) `code`: kaydın kodu ile oluşur.
+ * Arama anahtarı özet, kişi adı ve kaydın etiketi (kod ve ad) ile oluşur.
  */
 export async function logAudit(
   ctx: Ctx,
-  e: { entity: string; entityId: string; action: string; summary: string; code?: string },
+  e: { entity: string; entityId: string; action: string; summary: string },
 ): Promise<void> {
-  const { code, ...row } = e;
   const label = await lookupSearchLabel(ctx.db, e.entity, e.entityId);
   await ctx.db.insert(auditLog).values({
-    ...row,
-    searchKey: searchKey(searchText({ summary: e.summary, userName: ctx.user.name, label, code })),
+    entity: e.entity,
+    entityId: e.entityId,
+    action: e.action,
+    summary: e.summary,
+    searchKey: searchKey(searchText({ summary: e.summary, userName: ctx.user.name, label })),
     userId: ctx.user.id,
     createdAt: ctx.now,
   });

@@ -20,8 +20,8 @@ let bt: SessionUser;
 
 const at = (iso: string) => new Date(`${iso}+03:00`);
 
-async function log(user: SessionUser, entity: string, entityId: string, summary: string, createdAt: Date, action = "update", code?: string) {
-  await logAudit(ctxFor(db, user, createdAt), { entity, entityId, action, summary, code });
+async function log(user: SessionUser, entity: string, entityId: string, summary: string, createdAt: Date, action = "update") {
+  await logAudit(ctxFor(db, user, createdAt), { entity, entityId, action, summary });
 }
 
 /** Doğrudan toplu ekleme: arama anahtarı logAudit'in yazdığıyla aynı biçimde elle doldurulur. */
@@ -251,11 +251,6 @@ test("aramada limit SQL'de uygulanır: limit 3 en yeni 3 eşleşmeyi döner", as
   await db.insert(auditLog).values(rows);
   const found = await listActivity(db, bt, { search: "giriş", limit: 3 });
   expect(found.map((r) => r.summary)).toEqual(["MLZ-0001 giriş 38", "MLZ-0001 giriş 36", "MLZ-0001 giriş 34"]);
-});
-
-test("logAudit'e verilen kod, özette olmasa da arama anahtarına girer", async () => {
-  await log(ayse, "settings", "x", "ayar değişti", at("2026-11-10T09:00:00"), "update", "AYR-0001");
-  expect(await listActivity(db, bt, { search: "ayr-0001" })).toHaveLength(1);
 });
 
 /** Kayıt adıyla aranabilen satırlar: özet adı içermez; ad kayıttan çözülür. */

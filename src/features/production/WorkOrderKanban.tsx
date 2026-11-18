@@ -25,7 +25,7 @@ function hint(column: KanbanColumn): string {
 }
 
 /** Termin geçmişse kaç gün geçtiği (İstanbul günleriyle); geçmemişse null. */
-export function daysLate(dueAt: Date | null, now: Date): number | null {
+function daysLate(dueAt: Date | null, now: Date): number | null {
   if (!dueAt) return null;
   const late = Math.round(
     (istanbulDayStart(now).getTime() - istanbulDayStart(dueAt).getTime()) /

@@ -9,8 +9,6 @@ export const TABLE_HEIGHT_KEY = "erp:table-h:";
 /** Tablo kabının en küçük ve en büyük yüksekliği (piksel). En küçüğü 16rem'dir. */
 export const TABLE_MIN = 256;
 export const TABLE_MAX = 2400;
-/** Ayar yokken tablonun inebileceği en küçük yükseklik: 24rem. */
-export const TABLE_AUTO_MIN_REM = 24;
 
 export function readPref(key: string): string | null {
   try {

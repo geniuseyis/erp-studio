@@ -1,8 +1,17 @@
 import { PGlite } from "@electric-sql/pglite";
+import { afterAll } from "vitest";
 import { type Db, makeDb } from "@/db/client";
 import { applyMigrations } from "@/db/migrate";
 
 let shared: { pg: PGlite; db: Db } | null = null;
+const fresh: PGlite[] = [];
+
+// Test dosyası bitince açılan bütün PostgreSQL örnekleri kapatılır (bellek sızıntısı olmasın).
+afterAll(async () => {
+  const all = [...fresh.splice(0), ...(shared ? [shared.pg] : [])];
+  shared = null;
+  await Promise.all(all.map((pg) => pg.close().catch(() => undefined)));
+});
 
 async function open(): Promise<{ pg: PGlite; db: Db }> {
   const pg = new PGlite();
@@ -16,7 +25,11 @@ async function open(): Promise<{ pg: PGlite; db: Db }> {
  * `fresh: true`: aynı anda iki ayrı veritabanı gereken testler için yeni bir PostgreSQL açar.
  */
 export async function createTestDb(opts: { fresh?: boolean } = {}): Promise<Db> {
-  if (opts.fresh) return (await open()).db;
+  if (opts.fresh) {
+    const opened = await open();
+    fresh.push(opened.pg);
+    return opened.db;
+  }
   if (!shared) {
     shared = await open();
     return shared.db;

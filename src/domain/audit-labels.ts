@@ -60,6 +60,6 @@ export async function lookupSearchLabel(db: Db, entity: string, entityId: string
 }
 
 /** Arama anahtarının ham metni (searchKey'e verilmeden önce): özet, kişi adı, kayıt adı, isteğe bağlı kod. */
-export function searchText(parts: { summary: string; userName: string; label: string; code?: string }): string {
-  return `${parts.summary} ${parts.userName} ${parts.label} ${parts.code ?? ""}`;
+export function searchText(parts: { summary: string; userName: string; label: string }): string {
+  return `${parts.summary} ${parts.userName} ${parts.label}`;
 }
