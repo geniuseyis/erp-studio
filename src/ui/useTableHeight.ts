@@ -5,7 +5,7 @@ import { clampHeight, parseHeight, readPref, TABLE_HEIGHT_KEY, TABLE_MAX, TABLE_
 
 const STEP = 40;
 const PAGE_STEP = 160;
-/** Sayfanın alt iç boşluğu (Page: pb-5); "pencereyi doldur" bunu bırakır. */
+/** Sayfanın alt boşluğu (Page fill: `after:` ara öğesi, 20 px); "pencereyi doldur" bunu bırakır. */
 const BOTTOM_GAP = 20;
 
 /**
@@ -29,6 +29,14 @@ export function useTableHeight(rootRef: RefObject<HTMLElement | null>, screen: s
     observer.observe(el);
     return () => observer.disconnect();
   }, [rootRef]);
+
+  // Ekran sürükleme sırasında kapanırsa (ör. menüden başka sayfaya geçiş) sayfada metin seçimi kapalı kalmasın.
+  useEffect(
+    () => () => {
+      if (drag.current) document.body.style.userSelect = "";
+    },
+    [],
+  );
 
   /** Sürüklemeyi bitirir. Kıpırdamadan bırakılan tıklama ayarı değiştirmez (otomatik boyut korunur). */
   function endDrag(e: PointerEvent<HTMLElement>, apply: boolean) {

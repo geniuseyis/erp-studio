@@ -96,7 +96,7 @@ export function PageHeader({ title, description, actions, stats, kicker }: PageH
           <button
             type="button"
             aria-expanded={!collapsed}
-            aria-controls={stats || description ? regionId : undefined}
+            aria-controls={stats || (description && !collapsed) ? regionId : undefined}
             onClick={toggle}
             className="press inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-medium text-hero-fg-muted transition-colors hover:bg-white/[0.1] hover:text-hero-fg"
           >
