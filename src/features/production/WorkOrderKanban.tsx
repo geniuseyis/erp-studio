@@ -1,8 +1,13 @@
 "use client";
 
 import { useId, useRef } from "react";
-import { istanbulDayStart } from "@/domain/production/calendar";
-import type { KanbanColumn, WorkOrderRow } from "@/domain/production/queries";
+import { DAY_MS, istanbulDayStart } from "@/domain/production/calendar";
+import {
+  isWaitingForMaterial,
+  type KanbanColumn,
+  stepGap,
+  type WorkOrderRow,
+} from "@/domain/production/queries";
 import { formatNumber } from "@/domain/units";
 import { formatDue } from "@/features/sales/labels";
 import { cn } from "@/ui/cn";
@@ -11,12 +16,10 @@ import { Skeleton } from "@/ui/Skeleton";
 import { StatusChip } from "@/ui/StatusChip";
 import { useEdgeFades } from "@/ui/useEdgeFades";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 /** Her sütunun başlık altındaki tek satırlık tanımı: kartın neden orada olduğunu söyler. */
 function hint(column: KanbanColumn): string {
   if (column.key === "waiting_material") return "Planlı, malzemesi ayrılamamış";
-  if (column.key === "unplanned") return "Günü olmayan adımı var";
+  if (column.key === "unplanned") return "Günü ya da adımı olmayan";
   if (column.key === "completed") return "Son 7 gün";
   return "Çalışan ya da sıradaki adım";
 }
@@ -31,9 +34,6 @@ export function daysLate(dueAt: Date | null, now: Date): number | null {
   return late > 0 ? late : null;
 }
 
-const waiting = (w: WorkOrderRow) =>
-  w.status === "planned" && !w.materialsReserved;
-
 function cardLabel(w: WorkOrderRow, late: number | null): string {
   const parts = [
     w.code,
@@ -42,7 +42,9 @@ function cardLabel(w: WorkOrderRow, late: number | null): string {
     `adım ${w.doneSteps}/${w.totalSteps}`,
     w.orderCode ? `sipariş ${w.orderCode}` : "stok için",
   ];
-  if (waiting(w)) parts.push("malzeme bekliyor");
+  if (isWaitingForMaterial(w)) parts.push("malzeme bekliyor");
+  const gap = stepGap(w);
+  if (gap) parts.push(gap.toLowerCase());
   if (w.dueAt)
     parts.push(
       late
@@ -66,6 +68,7 @@ function KanbanCard({
   const done = column === "completed";
   const late = done ? null : daysLate(w.dueAt, now);
   const running = w.status === "in_progress";
+  const gap = stepGap(w);
   return (
     <li>
       <button
@@ -122,7 +125,15 @@ function KanbanCard({
             </span>
           ) : null}
         </span>
-        {waiting(w) && column !== "waiting_material" ? (
+        {gap ? (
+          <span
+            data-testid="kanban-gap"
+            className="text-xs font-semibold text-fg-muted"
+          >
+            {gap}
+          </span>
+        ) : null}
+        {isWaitingForMaterial(w) && column !== "waiting_material" ? (
           <StatusChip tone="warn" className="h-5 w-fit text-[11px]">
             Malzeme bekliyor
           </StatusChip>
@@ -198,7 +209,9 @@ function KanbanColumnView({
         <p className="mx-2.5 mb-3 grid flex-1 place-items-center rounded-xl border border-dashed border-line-strong px-3 py-8 text-center text-sm text-fg-muted">
           {column.key === "completed"
             ? "Son 7 günde biten iş emri yok"
-            : "Burada bekleyen iş emri yok"}
+            : column.key === "waiting_material"
+              ? "Malzemesi eksik planlı iş emri yok"
+              : "Burada bekleyen iş emri yok"}
         </p>
       )}
     </section>

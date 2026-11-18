@@ -3,7 +3,7 @@ import { and, asc, desc, eq, inArray, type SQL, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { bomLines, materials, products, routings, salesOrderLines, salesOrders, stations, users, workOrders, workOrderSteps } from "@/db/schema";
 import { isUuid } from "../context";
-import { istanbulDayStart } from "./calendar";
+import { DAY_MS, istanbulDayStart } from "./calendar";
 import type { MaterialCategory } from "../inventory/types";
 import { matchesSearch } from "../text";
 import { laborCostKurus } from "./costing";
@@ -134,6 +134,22 @@ export function unscheduledWorkOrder(): SQL {
   )!;
 }
 
+/** Malzemesini bekleyen iş emri: planlı ve malzemesi ayrılmamış. Liste, özet ve kanban bu tek tanımı kullanır. */
+export function isWaitingForMaterial(w: Pick<WorkOrderRow, "status" | "materialsReserved">): boolean {
+  return w.status === "planned" && !w.materialsReserved;
+}
+
+/** Aramanın eşleştiği alanlar: kod, ürün adı, sipariş kodu. Liste ve kanban aynı sonucu bu işlevle verir. */
+export function workOrderMatches(w: Pick<WorkOrderRow, "code" | "productName" | "orderCode">, search: string | undefined): boolean {
+  return matchesSearch([w.code, w.productName, w.orderCode ?? ""], search);
+}
+
+/** Açık ama sıradaki adımı olmayan iş emrinin nedeni: rotası yok ya da bütün adımları bitmiş. Başka durumda null. */
+export function stepGap(w: Pick<WorkOrderRow, "status" | "currentStationCode" | "totalSteps">): "Rotası yok" | "Adım kalmadı" | null {
+  if ((w.status !== "planned" && w.status !== "in_progress") || w.currentStationCode !== null) return null;
+  return w.totalSteps === 0 ? "Rotası yok" : "Adım kalmadı";
+}
+
 /** `unscheduled`: yalnızca planlanmamış iş emirleri (unscheduledWorkOrder). */
 export type WorkOrderFilter = { search?: string; status?: WorkOrderStatus; unscheduled?: boolean };
 
@@ -194,7 +210,7 @@ export async function listWorkOrders(db: Db, f: WorkOrderFilter = {}): Promise<W
   return rows
     .filter((w) => !unscheduled || unscheduled.has(w.id))
     .filter((w) => !f.status || w.status === f.status)
-    .filter((w) => matchesSearch([w.code, w.productName, w.orderCode ?? ""], f.search));
+    .filter((w) => workOrderMatches(w, f.search));
 }
 
 export type WorkOrderDetail = WorkOrderRow & {
@@ -350,15 +366,16 @@ export function listStations(db: Db): Promise<Station[]> {
 
 export type KanbanColumn = { key: "waiting_material" | "unplanned" | `station:${string}` | "completed"; title: string; items: WorkOrderRow[] };
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 /** Tamamlandı sütununun penceresi: bugün dahil son 7 İstanbul günü. */
 const COMPLETED_DAYS = 7;
 
 /**
  * İş emirleri kanbanı. Her açık (planlı ya da üretimde) iş emri tam bir sütuna düşer; öncelik sırası:
- *   1. Planlanmadı: unscheduledWorkOrder koşulu (haftalık planın "Planlanmamış" sayısı ve `planlanmamis=1` listesiyle
- *      aynı). Malzemesi de bekliyorsa yine buradadır: sayı o koşuldan ayrışmasın diye plansızlık malzemeden önce gelir
- *      (kartta "Malzeme bekliyor" çipi görünür kalır). Rotasız (adımsız) açık iş emri de istasyonu olmadığı için buraya düşer.
+ *   1. Planlanmadı: haftalık planın "Planlanmamış" sayısını veren unscheduledWorkOrder koşulu (`planlanmamis=1` listesiyle aynı)
+ *      ARTI sıradaki adımı olmayan açık iş emirleri (rotası yok ya da bütün adımları bitmiş; bkz. stepGap). İkinci grup
+ *      yüzünden sütun sayısı plan sayısından büyük olabilir; kartları "Rotası yok" / "Adım kalmadı" notu taşır, açık iş
+ *      emri hiçbir sütunda kaybolmaz. Malzemesi de bekleyen plansız iş emri yine buradadır (plansızlık malzemeden önce
+ *      gelir); kartında "Malzeme bekliyor" çipi görünür.
  *   2. Malzeme bekliyor: planlanmış (bütün adımlarının günü var) ama planlı ve malzemesi ayrılmamış.
  *   3. İstasyon: çalışan adımın, yoksa sıradaki adımın istasyonu (rota sırasıyla).
  * Tamamlandı yalnızca son 7 İstanbul gününde bitenleri alır; eski tamamlananlar ve iptaller hiçbir sütunda yoktur.
@@ -386,7 +403,7 @@ export async function kanbanColumns(db: Db, now: Date): Promise<KanbanColumn[]> 
     if (w.status === "cancelled") continue;
     const station = w.currentStationCode ? byStation.get(w.currentStationCode) : undefined;
     if (unscheduled.has(w.id) || !station) unplanned.push(w);
-    else if (w.status === "planned" && !w.materialsReserved) waiting.push(w);
+    else if (isWaitingForMaterial(w)) waiting.push(w);
     else station.push(w);
   }
 

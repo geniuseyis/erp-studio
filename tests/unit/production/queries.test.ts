@@ -4,7 +4,7 @@ import type { Db } from "@/db/client";
 import { workOrders, workOrderSteps } from "@/db/schema";
 import type { Ctx } from "@/domain/context";
 import { receiveStock } from "@/domain/inventory/ledger";
-import { getProduct, getWorkOrder, kanbanColumns, listProducts, listStations, listWorkOrders, stationQueue } from "@/domain/production/queries";
+import { getProduct, getWorkOrder, isWaitingForMaterial, kanbanColumns, stepGap, workOrderMatches, listProducts, listStations, listWorkOrders, stationQueue } from "@/domain/production/queries";
 import { finishCurrentStep, planWorkOrder, retryMaterials, startNextStep } from "@/domain/production/workOrders";
 import { addLine, confirmOrder, createOrder } from "@/domain/sales/orders";
 import { addBomLine, addCustomer, addMaterial, addProduct, addRouting, addStation, addUser, ctxFor } from "../../helpers/fixtures";
@@ -318,5 +318,47 @@ describe("kanbanColumns", () => {
     const items = cols.find((c) => c.key === "unplanned")!.items;
     expect(items.map((w) => w.dueAt)).toEqual([day("2026-11-25"), day("2026-12-15")]);
     expect(items[0]).toMatchObject({ orderCode: early.code, qtyMilli: 2000, doneSteps: 0, totalSteps: 3 });
+  });
+
+  test("rotası olmayan ve adımı kalmayan açık iş emri kaybolmaz: Planlanmadı sütununda bir kez, notuyla", async () => {
+    const wos = await makeOrders(4);
+    const [stepless, finished, unscheduled, normal] = wos.map((w) => w.id) as string[];
+    await db.delete(workOrderSteps).where(eq(workOrderSteps.workOrderId, stepless!));
+    await set(finished!, { status: "in_progress", materialsReserved: true });
+    await schedule(finished!);
+    await db.update(workOrderSteps).set({ startedAt: NOW, finishedAt: NOW }).where(eq(workOrderSteps.workOrderId, finished!));
+    await schedule(normal!);
+    await set(normal!, { materialsReserved: true });
+
+    const cols = await kanbanColumns(db, NOW);
+    const placed = cols.flatMap((c) => c.items.map((w) => w.id));
+    for (const id of [stepless, finished, unscheduled, normal]) expect(placed.filter((p) => p === id), id).toHaveLength(1);
+    const unplanned = cols.find((c) => c.key === "unplanned")!.items;
+    expect(unplanned.map((w) => w.id).sort()).toEqual([stepless, finished, unscheduled].sort());
+    expect(stepGap(unplanned.find((w) => w.id === stepless)!)).toBe("Rotası yok");
+    expect(stepGap(unplanned.find((w) => w.id === finished)!)).toBe("Adım kalmadı");
+    expect(stepGap(unplanned.find((w) => w.id === unscheduled)!)).toBeNull();
+    // Sütun = planın plansız koşulu + adımı olmayanlar.
+    const rule = (await listWorkOrders(db, { unscheduled: true })).map((w) => w.id);
+    expect(unplanned.map((w) => w.id).sort()).toEqual([...new Set([...rule, stepless!, finished!])].sort());
+  });
+
+  test("kanban araması listenin aramasıyla aynı sonucu verir", async () => {
+    await makeOrders(3);
+    const cols = await kanbanColumns(db, NOW);
+    const open = new Set(cols.flatMap((c) => c.items.map((w) => w.id)));
+    const everything = cols.flatMap((c) => c.items);
+    const [first] = everything;
+    for (const q of ["sukut", "SÜKÛT", first!.code, first!.orderCode ?? "", "yokböyle", ""]) {
+      const fromList = (await listWorkOrders(db, { search: q })).map((w) => w.id).filter((id) => open.has(id)).sort();
+      const fromBoard = everything.filter((w) => workOrderMatches(w, q)).map((w) => w.id).sort();
+      expect(fromBoard, q).toEqual(fromList);
+    }
+  });
+
+  test("isWaitingForMaterial: yalnızca malzemesi ayrılmamış planlı iş emri", () => {
+    expect(isWaitingForMaterial({ status: "planned", materialsReserved: false })).toBe(true);
+    expect(isWaitingForMaterial({ status: "planned", materialsReserved: true })).toBe(false);
+    expect(isWaitingForMaterial({ status: "in_progress", materialsReserved: false })).toBe(false);
   });
 });

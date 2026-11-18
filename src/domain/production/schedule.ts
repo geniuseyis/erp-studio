@@ -5,7 +5,7 @@ import { logAudit } from "../audit";
 import { type Ctx, inTx, isUuid } from "../context";
 import { DomainError } from "../errors";
 import { assertCan } from "../permissions";
-import { addWorkdays, istanbulDayStart, isWorkday, workdaysBetween } from "./calendar";
+import { addWorkdays, DAY_MS, istanbulDayStart, isWorkday, workdaysBetween } from "./calendar";
 import { stepPosition, unscheduledWorkOrder } from "./queries";
 import type { WorkOrderStep } from "./types";
 import { materialNeeds } from "./workOrders";
@@ -36,7 +36,6 @@ export type WeekPlan = {
   unscheduled: number;
 };
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const ISTANBUL_OFFSET_MS = 3 * 60 * 60 * 1000;
 const STATE_ORDER = { running: 0, planned: 1, done: 2 } as const;
 

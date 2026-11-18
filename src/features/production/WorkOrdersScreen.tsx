@@ -1,9 +1,8 @@
 "use client";
 
 import { WORK_ORDER_STATUSES } from "@/db/schema";
-import type { WorkOrderRow } from "@/domain/production/queries";
+import { isWaitingForMaterial, type WorkOrderRow, workOrderMatches } from "@/domain/production/queries";
 import type { WorkOrderStatus } from "@/domain/production/types";
-import { matchesSearch } from "@/domain/text";
 import { formatNumber } from "@/domain/units";
 import { HeroStat, Page, PageHeader } from "@/shell/AppGuard";
 import { useUrlState } from "@/shell/useUrlState";
@@ -20,7 +19,6 @@ import { materialStateLabel, WO_STATUS_LABEL } from "./labels";
 import { WorkOrderKanban } from "./WorkOrderKanban";
 import { MaterialState, WorkOrderDrawer, WorkOrderStatusChips } from "./WorkOrderDrawer";
 
-const waiting = (w: Pick<WorkOrderRow, "status" | "materialsReserved">) => w.status === "planned" && !w.materialsReserved;
 
 const COLUMNS: Column<WorkOrderRow>[] = [
   {
@@ -52,7 +50,7 @@ const COLUMNS: Column<WorkOrderRow>[] = [
     id: "materials",
     header: "Malzeme",
     cell: (w) => <MaterialState workOrder={w} />,
-    sortValue: (w) => (waiting(w) ? 0 : 1),
+    sortValue: (w) => (isWaitingForMaterial(w) ? 0 : 1),
     csvValue: (w) => materialStateLabel(w),
   },
   {
@@ -129,7 +127,7 @@ export function WorkOrdersScreen() {
 
   const board = useKanban(view === "kanban");
   // Kanban yalnızca aramayı uygular: durum, bekleyen ve planlanmamış süzgeçleri listeye özgüdür (adreste kalır).
-  const boardColumns = board.data?.map((c) => ({ ...c, items: c.items.filter((w) => matchesSearch([w.code, w.productName, w.orderCode ?? ""], search)) }));
+  const boardColumns = board.data?.map((c) => ({ ...c, items: c.items.filter((w) => workOrderMatches(w, search)) }));
   const listOnlyFilters = status !== undefined || waitingOnly || unscheduledOnly;
   const setView = (next: "list" | "kanban") => setParams({ gorunum: next === "kanban" ? "kanban" : null });
 
@@ -137,9 +135,9 @@ export function WorkOrdersScreen() {
   // Çip sayıları ve özet süzgeçten bağımsızdır: bütün iş emirleri.
   const all = useWorkOrders();
   const list = all.data ?? [];
-  const rows = (orders.data ?? []).filter((w) => !waitingOnly || waiting(w));
+  const rows = (orders.data ?? []).filter((w) => !waitingOnly || isWaitingForMaterial(w));
   const countOf = (st: WorkOrderStatus) => list.filter((w) => w.status === st).length;
-  const waitingCount = list.filter(waiting).length;
+  const waitingCount = list.filter(isWaitingForMaterial).length;
   const openSteps = list.filter((w) => w.status === "planned" || w.status === "in_progress").reduce((n, w) => n + (w.totalSteps - w.doneSteps), 0);
 
   return (
@@ -172,7 +170,10 @@ export function WorkOrdersScreen() {
             <ViewSwitch view={view} onChange={setView} />
             {listOnlyFilters ? (
               <p data-testid="kanban-note" className="w-full text-xs text-fg-muted">
-                Kanban yalnızca aramayı uygular. Durum, Malzeme bekliyor ve Planlanmamış süzgeçleri listede geçerlidir; adreste korunur.
+                Kanban yalnızca aramayı uygular. Durum, Malzeme bekliyor ve Planlanmamış süzgeçleri listede geçerlidir; adreste korunur.{" "}
+                <button type="button" onClick={() => setParams({ durum: null, bekleyen: null, planlanmamis: null })} className="font-semibold text-accent underline underline-offset-2">
+                  Süzgeçleri temizle
+                </button>
               </p>
             ) : null}
           </div>

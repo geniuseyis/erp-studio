@@ -58,12 +58,13 @@ test("kanbana geçilir; sütunlar ve sayıları verideki durumla tutarlı", asyn
   ).n;
   await expect(page.getByRole("region")).toHaveCount(stations + 3);
 
-  // Planlanmadı: planın "Planlanmamış" sayısıyla aynı koşul.
+  // Planlanmadı: planın plansız koşulu ARTI sıradaki adımı olmayan açık iş emirleri (rotası yok / adımı kalmadı).
   const unscheduled = (
     await one<{ n: number }>(
       page,
       `select count(*)::int as n from work_orders w where w.status in ('planned', 'in_progress')
-         and exists (select 1 from work_order_steps s where s.work_order_id = w.id and s.planned_day is null)`,
+         and (exists (select 1 from work_order_steps s where s.work_order_id = w.id and s.planned_day is null)
+              or not exists (select 1 from work_order_steps s where s.work_order_id = w.id and s.finished_at is null))`,
     )
   ).n;
   await expect.poll(() => settledCount(page, "Planlanmadı")).toBe(unscheduled);
@@ -166,9 +167,18 @@ test("görünüm değişince öteki süzgeçler adreste kalır; kanban hangileri
   await expect(page).toHaveURL(/gorunum=kanban/);
   await expect(page).toHaveURL(/durum=planned/);
   await expect(page).toHaveURL(/q=a/);
-  await expect(page.getByTestId("kanban-note")).toContainText(
-    "yalnızca aramayı",
-  );
+  const note = page.getByTestId("kanban-note");
+  await expect(note).toContainText("yalnızca aramayı");
+  // Süzgeçleri temizle: yalnızca listeye özgü süzgeçler silinir, arama ve görünüm kalır; not kaybolur.
+  await note.getByRole("button", { name: "Süzgeçleri temizle" }).click();
+  await expect(page).not.toHaveURL(/durum=/);
+  await expect(page).toHaveURL(/gorunum=kanban/);
+  await expect(page).toHaveURL(/q=a/);
+  await expect(note).toHaveCount(0);
+  await page.goto(`${LIST}?durum=planned&q=a&gorunum=kanban`);
+  await expect(page.getByRole("region", { name: "Planlanmadı" })).toBeVisible({
+    timeout: 45_000,
+  });
   await expect(
     page.getByRole("searchbox", { name: "İş emri ara" }),
   ).toHaveValue("a");
@@ -200,13 +210,39 @@ test("termini geçmiş kart kırmızı ve metinle işaretlenir", async ({ page }
   await expect(card).toHaveAttribute("aria-label", /termin geçti/);
   const late = card.getByTestId("kanban-late");
   await expect(late).toContainText(/gün gecikti|geçti/);
+  // Renk, tasarım belirtecinin (--danger) çözülmüş değeriyle aynı.
+  const danger = await page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--danger)";
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  });
+  expect(danger).toMatch(/^rgb/);
   await expect
     .poll(() => late.evaluate((el) => getComputedStyle(el).color))
-    .not.toBe(
-      await card
-        .getByTestId("kanban-code")
-        .evaluate((el) => getComputedStyle(el).color),
-    );
+    .toBe(danger);
+});
+
+test("rotası olmayan açık iş emri Planlanmadı sütununda notuyla görünür", async ({
+  page,
+}) => {
+  await loginAs(page, "Zeynep Arıkan");
+  const wo = await one<{ id: string; code: string }>(
+    page,
+    "select w.id, w.code from work_orders w where w.status = 'planned' order by w.code limit 1",
+  );
+  await sql(
+    page,
+    `delete from work_order_steps where work_order_id = '${wo.id}'`,
+  );
+  await openKanban(page);
+  const name = new RegExp(`^${wo.code},`);
+  const card = column(page, "Planlanmadı").getByRole("button", { name });
+  await expect(card).toBeVisible();
+  await expect(card.getByTestId("kanban-gap")).toHaveText("Rotası yok");
+  await expect(page.getByRole("button", { name })).toHaveCount(1);
 });
 
 test("dar ekranda sütunlar kendi kabında yatay kayar, sayfa taşmaz", async ({

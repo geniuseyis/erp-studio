@@ -2,7 +2,7 @@
 // Günler, o İstanbul gününün başladığı UTC anıyla temsil edilir.
 
 const HOUR_MS = 60 * 60 * 1000;
-const DAY_MS = 24 * HOUR_MS;
+export const DAY_MS = 24 * HOUR_MS;
 const ISTANBUL_OFFSET_MS = 3 * HOUR_MS;
 
 /** Anı İstanbul duvar saatine kaydırır; UTC alanları İstanbul'daki tarih ve saati gösterir. */
