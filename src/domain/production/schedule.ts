@@ -1,8 +1,13 @@
 import { and, asc, eq, gte, inArray, isNull, lt, ne, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { products, salesOrderLines, salesOrders, stations, workOrders, workOrderSteps } from "@/db/schema";
-import { istanbulDayStart } from "./calendar";
+import { logAudit } from "../audit";
+import { type Ctx, inTx, isUuid } from "../context";
+import { DomainError } from "../errors";
+import { assertCan } from "../permissions";
+import { istanbulDayStart, isWorkday } from "./calendar";
 import { stepPosition } from "./queries";
+import type { WorkOrderStep } from "./types";
 
 export type PlanStep = {
   workOrderId: string;
@@ -134,4 +139,116 @@ export async function weekPlan(db: Db, weekStart: Date): Promise<WeekPlan> {
     cells: stationRows.flatMap((st) => days.map((d) => cells.get(`${st.id}|${d.getTime()}`)!)),
     unscheduled: unscheduledRow?.n ?? 0,
   };
+}
+
+export type MoveResult = { step: WorkOrderStep; loadMinutes: number; capacityMin: number; overCapacity: boolean };
+type MoveInput = { workOrderId: string; seq: number; toDay: Date };
+
+/** "20.11": İstanbul günü ve ayı. (tr-TR yerel ayarı yılsız biçimde "20/11" verir; elle yazılır.) */
+function dayMonth(d: Date): string {
+  const s = new Date(d.getTime() + ISTANBUL_OFFSET_MS);
+  return `${String(s.getUTCDate()).padStart(2, "0")}.${String(s.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+const validDay = (d: Date) => d instanceof Date && !Number.isNaN(d.getTime());
+
+/** Yalnızca güne bakan kurallar; veritabanına dokunmaz. */
+function dayError(toDay: Date, now: Date): string | null {
+  if (!validDay(toDay)) return "Gün geçersiz";
+  if (istanbulDayStart(toDay).getTime() < istanbulDayStart(now).getTime()) return "Geçmiş bir güne taşınamaz";
+  if (!isWorkday(toDay)) return "Hafta sonu iş günü değil";
+  return null;
+}
+
+type Assessment = MoveResult & {
+  error: string | null;
+  wo: typeof workOrders.$inferSelect;
+  stationName: string;
+  isFirst: boolean;
+  target: Date | null;
+  sameDay: boolean;
+};
+
+/**
+ * Önizleme ve taşımanın ortak hesabı: kural ihlali (ilk bulunan, sabit sırayla) ve taşımadan sonraki hedef gün yükü.
+ * Hiçbir şey yazmaz. İş emri ya da adım yoksa NOT_FOUND fırlatır; `lock` iş emri satırını kilitler (transaction içinde).
+ */
+async function assessMove(db: Db, i: MoveInput & { now: Date }, lock: boolean): Promise<Assessment> {
+  const query = db.select().from(workOrders).where(eq(workOrders.id, i.workOrderId));
+  const [wo] = isUuid(i.workOrderId) ? await (lock ? query.for("update") : query) : [];
+  if (!wo) throw new DomainError("NOT_FOUND", "İş emri bulunamadı");
+  const rows = await db
+    .select({ step: workOrderSteps, stationName: stations.name, capacityMin: stations.dailyCapacityMin })
+    .from(workOrderSteps)
+    .innerJoin(stations, eq(stations.id, workOrderSteps.stationId))
+    .where(eq(workOrderSteps.workOrderId, wo.id))
+    .orderBy(asc(workOrderSteps.seq));
+  const index = rows.findIndex((r) => r.step.seq === i.seq);
+  const current = rows[index];
+  if (!current) throw new DomainError("NOT_FOUND", "Adım bulunamadı");
+  const { step, capacityMin } = current;
+
+  let error = dayError(i.toDay, i.now);
+  const target = validDay(i.toDay) ? istanbulDayStart(i.toDay) : null;
+  if (!error && step.plannedDay === null) error = "Önce iş emrini planlayın";
+  if (!error && step.startedAt !== null) error = "Başlamış adım taşınamaz";
+  if (!error && wo.status !== "planned" && wo.status !== "in_progress") error = "Yalnızca açık iş emrinin adımı taşınır";
+  const prev = rows[index - 1];
+  const next = rows[index + 1];
+  if (!error && target && prev?.step.plannedDay && istanbulDayStart(prev.step.plannedDay).getTime() > target.getTime()) {
+    error = `Önce ${prev.stationName} adımı (${dayMonth(prev.step.plannedDay)}) gelir`;
+  }
+  if (!error && target && next?.step.plannedDay && istanbulDayStart(next.step.plannedDay).getTime() < target.getTime()) {
+    error = `${next.stationName} adımı (${dayMonth(next.step.plannedDay)}) bundan önce olamaz`;
+  }
+
+  const sameDay = target !== null && step.plannedDay !== null && istanbulDayStart(step.plannedDay).getTime() === target.getTime();
+  // stationLoad bitmemiş adımları sayar: aynı günde adım zaten içindedir, başka günden geliyorsa eklenir.
+  const loadMinutes = target ? (await stationLoad(db, step.stationId, target)) + (sameDay || step.finishedAt ? 0 : step.minutes) : 0;
+  return {
+    step,
+    loadMinutes,
+    capacityMin,
+    overCapacity: loadMinutes > capacityMin,
+    error,
+    wo,
+    stationName: current.stationName,
+    isFirst: index === 0,
+    target,
+    sameDay,
+  };
+}
+
+/** Taşımanın sonucunu yazmadan hesaplar: onay penceresinin yük metni ve (varsa) reddetme iletisi. */
+export async function previewMove(db: Db, i: MoveInput & { now: Date }): Promise<MoveResult & { error: string | null }> {
+  const a = await assessMove(db, i, false);
+  return { step: a.step, loadMinutes: a.loadMinutes, capacityMin: a.capacityMin, overCapacity: a.overCapacity, error: a.error };
+}
+
+/**
+ * Başlamamış adımı açık iş emrinde başka bir iş gününe taşır; komşu adımların sırası korunur. Kapasite aşımı
+ * engellemez, `overCapacity` döner. İlk adım taşınırsa iş emrinin planlı başlangıcı da değişir. Aynı gün: yazmaz.
+ */
+export async function moveStep(ctx: Ctx, i: MoveInput): Promise<MoveResult> {
+  assertCan(ctx.user, "planning", "write");
+  const early = dayError(i.toDay, ctx.now);
+  if (early) throw new DomainError("VALIDATION", early);
+  return inTx(ctx, async (tx) => {
+    const a = await assessMove(tx.db, { ...i, now: tx.now }, true);
+    if (a.error) throw new DomainError("VALIDATION", a.error);
+    const result = { loadMinutes: a.loadMinutes, capacityMin: a.capacityMin, overCapacity: a.overCapacity };
+    if (a.sameDay || !a.target || !a.step.plannedDay) return { step: a.step, ...result };
+
+    const [step] = await tx.db.update(workOrderSteps).set({ plannedDay: a.target }).where(eq(workOrderSteps.id, a.step.id)).returning();
+    if (!step) throw new Error("adım taşınamadı");
+    if (a.isFirst) await tx.db.update(workOrders).set({ plannedStart: a.target }).where(eq(workOrders.id, a.wo.id));
+    const n = (v: number) => v.toLocaleString("tr-TR");
+    await logAudit(tx, {
+      entity: "work_order",
+      entityId: a.wo.id,
+      action: "move_step",
+      summary: `${a.wo.code} ${a.stationName} adımı ${dayMonth(a.step.plannedDay)} → ${dayMonth(a.target)} taşındı (yük ${n(a.loadMinutes)}/${n(a.capacityMin)} dk)`,
+    });
+    return { step, ...result };
+  });
 }

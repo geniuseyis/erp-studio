@@ -42,6 +42,7 @@ export const ACTION_LABEL: Record<string, string> = {
   start: "Üretime başladı",
   step_start: "Adım başladı",
   step_finish: "Adım bitti",
+  move_step: "Adım taşındı",
   complete: "Tamamlandı",
   receipt: "Stok girişi",
   issue: "Stok çıkışı",

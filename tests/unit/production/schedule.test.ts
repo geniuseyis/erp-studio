@@ -134,6 +134,27 @@ test("hücre sırası: çalışan, planlı, biten; sonra iş emri kodu", async (
   ]);
 });
 
+test("hücrede biten kart planlı karttan sonra gelir", async () => {
+  const a = await planned1("2026-12-15", MON);
+  const b = await planned1("2026-12-15", MON);
+  const [as1] = await db.select().from(workOrderSteps).where(eq(workOrderSteps.workOrderId, a.id)).orderBy(workOrderSteps.seq);
+  await db.update(workOrderSteps).set({ startedAt: day("2026-11-16"), finishedAt: day("2026-11-16") }).where(eq(workOrderSteps.id, as1!.id));
+  const cell = cellOf(await weekPlan(db, MON), 0, "2026-11-16");
+  expect(cell.steps.map((s) => [s.workOrderId, s.state])).toEqual([
+    [b.id, "planned"],
+    [a.id, "done"],
+  ]);
+});
+
+test("late son adıma (seq) bakar; daha geç güne düşmüş önceki adım karar vermez", async () => {
+  const wo = await planned1("2026-11-18", MON); // adımlar 16, 17, 18; termin 18
+  const [s1] = await db.select().from(workOrderSteps).where(eq(workOrderSteps.workOrderId, wo.id)).orderBy(workOrderSteps.seq);
+  await db.update(workOrderSteps).set({ plannedDay: day("2026-11-20") }).where(eq(workOrderSteps.id, s1!.id));
+  const steps = (await weekPlan(db, MON)).cells.flatMap((c) => c.steps);
+  expect(steps).toHaveLength(3);
+  expect(steps.every((s) => !s.late)).toBe(true);
+});
+
 test("weekStartOf pazar 23:30 İstanbul → o haftanın pazartesisi; pazartesi 00:00 → aynı gün", () => {
   expect(weekStartOf(new Date("2026-11-22T23:30:00+03:00"))).toEqual(MON);
   expect(weekStartOf(new Date("2026-11-16T00:00:00+03:00"))).toEqual(MON);
