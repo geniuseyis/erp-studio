@@ -114,8 +114,54 @@ test("yalnızca açık iş emrinin adımı taşınır; bilinmeyen adım NOT_FOUN
     code: "VALIDATION",
     message: "Yalnızca açık iş emrinin adımı taşınır",
   });
+  expect((await stepsOf(wo.id))[1]?.plannedDay).toEqual(day("2026-11-17"));
+  expect(await moves()).toHaveLength(0);
   await expect(moveStep(planlama, { workOrderId: wo.id, seq: 9, toDay: day("2026-11-16") })).rejects.toMatchObject({ code: "NOT_FOUND" });
   await expect(moveStep(planlama, { workOrderId: "yok", seq: 1, toDay: day("2026-11-16") })).rejects.toMatchObject({ code: "NOT_FOUND" });
+});
+
+test("önizleme ve taşıma aynı sırayla denetler: olmayan adım + geçmiş gün ikisinde de geçmiş gün iletisi", async () => {
+  const wo = await plannedOrder(day("2026-11-16"));
+  const rejected = { code: "VALIDATION", message: "Geçmiş bir güne taşınamaz" };
+  for (const workOrderId of [wo.id, "yok"]) {
+    const input = { workOrderId, seq: 9, toDay: day("2026-11-13") };
+    await expect(moveStep(planlama, input)).rejects.toMatchObject(rejected);
+    await expect(previewMove(db, { ...input, now: NOW })).rejects.toMatchObject(rejected);
+  }
+});
+
+test("planlanmamış adım taşınmaz", async () => {
+  const wo = await plannedOrder(day("2026-11-16"));
+  await db.update(workOrderSteps).set({ plannedDay: null }).where(eq(workOrderSteps.workOrderId, wo.id));
+  await db.update(workOrders).set({ plannedStart: null }).where(eq(workOrders.id, wo.id));
+  const input = { workOrderId: wo.id, seq: 1, toDay: day("2026-11-17") };
+  await expect(moveStep(planlama, input)).rejects.toMatchObject({ code: "VALIDATION", message: "Önce iş emrini planlayın" });
+  expect((await previewMove(db, { ...input, now: NOW })).error).toBe("Önce iş emrini planlayın");
+  expect((await stepsOf(wo.id)).every((s) => s.plannedDay === null)).toBe(true);
+});
+
+test("erken biten önceki adımın sınırı gerçek bitiş günüdür", async () => {
+  const wo = await plannedOrder(day("2026-11-18")); // Kesim 18, Montaj 19, Boya 20
+  const [s1] = await stepsOf(wo.id);
+  const finished = new Date("2026-11-16T11:00:00+03:00");
+  await db.update(workOrderSteps).set({ startedAt: finished, finishedAt: finished }).where(eq(workOrderSteps.id, s1!.id));
+  await db.update(workOrders).set({ status: "in_progress" }).where(eq(workOrders.id, wo.id));
+  // 17.11: gerçek bitişten (16.11) sonra, eski planlı günden (18.11) önce.
+  const moved = await moveStep(planlama, { workOrderId: wo.id, seq: 2, toDay: day("2026-11-17") });
+  expect(moved.step.plannedDay).toEqual(day("2026-11-17"));
+});
+
+test("geç biten önceki adımın gerçek günü taşımayı reddeder ve iletide görünür", async () => {
+  const wo = await plannedOrder(day("2026-11-17")); // Kesim 17, Montaj 18, Boya 19
+  const [s1] = await stepsOf(wo.id);
+  const finished = new Date("2026-11-18T14:00:00+03:00");
+  await db.update(workOrderSteps).set({ startedAt: finished, finishedAt: finished }).where(eq(workOrderSteps.id, s1!.id));
+  await db.update(workOrders).set({ status: "in_progress" }).where(eq(workOrders.id, wo.id));
+  const input = { workOrderId: wo.id, seq: 2, toDay: day("2026-11-17") };
+  const message = "Önce Kesim adımı (18.11) gelir";
+  await expect(moveStep(planlama, input)).rejects.toMatchObject({ code: "VALIDATION", message });
+  expect((await previewMove(db, { ...input, now: NOW })).error).toBe(message);
+  expect((await stepsOf(wo.id))[1]?.plannedDay).toEqual(day("2026-11-18"));
 });
 
 test("kapasiteyi aşan taşıma yapılır ve overCapacity true döner", async () => {

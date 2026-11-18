@@ -171,12 +171,16 @@ type Assessment = MoveResult & {
 
 /**
  * Önizleme ve taşımanın ortak hesabı: kural ihlali (ilk bulunan, sabit sırayla) ve taşımadan sonraki hedef gün yükü.
- * Hiçbir şey yazmaz. İş emri ya da adım yoksa NOT_FOUND fırlatır; `lock` iş emri satırını kilitler (transaction içinde).
+ * Hiçbir şey yazmaz. İş emri ya da adım yoksa fırlatır: gün hatalıysa o iletiyle VALIDATION, değilse NOT_FOUND (döndürülecek
+ * adım yoktur). `lock` iş emri satırını kilitler (transaction içinde).
  */
 async function assessMove(db: Db, i: MoveInput & { now: Date }, lock: boolean): Promise<Assessment> {
+  // Gün kuralları adım aramasından önce: gün hatalıysa iş emri ya da adım bulunamasa da aynı ileti döner.
+  let error = dayError(i.toDay, i.now);
+  const notFound = (message: string) => (error ? new DomainError("VALIDATION", error) : new DomainError("NOT_FOUND", message));
   const query = db.select().from(workOrders).where(eq(workOrders.id, i.workOrderId));
   const [wo] = isUuid(i.workOrderId) ? await (lock ? query.for("update") : query) : [];
-  if (!wo) throw new DomainError("NOT_FOUND", "İş emri bulunamadı");
+  if (!wo) throw notFound("İş emri bulunamadı");
   const rows = await db
     .select({ step: workOrderSteps, stationName: stations.name, capacityMin: stations.dailyCapacityMin })
     .from(workOrderSteps)
@@ -185,18 +189,19 @@ async function assessMove(db: Db, i: MoveInput & { now: Date }, lock: boolean): 
     .orderBy(asc(workOrderSteps.seq));
   const index = rows.findIndex((r) => r.step.seq === i.seq);
   const current = rows[index];
-  if (!current) throw new DomainError("NOT_FOUND", "Adım bulunamadı");
+  if (!current) throw notFound("Adım bulunamadı");
   const { step, capacityMin } = current;
 
-  let error = dayError(i.toDay, i.now);
   const target = validDay(i.toDay) ? istanbulDayStart(i.toDay) : null;
   if (!error && step.plannedDay === null) error = "Önce iş emrini planlayın";
   if (!error && step.startedAt !== null) error = "Başlamış adım taşınamaz";
   if (!error && wo.status !== "planned" && wo.status !== "in_progress") error = "Yalnızca açık iş emrinin adımı taşınır";
   const prev = rows[index - 1];
   const next = rows[index + 1];
-  if (!error && target && prev?.step.plannedDay && istanbulDayStart(prev.step.plannedDay).getTime() > target.getTime()) {
-    error = `Önce ${prev.stationName} adımı (${dayMonth(prev.step.plannedDay)}) gelir`;
+  // Bitmiş önceki adımın sınırı gerçekte bittiği gündür; planlı günü artık bayattır (erken ya da geç bitmiş olabilir).
+  const prevDay = prev ? (prev.step.finishedAt ?? prev.step.plannedDay) : null;
+  if (!error && target && prev && prevDay && istanbulDayStart(prevDay).getTime() > target.getTime()) {
+    error = `Önce ${prev.stationName} adımı (${dayMonth(istanbulDayStart(prevDay))}) gelir`;
   }
   if (!error && target && next?.step.plannedDay && istanbulDayStart(next.step.plannedDay).getTime() < target.getTime()) {
     error = `${next.stationName} adımı (${dayMonth(next.step.plannedDay)}) bundan önce olamaz`;
@@ -231,8 +236,6 @@ export async function previewMove(db: Db, i: MoveInput & { now: Date }): Promise
  */
 export async function moveStep(ctx: Ctx, i: MoveInput): Promise<MoveResult> {
   assertCan(ctx.user, "planning", "write");
-  const early = dayError(i.toDay, ctx.now);
-  if (early) throw new DomainError("VALIDATION", early);
   return inTx(ctx, async (tx) => {
     const a = await assessMove(tx.db, { ...i, now: tx.now }, true);
     if (a.error) throw new DomainError("VALIDATION", a.error);
