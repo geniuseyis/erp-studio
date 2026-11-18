@@ -237,6 +237,11 @@ export async function getWorkOrder(db: Db, id: string): Promise<WorkOrderDetail 
   };
 }
 
+/** Adımın iş emri içindeki 1 tabanlı sırası; `siblings` seq sırasındaki bütün adımlardır. */
+export function stepPosition(siblings: { id: string }[], stepId: string): number {
+  return siblings.findIndex((s) => s.id === stepId) + 1;
+}
+
 export type QueueItem = {
   workOrderId: string;
   code: string;
@@ -299,7 +304,7 @@ export async function stationQueue(db: Db, stationCode: string): Promise<QueueIt
       productName: r.productName,
       qtyMilli: r.wo.qtyMilli,
       seq: r.step.seq,
-      position: index + 1,
+      position: stepPosition(all, r.step.id),
       totalSteps: all.length,
       minutes: r.step.minutes,
       state,
