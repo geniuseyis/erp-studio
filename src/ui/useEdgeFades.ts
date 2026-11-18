@@ -21,10 +21,20 @@ export function useEdgeFades(ref: RefObject<HTMLElement | null>): void {
     el.addEventListener("scroll", sync, { passive: true });
     const observer = new ResizeObserver(sync);
     observer.observe(el);
-    for (const child of Array.from(el.children)) observer.observe(child);
+    const watchChildren = () => {
+      for (const child of Array.from(el.children)) observer.observe(child);
+    };
+    watchChildren();
+    // İçerik sonradan gelirse (iskelet yerine tablo) yeni çocuklar da izlenir ve durum hemen güncellenir.
+    const mutations = new MutationObserver(() => {
+      watchChildren();
+      sync();
+    });
+    mutations.observe(el, { childList: true });
     return () => {
       el.removeEventListener("scroll", sync);
       observer.disconnect();
+      mutations.disconnect();
     };
   }, [ref]);
 }

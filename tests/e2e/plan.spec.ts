@@ -426,6 +426,19 @@ test("özet bandı daraltılınca ızgara büyür; seçim yenilemede kalır", as
   await expect(page.getByRole("button", { name: "Özeti göster" })).toBeVisible({ timeout: 45_000 });
 });
 
+test("1024×768'de plan yüklenince kaydırmadan sağ kenar geçişi vardır; özet gizlenince de", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await loginAs(page, "Zeynep Arıkan");
+  await openWeek(page, nextWeek());
+  const scroller = page.locator("[data-plan-scroll]");
+  await expect.poll(() => scroller.evaluate((el) => el.scrollWidth > el.clientWidth + 8)).toBe(true);
+  expect(await scroller.evaluate((el) => el.scrollLeft)).toBe(0);
+  await expect(scroller).toHaveAttribute("data-fade-right", "");
+  await expect(scroller).not.toHaveAttribute("data-fade-left", "");
+  await page.getByRole("button", { name: /Özeti (gizle|göster)/ }).click();
+  await expect(scroller).toHaveAttribute("data-fade-right", "");
+});
+
 test("390 px'te sayfa taşmaz, ızgara kendi içinde kayar", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await loginAs(page, "Zeynep Arıkan");
