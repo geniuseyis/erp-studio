@@ -17,7 +17,7 @@ export function useTableHeight(rootRef: RefObject<HTMLElement | null>, screen: s
   // çizimde okunabilir, uyuşmazlık ve görünür sıçrama olmaz.
   const [height, setHeight] = useState<number | null>(() => (screen === null || typeof window === "undefined" ? null : parseHeight(readPref(TABLE_HEIGHT_KEY + screen))));
   const [measured, setMeasured] = useState(TABLE_MIN);
-  const drag = useRef<{ startY: number; startHeight: number } | null>(null);
+  const drag = useRef<{ startY: number; startHeight: number; before: number | null; lastY: number } | null>(null);
 
   // aria-valuenow, kabın ekrandaki gerçek yüksekliğini izler (otomatikken de).
   useEffect(() => {
@@ -29,6 +29,17 @@ export function useTableHeight(rootRef: RefObject<HTMLElement | null>, screen: s
     observer.observe(el);
     return () => observer.disconnect();
   }, [rootRef]);
+
+  /** Sürüklemeyi bitirir. Kıpırdamadan bırakılan tıklama ayarı değiştirmez (otomatik boyut korunur). */
+  function endDrag(e: PointerEvent<HTMLElement>, apply: boolean) {
+    const d = drag.current;
+    if (!d) return;
+    drag.current = null;
+    document.body.style.userSelect = "";
+    const dy = d.lastY - d.startY;
+    if (apply && Math.abs(dy) > 2) commit(d.startHeight + dy);
+    else setHeight(d.before);
+  }
 
   function commit(next: number | null) {
     const value = next === null ? null : clampHeight(next);
@@ -57,22 +68,28 @@ export function useTableHeight(rootRef: RefObject<HTMLElement | null>, screen: s
     tabIndex: 0,
     onPointerDown(e: PointerEvent<HTMLElement>) {
       if (e.button !== 0) return;
+      // Sürüklerken metin seçimi başlamasın; odak tutamaca verilir (preventDefault odağı kendiliğinden vermez).
+      e.preventDefault();
+      e.currentTarget.focus();
       e.currentTarget.setPointerCapture(e.pointerId);
-      drag.current = { startY: e.clientY, startHeight: current() };
+      document.body.style.userSelect = "none";
+      drag.current = { startY: e.clientY, startHeight: current(), before: height, lastY: e.clientY };
     },
     onPointerMove(e: PointerEvent<HTMLElement>) {
       const d = drag.current;
-      if (d) setHeight(clampHeight(d.startHeight + e.clientY - d.startY));
+      if (d) d.lastY = e.clientY;
+      if (d && Math.abs(e.clientY - d.startY) > 2) setHeight(clampHeight(d.startHeight + e.clientY - d.startY));
     },
     onPointerUp(e: PointerEvent<HTMLElement>) {
-      const d = drag.current;
-      drag.current = null;
-      if (d) commit(d.startHeight + e.clientY - d.startY);
+      if (drag.current) drag.current.lastY = e.clientY;
+      endDrag(e, true);
     },
-    onPointerCancel() {
-      const d = drag.current;
-      drag.current = null;
-      if (d) commit(current());
+    // İptal ve yakalama kaybı: o ana kadarki boyutla biter, sürükleme durumu takılı kalmaz.
+    onPointerCancel(e: PointerEvent<HTMLElement>) {
+      endDrag(e, true);
+    },
+    onLostPointerCapture(e: PointerEvent<HTMLElement>) {
+      endDrag(e, true);
     },
     onDoubleClick() {
       commit(null);
