@@ -28,6 +28,7 @@ import {
   workOrders,
 } from "@/db/schema";
 import { istanbulDayStart, isWorkday, prevWorkday, shiftWorkdays, workdaysBetween } from "@/domain/production/calendar";
+import { mulberry32 } from "./rng";
 
 /** Anlık görüntünün üretildiği "şimdi" (pazar). Yüklemede tarihler bu andan yükleme anına iş günü olarak kaydırılır (makeDateShift). */
 export const SNAPSHOT_NOW = new Date("2026-11-15T09:00:00+03:00");
@@ -55,19 +56,34 @@ const TABLES: PgTable[] = [
 ];
 const CHUNK = 400;
 
+/** Yükleme sırası; testler aynı sırayla gezer. */
+export const SNAPSHOT_TABLES: readonly PgTable[] = TABLES;
+
 /**
- * Sıkıştırılmış ama kayıpsız biçim (1 MB sınırı için): her tablo sütun adları ve değer dizileri olarak durur,
- * tarihler epoch milisaniyesidir, uuid değerleri `ids` listesine bir kez yazılır ve satırlarda sıra
- * numarasıyla geçer. `uuidColumns`: sayı değeri `ids` sıra numarası olan sütunlar (metin sütunlarında
- * uuid olmayan değerler metin olarak kalır).
+ * Sıkıştırılmış biçim (dosya boyutu sınırı için): her tablo sütun adları ve değer dizileri olarak durur,
+ * tarihler epoch milisaniyesidir. Kimlikler dosyada hiç yazılmaz: her farklı uuid ilk görüldüğü sırada bir sıra
+ * numarası alır, yüklemede `deterministicUuid(n)` ile yeniden üretilir. `uuidColumns`: sayı değeri kimlik sıra
+ * numarası olan sütunlar (metin sütunlarında uuid olmayan değerler metin olarak kalır). Yüklenen veri içerik olarak
+ * aynıdır, yalnızca kimlik değerleri değişir; aynı kimlik her yerde aynı numarayla geçtiği için bağlar korunur.
  */
 export type SnapshotTable = { columns: string[]; uuidColumns: string[]; rows: unknown[][] };
 export type Snapshot = {
   /** ISO tarih: verinin üretildiği an. */
   takenAt: string;
-  ids: string[];
   tables: Record<string, SnapshotTable>;
 };
+
+const hex8 = (rng: () => number) => Math.floor(rng() * 4294967296).toString(16).padStart(8, "0");
+
+/**
+ * Sıra numarasından her zaman aynı, geçerli bir v4 uuid üretir (`xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx`).
+ * Haneler `mulberry32(20261118 + n)` dizisinden gelir; ilk 20.000 numarada çakışmadığı testle doğrulanır.
+ */
+export function deterministicUuid(index: number): string {
+  const rng = mulberry32(20261118 + index);
+  const h = hex8(rng) + hex8(rng) + hex8(rng) + hex8(rng);
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** uuid sıra numarasına çevrilebilen sütun türleri (drizzle columnType). */
@@ -81,7 +97,6 @@ function dateColumns(table: PgTable): string[] {
 
 /** Veritabanındaki bütün örnek veriyi sıkıştırılmış JSON'a çevirir. */
 export async function exportSnapshot(db: Db, takenAt: Date): Promise<Snapshot> {
-  const ids: string[] = [];
   const index = new Map<string, number>();
   const tables: Snapshot["tables"] = {};
   for (const table of TABLES) {
@@ -99,8 +114,7 @@ export async function exportSnapshot(db: Db, takenAt: Date): Promise<Snapshot> {
           uuidColumns.add(key);
           let i = index.get(value);
           if (i === undefined) {
-            i = ids.length;
-            ids.push(value);
+            i = index.size;
             index.set(value, i);
           }
           return i;
@@ -110,7 +124,7 @@ export async function exportSnapshot(db: Db, takenAt: Date): Promise<Snapshot> {
     );
     tables[getTableName(table)] = { columns, uuidColumns: columns.filter((c) => uuidColumns.has(c)), rows };
   }
-  return { takenAt: takenAt.toISOString(), ids, tables };
+  return { takenAt: takenAt.toISOString(), tables };
 }
 
 /**
@@ -147,7 +161,12 @@ export function makeDateShift(takenAt: Date, now: Date): (ms: number) => number 
 }
 
 /** Bir tablonun satırlarını nesneye çevirir: uuid sıra numaraları çözülür, tarihler `shift` ile taşınır. */
-function decodeRows(snapshot: Snapshot, table: PgTable, shift: (ms: number) => number): Record<string, unknown>[] {
+function decodeRows(
+  snapshot: Snapshot,
+  table: PgTable,
+  shift: (ms: number) => number,
+  uuid: (index: number) => string,
+): Record<string, unknown>[] {
   const data = snapshot.tables[getTableName(table)];
   if (!data) return [];
   const dates = new Set(dateColumns(table));
@@ -157,7 +176,7 @@ function decodeRows(snapshot: Snapshot, table: PgTable, shift: (ms: number) => n
     data.columns.forEach((key, i) => {
       const value = values[i];
       if (dates.has(key) && typeof value === "number") out[key] = new Date(shift(value));
-      else if (uuids.has(key) && typeof value === "number") out[key] = snapshot.ids[value];
+      else if (uuids.has(key) && typeof value === "number") out[key] = uuid(value);
       else out[key] = value;
     });
     return out;
@@ -171,9 +190,12 @@ function decodeRows(snapshot: Snapshot, table: PgTable, shift: (ms: number) => n
  */
 export async function loadSnapshot(db: Db, snapshot: Snapshot, now: Date): Promise<void> {
   const shift = makeDateShift(new Date(snapshot.takenAt), now);
+  // Aynı kimlik birçok satırda geçer; her numara bir kez üretilir.
+  const ids: string[] = [];
+  const uuid = (index: number) => (ids[index] ??= deterministicUuid(index));
   await db.transaction(async (tx) => {
     for (const table of TABLES) {
-      const shifted = decodeRows(snapshot, table, shift);
+      const shifted = decodeRows(snapshot, table, shift, uuid);
       for (let i = 0; i < shifted.length; i += CHUNK) {
         await tx.insert(table).values(shifted.slice(i, i + CHUNK) as never);
       }

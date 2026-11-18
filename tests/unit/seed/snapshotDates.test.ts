@@ -17,7 +17,7 @@ import {
   workOrderSteps,
 } from "@/db/schema";
 import { isWorkday, prevWorkday, workdaysBetween } from "@/domain/production/calendar";
-import { loadSnapshot, type Snapshot } from "@/seed/snapshot";
+import { deterministicUuid, loadSnapshot, type Snapshot } from "@/seed/snapshot";
 import committed from "@/seed/snapshot.generated.json";
 import { createTestDb } from "../../helpers/testDb";
 
@@ -58,7 +58,7 @@ function rawDates(tableName: string, column: string): Map<string, number> {
   const out = new Map<string, number>();
   for (const row of data.rows) {
     const value = row[col];
-    if (typeof value === "number") out.set(snapshot.ids[row[id] as number] ?? "", value);
+    if (typeof value === "number") out.set(deterministicUuid(row[id] as number), value);
   }
   return out;
 }

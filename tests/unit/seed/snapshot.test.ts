@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import { asc, desc } from "drizzle-orm";
+import { asc, desc, getTableColumns, getTableName } from "drizzle-orm";
 import { beforeAll, expect, test } from "vitest";
 import type { Db } from "@/db/client";
 import {
@@ -23,7 +23,15 @@ import { listCounts, listMaterials } from "@/domain/inventory/queries";
 import { verifyProductLedger } from "@/domain/production/productLedger";
 import { DEMO_PASSWORD, seedBase } from "@/seed/base";
 import { seedSales } from "@/seed/sales";
-import { exportSnapshot, loadSnapshot, makeDateShift, type Snapshot, SNAPSHOT_NOW } from "@/seed/snapshot";
+import {
+  deterministicUuid,
+  exportSnapshot,
+  loadSnapshot,
+  makeDateShift,
+  SNAPSHOT_NOW,
+  SNAPSHOT_TABLES,
+  type Snapshot,
+} from "@/seed/snapshot";
 import committed from "@/seed/snapshot.generated.json";
 import { ctxFor } from "../../helpers/fixtures";
 import { createTestDb } from "../../helpers/testDb";
@@ -67,8 +75,65 @@ test("depodaki anlık görüntü güncel: seedBase ve seedSales çıktısıyla a
   expect(snapshot.takenAt).toBe(SNAPSHOT_NOW.toISOString());
 });
 
-test("anlık görüntü dosyası 1 MB'ı aşmaz", () => {
-  expect(statSync("src/seed/snapshot.generated.json").size).toBeLessThan(1_000_000);
+test("anlık görüntü 700 KB'ın altında", () => {
+  expect(statSync("src/seed/snapshot.generated.json").size).toBeLessThan(700_000);
+});
+
+test("anlık görüntü kimlik tablosu taşımaz", () => {
+  expect("ids" in snapshot).toBe(false);
+});
+
+test("deterministicUuid geçerli v4 biçiminde ve ilk 20.000 değerde çakışmasız", () => {
+  const v4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  const seen = new Set<string>();
+  for (let n = 0; n < 20_000; n++) {
+    const id = deterministicUuid(n);
+    if (!v4.test(id)) throw new Error(`geçersiz: ${n} → ${id}`);
+    seen.add(id);
+  }
+  expect(seen.size).toBe(20_000);
+  // Aynı sıra numarası her zaman aynı kimliği verir.
+  expect(deterministicUuid(7)).toBe(deterministicUuid(7));
+});
+
+test("dışa aktar → yükle: bütün tablolar kimlikler sıra numarasına eşlenince birebir aynı", async () => {
+  const copy = await createTestDb({ fresh: true });
+  await loadSnapshot(copy, await exportSnapshot(generated, SNAPSHOT_NOW), SNAPSHOT_NOW);
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const shift = makeDateShift(SNAPSHOT_NOW, SNAPSHOT_NOW);
+  // Beklenen eşleme: tablolar yükleme sırasıyla gezilir, her farklı kimlik ilk görüldüğü sırada numara alır.
+  const order = new Map<string, number>();
+  const mapped = (value: string) => {
+    let i = order.get(value);
+    if (i === undefined) {
+      i = order.size;
+      order.set(value, i);
+    }
+    return deterministicUuid(i);
+  };
+  const canon = (rows: Record<string, unknown>[]) => rows.map((r) => JSON.stringify(r)).sort();
+  let textIds = 0;
+  for (const table of SNAPSHOT_TABLES) {
+    const all = getTableColumns(table);
+    const original = (await generated.select().from(table)) as Record<string, unknown>[];
+    const expected = original.map((row) =>
+      Object.fromEntries(
+        Object.entries(row).map(([key, value]) => {
+          const type = all[key]?.columnType;
+          if (value instanceof Date) return [key, new Date(shift(value.getTime()))];
+          if ((type === "PgUUID" || type === "PgText") && typeof value === "string" && UUID.test(value)) {
+            if (type === "PgText") textIds += 1;
+            return [key, mapped(value)];
+          }
+          return [key, value];
+        }),
+      ),
+    );
+    const copied = (await copy.select().from(table)) as Record<string, unknown>[];
+    expect(canon(copied), getTableName(table)).toEqual(canon(expected));
+  }
+  // ref_id ve entity_id gibi metin sütunlarındaki kimlikler de aynı eşlemeden geçti.
+  expect(textIds).toBeGreaterThan(1_000);
 });
 
 test("yüklenen veri tutarlı: iki defter de tutar, demo girişi çalışır", async () => {
@@ -104,24 +169,12 @@ test("yüklemeden sonra yeni hareketin sıra numarası en büyüğün üstünde 
   expect(await verifyLedger(loaded)).toEqual([]);
 });
 
-test("dışa aktarma ve yükleme aynı veriyi geri verir; tarihler yalnızca makeDateShift kadar değişir", async () => {
+test("dışa aktarma ve yükleme aynı veriyi geri verir; hafta içi tarihler aynı anda yüklenince değişmez", async () => {
+  // Satır satır karşılaştırma (kimlik eşlemesi ve tarih kaydırmasıyla) aşağıdaki "birebir aynı" testinde.
   const copy = await createTestDb({ fresh: true });
   await loadSnapshot(copy, await exportSnapshot(generated, SNAPSHOT_NOW), SNAPSHOT_NOW);
   expect(await projection(copy)).toEqual(await projection(generated));
-  // Aynı anda yüklense de hafta sonu kayıtları iş gününe taşınır; beklenen satırlar aynı işlevden geçirilir.
   const shift = makeDateShift(SNAPSHOT_NOW, SNAPSHOT_NOW);
-  const shifted = <T extends object>(rows: T[]): T[] =>
-    rows.map((row) => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, v instanceof Date ? new Date(shift(v.getTime())) : v])) as T);
-  for (const table of [stockMovements, productMovements] as const) {
-    const original = await generated.select().from(table).orderBy(table.seq);
-    const copied = await copy.select().from(table).orderBy(table.seq);
-    expect(copied).toEqual(shifted(original));
-  }
-  const byId = <T extends { id: string }>(rows: T[]) => rows.sort((x, y) => x.id.localeCompare(y.id));
-  expect(byId(await copy.select().from(salesOrders))).toEqual(byId(shifted(await generated.select().from(salesOrders))));
-  expect(byId(await copy.select().from(workOrderSteps))).toEqual(byId(shifted(await generated.select().from(workOrderSteps))));
-  expect(byId(await copy.select().from(auditLog))).toEqual(byId(shifted(await generated.select().from(auditLog))));
-  // Hafta içi kayıtlar aynı anda yüklenince hiç değişmez.
   const weekday = (await generated.select().from(salesOrders)).map((o) => o.createdAt.getTime());
   expect(weekday.map(shift)).toEqual(weekday);
 });
