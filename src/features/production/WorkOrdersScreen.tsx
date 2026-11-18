@@ -10,6 +10,7 @@ import { Button } from "@/ui/Button";
 import { FilterChip, SearchBox } from "@/ui/Chip";
 import { type Column, DataTable } from "@/ui/DataTable";
 import { EmptyState } from "@/ui/EmptyState";
+import { CloseIcon } from "@/ui/icons";
 import { Meter } from "@/ui/Meter";
 import { CountUp } from "@/ui/motion";
 import { useWorkOrders } from "./hooks";
@@ -95,10 +96,12 @@ export function WorkOrdersScreen() {
   const search = params.get("q") ?? "";
   const status = asStatus(params.get("durum"));
   const waitingOnly = params.get("bekleyen") === "1";
+  // Haftalık plandaki "Planlanmamış" sayısının listesi: aynı koşul (unscheduledWorkOrder).
+  const unscheduledOnly = params.get("planlanmamis") === "1";
   const openId = params.get("ac");
-  const filtered = search !== "" || status !== undefined || waitingOnly;
+  const filtered = search !== "" || status !== undefined || waitingOnly || unscheduledOnly;
 
-  const orders = useWorkOrders({ search, status });
+  const orders = useWorkOrders({ search, status, unscheduled: unscheduledOnly || undefined });
   // Çip sayıları ve özet süzgeçten bağımsızdır: bütün iş emirleri.
   const all = useWorkOrders();
   const list = all.data ?? [];
@@ -145,6 +148,13 @@ export function WorkOrdersScreen() {
             <FilterChip tone="danger" pressed={waitingOnly} count={waitingCount} onClick={() => setParams({ bekleyen: waitingOnly ? null : "1" })}>
               Malzeme bekliyor
             </FilterChip>
+            {unscheduledOnly ? (
+              <FilterChip pressed onClick={() => setParams({ planlanmamis: null })}>
+                Planlanmamış
+                <CloseIcon size={13} aria-hidden="true" />
+                <span className="sr-only">süzgecini kaldır</span>
+              </FilterChip>
+            ) : null}
           </>
         }
         filters={
@@ -161,7 +171,7 @@ export function WorkOrdersScreen() {
         }
         empty={
           filtered ? (
-            <EmptyState title="Süzgeçle eşleşen iş emri yok" action={<Button onClick={() => setParams({ q: null, durum: null, bekleyen: null })}>Süzgeçleri temizle</Button>}>
+            <EmptyState title="Süzgeçle eşleşen iş emri yok" action={<Button onClick={() => setParams({ q: null, durum: null, bekleyen: null, planlanmamis: null })}>Süzgeçleri temizle</Button>}>
               Yazımı kontrol edin ya da süzgeçleri kaldırın.
             </EmptyState>
           ) : (

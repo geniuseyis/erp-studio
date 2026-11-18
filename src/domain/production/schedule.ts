@@ -6,7 +6,7 @@ import { type Ctx, inTx, isUuid } from "../context";
 import { DomainError } from "../errors";
 import { assertCan } from "../permissions";
 import { addWorkdays, istanbulDayStart, isWorkday, workdaysBetween } from "./calendar";
-import { stepPosition } from "./queries";
+import { stepPosition, unscheduledWorkOrder } from "./queries";
 import type { WorkOrderStep } from "./types";
 import { materialNeeds } from "./workOrders";
 
@@ -97,10 +97,9 @@ export async function weekPlan(db: Db, weekStart: Date): Promise<WeekPlan> {
   for (const s of siblings) byOrder.set(s.workOrderId, [...(byOrder.get(s.workOrderId) ?? []), s]);
 
   const [unscheduledRow] = await db
-    .select({ n: sql<number>`count(distinct ${workOrders.id})::int` })
+    .select({ n: sql<number>`count(*)::int` })
     .from(workOrders)
-    .innerJoin(workOrderSteps, eq(workOrderSteps.workOrderId, workOrders.id))
-    .where(and(inArray(workOrders.status, ["planned", "in_progress"]), isNull(workOrderSteps.plannedDay)));
+    .where(unscheduledWorkOrder());
 
   const cells = new Map<string, PlanCell>();
   for (const st of stationRows) {

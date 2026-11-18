@@ -1,5 +1,5 @@
 import { alias } from "drizzle-orm/pg-core";
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, type SQL, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { bomLines, materials, products, routings, salesOrderLines, salesOrders, stations, users, workOrders, workOrderSteps } from "@/db/schema";
 import { isUuid } from "../context";
@@ -117,7 +117,19 @@ export type WorkOrderRow = {
   doneSteps: number;
   totalSteps: number;
 };
-export type WorkOrderFilter = { search?: string; status?: WorkOrderStatus };
+/**
+ * Planlanmamış iş emri: açık (planlı ya da üretimde) ve planlı günü olmayan en az bir adımı var. Haftalık planın
+ * "Planlanmamış" sayısı ve iş emri listesinin `planlanmamis=1` süzgeci bu tek koşulu kullanır; iki sayı ayrışamaz.
+ */
+export function unscheduledWorkOrder(): SQL {
+  return and(
+    inArray(workOrders.status, ["planned", "in_progress"]),
+    sql`exists (select 1 from ${workOrderSteps} where ${workOrderSteps.workOrderId} = ${workOrders.id} and ${workOrderSteps.plannedDay} is null)`,
+  )!;
+}
+
+/** `unscheduled`: yalnızca planlanmamış iş emirleri (unscheduledWorkOrder). */
+export type WorkOrderFilter = { search?: string; status?: WorkOrderStatus; unscheduled?: boolean };
 
 type StepRecord = typeof workOrderSteps.$inferSelect;
 
@@ -167,7 +179,11 @@ async function workOrderRows(db: Db, id?: string): Promise<WorkOrderRow[]> {
 /** İş emirleri, yeniden eskiye. Arama kod, ürün adı ve sipariş kodunda. */
 export async function listWorkOrders(db: Db, f: WorkOrderFilter = {}): Promise<WorkOrderRow[]> {
   const rows = await workOrderRows(db);
+  const unscheduled = f.unscheduled
+    ? new Set((await db.select({ id: workOrders.id }).from(workOrders).where(unscheduledWorkOrder())).map((r) => r.id))
+    : null;
   return rows
+    .filter((w) => !unscheduled || unscheduled.has(w.id))
     .filter((w) => !f.status || w.status === f.status)
     .filter((w) => matchesSearch([w.code, w.productName, w.orderCode ?? ""], f.search));
 }

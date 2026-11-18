@@ -294,7 +294,7 @@ export function PlanScreen() {
                 label="Planlanmamış"
                 value={<CountUp value={summary.unscheduled} format={String} />}
                 hint="açık iş emri · listeye git"
-                href="/uretim/is-emirleri?durum=planned"
+                href="/uretim/is-emirleri?planlanmamis=1"
               />
             </>
           ) : null

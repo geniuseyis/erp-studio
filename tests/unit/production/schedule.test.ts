@@ -4,6 +4,7 @@ import type { Db } from "@/db/client";
 import { workOrders, workOrderSteps } from "@/db/schema";
 import type { Ctx } from "@/domain/context";
 import { stationLoad, weekPlan, weekStartOf } from "@/domain/production/schedule";
+import { listWorkOrders } from "@/domain/production/queries";
 import { planWorkOrder } from "@/domain/production/workOrders";
 import { addLine, confirmOrder, createOrder } from "@/domain/sales/orders";
 import { addCustomer, addProduct, addRouting, addStation, addUser, ctxFor } from "../../helpers/fixtures";
@@ -180,3 +181,23 @@ test("haftalık plan sabit sayıda sorgu çalıştırır (40 iş emrinde ≤ 4)"
   expect(many).toBeLessThanOrEqual(4);
   expect((await weekPlan(db, MON)).cells.flatMap((c) => c.steps)).toHaveLength(120);
 }, 60_000);
+
+test("planlanmamış sayısı ile iş emri listesinin planlanmamış süzgeci aynı koşulu kullanır", async () => {
+  const fresh = (await openOrder("2026-12-15")).wo; // planlı, adım günleri boş: sayılır
+  planned.add(fresh.id);
+  const running = await planned1("2026-12-15", MON); // sürüyor, bir adımın günü silinmiş: sayılır
+  await db.update(workOrders).set({ status: "in_progress" }).where(eq(workOrders.id, running.id));
+  const [, rs2] = await db.select().from(workOrderSteps).where(eq(workOrderSteps.workOrderId, running.id)).orderBy(workOrderSteps.seq);
+  await db.update(workOrderSteps).set({ plannedDay: null }).where(eq(workOrderSteps.id, rs2!.id));
+  await planned1("2026-12-15", MON); // bütün adımları planlı: sayılmaz
+  const done = (await openOrder("2026-12-15")).wo; // günü boş ama tamamlanmış: sayılmaz
+  await db.update(workOrders).set({ status: "completed" }).where(eq(workOrders.id, done.id));
+  planned.add(done.id);
+  const cancelled = (await openOrder("2026-12-15")).wo; // günü boş ama iptal: sayılmaz
+  await db.update(workOrders).set({ status: "cancelled" }).where(eq(workOrders.id, cancelled.id));
+
+  const plan = await weekPlan(db, MON);
+  const list = await listWorkOrders(db, { unscheduled: true });
+  expect(list.map((w) => w.id).sort()).toEqual([fresh.id, running.id].sort());
+  expect(plan.unscheduled).toBe(list.length);
+});
