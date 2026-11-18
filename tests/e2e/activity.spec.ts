@@ -61,15 +61,16 @@ test("depo kullanıcısı da İşlemler'i görür; sayılar veritabanından; dep
 
   await page.getByLabel("Departman").selectOption("satis");
   await expect(page).toHaveURL(/departman=satis/);
-  await expect(rows.first()).toContainText("Satış");
-  const shown = await rows.count();
-  expect(shown).toBeGreaterThan(0);
-  for (let i = 0; i < Math.min(shown, 15); i += 1) await expect(rows.nth(i)).toContainText("Satış");
   const satis = await one<{ n: number }>(
     page,
     "select count(*)::int as n from audit_log a join users u on u.id = a.user_id where u.department_code = 'satis' and a.entity <> 'user'",
   );
-  expect(shown).toBe(Math.min(satis.n, 500));
+  expect(satis.n).toBeGreaterThan(0);
+  // Süzgeç değişince yeni sonuç gelene dek önceki liste ekranda kalır (keepPreviousData); anlık sayım eski listeyi sayabilir.
+  // Bu yüzden içerik ve sayı bekleyerek denetlenir: bütün satırlar Satış'tan ve sayı veritabanındakiyle aynı.
+  await expect(rows.first()).toContainText("Satış");
+  await expect(rows.filter({ hasNotText: "Satış" })).toHaveCount(0);
+  await expect(rows).toHaveCount(Math.min(satis.n, 500));
 
   await page.getByLabel("Departman").selectOption("");
   await page.getByRole("button", { name: /Kişi: Tümü/ }).click();
