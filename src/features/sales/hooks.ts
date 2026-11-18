@@ -3,8 +3,9 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { Ctx } from "@/domain/context";
 import { listProducts } from "@/domain/production/queries";
+import { suggestDueDate } from "@/domain/production/schedule";
 import { createCustomer, type NewCustomer, updateCustomer } from "@/domain/sales/customers";
-import { addLine, cancelOrder, confirmOrder, createOrder, removeLine, shipOrder } from "@/domain/sales/orders";
+import { addLine, cancelOrder, confirmOrder, createOrder, removeLine, shipOrder, updateOrderDue } from "@/domain/sales/orders";
 import { type CustomerFilter, getCustomer, getOrder, listCustomers, listOrders, type OrderFilter, salesSummary } from "@/domain/sales/queries";
 import { useDb } from "@/shell/db-context";
 import { useAction } from "@/shell/useAction";
@@ -46,12 +47,27 @@ export function useSellableProducts(enabled = true) {
   });
 }
 
+/**
+ * Satırlara göre önerilen termin. Anahtar satırlardır (ürün, adet): satır değişince yeniden hesaplanır; stok ve plan
+ * değişince announceChange bütün sorgular gibi bunu da yeniler. Satır yoksa çalışmaz. Hiçbir şey yazmaz.
+ */
+export function useDueSuggestion(lines: { productId: string; qtyMilli: number }[], enabled = true) {
+  const { db } = useDb();
+  const key = lines.map((l) => ({ productId: l.productId, qtyMilli: l.qtyMilli }));
+  return useQuery({
+    queryKey: [KEY, "due-suggestion", key],
+    queryFn: () => suggestDueDate(db, { lines: key, now: new Date() }),
+    enabled: enabled && key.length > 0,
+  });
+}
+
 export const useCreateOrder = () => useAction(createOrder);
 export const useAddLine = () => useAction(addLine);
 export const useRemoveLine = () => useAction(removeLine);
 export const useConfirmOrder = () => useAction(confirmOrder);
 export const useShipOrder = () => useAction(shipOrder);
 export const useCancelOrder = () => useAction(cancelOrder);
+export const useUpdateOrderDue = () => useAction(updateOrderDue);
 export const useCreateCustomer = () => useAction(createCustomer);
 export const useUpdateCustomer = () =>
   useAction((ctx: Ctx, input: { id: string; patch: Partial<NewCustomer> }) => updateCustomer(ctx, input.id, input.patch));

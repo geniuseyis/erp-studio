@@ -2,7 +2,9 @@ import { expect, test } from "vitest";
 import { CUSTOMER_KINDS, LINE_STATUSES, ORDER_STATUSES } from "@/db/schema";
 import { DomainError } from "@/domain/errors";
 import {
+  applyDueText,
   CUSTOMER_KIND_LABEL,
+  dueBeforeSuggestion,
   defaultDueInput,
   dueFromInput,
   formatDue,
@@ -113,4 +115,15 @@ test("yeni sipariş hatası: yalnızca termin iletileri Termin alanına gider", 
 test("eksik malzeme satırı birimleriyle yazılır", () => {
   const text = formatShortage({ materialId: "x", code: "MLZ-0009", name: "MDF Lam 8 mm Beyaz Arkalık", unit: "plaka", neededMilli: 14_000, availableMilli: 3_000 });
   expect(text).toBe("MLZ-0009 MDF Lam 8 mm Beyaz Arkalık: 14 plaka gerekli, 3 plaka var");
+});
+
+test("termin önerisi: onay metni ve İstanbul gününe göre erkenlik", () => {
+  const d = (s: string) => new Date(s);
+  expect(applyDueText({ code: "SIP-2026-0012", dueAt: d("2026-12-02T00:00:00+03:00") }, d("2026-12-03T00:00:00+03:00"))).toBe(
+    "SIP-2026-0012 termini 02.12.2026 → 03.12.2026 olacak.",
+  );
+  // Aynı İstanbul günü erken sayılmaz; saat farkı önemsiz.
+  expect(dueBeforeSuggestion(d("2026-12-03T00:00:00+03:00"), d("2026-12-03T15:00:00+03:00"))).toBe(false);
+  expect(dueBeforeSuggestion(d("2026-12-02T23:00:00+03:00"), d("2026-12-03T00:00:00+03:00"))).toBe(true);
+  expect(dueBeforeSuggestion(d("2026-12-04T00:00:00+03:00"), d("2026-12-03T00:00:00+03:00"))).toBe(false);
 });

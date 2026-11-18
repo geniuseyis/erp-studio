@@ -4,6 +4,7 @@ import Link from "next/link";
 import { type FormEvent, useState } from "react";
 import { listOrderHistory } from "@/domain/audit-queries";
 import { can } from "@/domain/permissions";
+import type { DueSuggestion } from "@/domain/production/schedule";
 import type { Shortage } from "@/domain/production/types";
 import type { OrderDetail, OrderLineRow } from "@/domain/sales/queries";
 import { formatMoney, formatNumber } from "@/domain/units";
@@ -17,14 +18,27 @@ import { DetailItem, DrawerBadge } from "@/ui/DrawerParts";
 import { Textarea } from "@/ui/Field";
 import { formatDateTime } from "@/ui/format";
 import { HistoryList } from "@/ui/HistoryList";
-import { AlertIcon, ArrowRightIcon, CheckIcon, CloseIcon, ReceiptIcon, TrashIcon, TruckIcon } from "@/ui/icons";
+import { AlertIcon, ArrowRightIcon, CheckIcon, ClockIcon, CloseIcon, ReceiptIcon, TrashIcon, TruckIcon } from "@/ui/icons";
 import { Skeleton } from "@/ui/Skeleton";
 import { StatusChip } from "@/ui/StatusChip";
 import { useToast } from "@/ui/Toast";
 import { useGuardedRun } from "@/shell/useAction";
 import { useConfirm } from "@/shell/useConfirm";
-import { useCancelOrder, useConfirmOrder, useOrder, useRemoveLine, useShipOrder } from "./hooks";
-import { confirmOrderText, formatDiscount, formatShortage, LINE_STATUS_LABEL, LINE_STATUS_TONE, orderTone, removeLineText, shipOrderText } from "./labels";
+import { useCancelOrder, useConfirmOrder, useDueSuggestion, useOrder, useRemoveLine, useShipOrder, useUpdateOrderDue } from "./hooks";
+import {
+  applyDueText,
+  confirmOrderText,
+  dueBeforeSuggestion,
+  formatDiscount,
+  formatDue,
+  formatShortage,
+  LINE_STATUS_LABEL,
+  LINE_STATUS_TONE,
+  orderTone,
+  removeLineText,
+  sameDueDay,
+  shipOrderText,
+} from "./labels";
 import { LineForm } from "./LineForm";
 import { DueDate, OrderStatusChips } from "./OrderStatus";
 
@@ -37,7 +51,8 @@ export function OrderDrawer({ id, onClose }: { id: string; onClose: () => void }
   const confirm = useConfirmOrder();
   const ship = useShipOrder();
   const remove = useRemoveLine();
-  const { busy, run: guarded } = useGuardedRun<"confirm" | "ship" | "remove">();
+  const updateDue = useUpdateOrderDue();
+  const { busy, run: guarded } = useGuardedRun<"confirm" | "ship" | "remove" | "due">();
   const ask = useConfirm();
   const [cancelling, setCancelling] = useState(false);
   // Onayda dönen eksikler çekmece kapanana dek kalır; sonraki sorgular onları geri getirmez.
@@ -51,6 +66,21 @@ export function OrderDrawer({ id, onClose }: { id: string; onClose: () => void }
   const canConfirm = isDraft && canWrite;
   const canShipNow = o?.status === "ready" && canShip;
   const canCancel = o ? (isDraft ? canWrite : (o.status === "confirmed" || o.status === "in_production" || o.status === "ready") && canApprove) : false;
+  const suggestion = useDueSuggestion(o?.lines ?? [], isDraft);
+
+  function applySuggestion(dueAt: Date) {
+    if (!o) return;
+    void ask.confirm({
+      title: "Termin değişsin mi?",
+      body: applyDueText(o, dueAt),
+      confirmLabel: "Termini değiştir",
+      action: () =>
+        guarded("due", async () => {
+          await updateDue.mutateAsync({ orderId: o.id, dueAt });
+          toast.success(`${o.code} termini ${formatDue(dueAt)} oldu`);
+        }),
+    });
+  }
 
   /** Önce onay sorulur; çift tıklama ve yenileme bitmeden ikinci istek ortak kancada engellenir. */
   function run(kind: "confirm" | "ship", event: { detail: number }) {
@@ -164,6 +194,16 @@ export function OrderDrawer({ id, onClose }: { id: string; onClose: () => void }
               ) : null}
             </dl>
 
+            {isDraft && o.lines.length > 0 && suggestion.data ? (
+              <DueSuggestionBox
+                dueAt={o.dueAt}
+                suggestion={suggestion.data}
+                onApply={canWrite ? () => applySuggestion(suggestion.data.dueAt) : undefined}
+                busy={busy === "due"}
+                disabled={busy !== null}
+              />
+            ) : null}
+
             <section className="grid gap-3" aria-labelledby={`lines-${o.id}`}>
               <h3 id={`lines-${o.id}`} className="text-lg font-semibold">
                 Satırlar <span className="tabular text-base font-medium text-fg-muted">({o.lines.length})</span>
@@ -219,6 +259,46 @@ function OrderHero({ order: o }: { order: OrderDetail }) {
         <p className="tabular font-display text-xl font-semibold">{formatMoney(o.totals.netKurus)}</p>
       </div>
     </div>
+  );
+}
+
+/** Taslakta önerilen termin; termin öneriden erkense uyarı. Öneri farklıysa "Öneriyi uygula" (yetki varsa). */
+function DueSuggestionBox({
+  dueAt,
+  suggestion,
+  onApply,
+  busy,
+  disabled,
+}: {
+  dueAt: Date;
+  suggestion: DueSuggestion;
+  onApply?: () => void;
+  busy: boolean;
+  disabled: boolean;
+}) {
+  const early = dueBeforeSuggestion(dueAt, suggestion.dueAt);
+  return (
+    <section
+      aria-label="Termin önerisi"
+      className={cn("grid gap-2 rounded-2xl px-4 py-3 ring-1 ring-inset", early ? "bg-warn-bg ring-warn/25" : "bg-surface-2/70 ring-line")}
+    >
+      <p className="break-words">
+        <span className="text-fg-muted">Önerilen termin: </span>
+        <span className="tabular font-semibold">{formatDue(suggestion.dueAt)}</span>
+        <span className="text-fg-muted"> · {suggestion.detail}</span>
+      </p>
+      {early ? (
+        <p className="flex items-center gap-2 text-sm font-semibold text-warn">
+          <AlertIcon size={16} />
+          Termin önerilenden önce
+        </p>
+      ) : null}
+      {onApply && !sameDueDay(dueAt, suggestion.dueAt) ? (
+        <Button size="sm" icon={<ClockIcon />} className="justify-self-start" loading={busy} disabled={disabled} onClick={onApply}>
+          Öneriyi uygula
+        </Button>
+      ) : null}
+    </section>
   );
 }
 

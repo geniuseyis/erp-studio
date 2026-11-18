@@ -1,4 +1,5 @@
 import { type DomainErrorCode, isDomainError } from "@/domain/errors";
+import { istanbulDayStart } from "@/domain/production/calendar";
 import type { ProductFinish, Shortage } from "@/domain/production/types";
 import type { CustomerKind, LineStatus, OrderStatus } from "@/domain/sales/types";
 import { orderTotals, type OrderTotals, type TotalsLine } from "@/domain/sales/money";
@@ -178,6 +179,21 @@ export function previewAddLine(
 
 export function confirmOrderText(order: ConfirmOrder): string {
   return `${order.code} onaylanacak: ${order.lines.length} kalem, KDV dahil ${formatMoney(order.totals.totalKurus)}. Stok ayrılır, stokta olmayan ürünler için iş emri açılır.`;
+}
+
+/** "SIP-2026-0012 termini 02.12.2026 → 03.12.2026 olacak." */
+export function applyDueText(order: { code: string; dueAt: Date }, dueAt: Date): string {
+  return `${order.code} termini ${formatDue(order.dueAt)} → ${formatDue(dueAt)} olacak.`;
+}
+
+/** Termin günü (İstanbul) önerilen günden önce mi? */
+export function dueBeforeSuggestion(dueAt: Date, suggested: Date): boolean {
+  return istanbulDayStart(dueAt).getTime() < istanbulDayStart(suggested).getTime();
+}
+
+/** Aynı İstanbul günü mü? */
+export function sameDueDay(a: Date, b: Date): boolean {
+  return istanbulDayStart(a).getTime() === istanbulDayStart(b).getTime();
 }
 
 export function shipOrderText(order: { code: string }): string {

@@ -316,3 +316,55 @@ test("telefonda sipariş ve müşteri ekranları ve çekmeceleri yatay taşmaz",
     await expect(page.getByRole("dialog")).toHaveCount(0);
   }
 });
+
+test("taslağa satır eklenince önerilen termin görünür; uygula → onay → termin değişir", async ({ page }) => {
+  await loginAs(page, "Elif Karaca");
+  await openOrders(page);
+  const p = await product(page, "on_hand_milli - reserved_milli = 0 and exists (select 1 from routings r where r.product_id = products.id)");
+
+  // Termin bugün: üretim gereken ürün için öneriden erkendir.
+  const istanbulToday = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const todayText = istanbulToday.split("-").reverse().join(".");
+  await page.getByRole("button", { name: "Yeni sipariş" }).click();
+  const dialog = page.getByRole("dialog", { name: "Yeni sipariş" });
+  await expect(dialog.getByText("Varsayılan: 14 gün sonra")).toBeVisible();
+  await dialog.getByRole("radio").first().check();
+  await dialog.getByLabel("Termin").fill(istanbulToday);
+  await dialog.getByRole("button", { name: "Taslağı aç" }).click();
+  await approve(page, "Taslağı aç");
+  await expect(page).toHaveURL(/ac=/);
+  const id = new URL(page.url()).searchParams.get("ac") ?? "";
+  const [row] = await sql<{ code: string }>(page, `select code from sales_orders where id = '${id}'`);
+  const code = row?.code ?? "";
+  const drawer = page.getByRole("dialog", { name: code });
+  const box = drawer.getByRole("region", { name: "Termin önerisi" });
+  await expect(drawer.getByText("Henüz satır yok")).toBeVisible();
+  await expect(box).toHaveCount(0);
+
+  await addLine(drawer, p.code, "1");
+  await expect(box).toContainText(/Önerilen termin: \d{2}\.\d{2}\.\d{4} · /);
+  await expect(box).toContainText("Termin önerilenden önce");
+  const suggested = /Önerilen termin: (\d{2}\.\d{2}\.\d{4})/.exec((await box.textContent()) ?? "")?.[1] ?? "";
+
+  const due = async () => {
+    const [r] = await sql<{ ms: number }>(page, `select (extract(epoch from due_at) * 1000)::float8 as ms from sales_orders where id = '${id}'`);
+    return new Date((r?.ms ?? 0) + 3 * 60 * 60 * 1000).toISOString().slice(0, 10).split("-").reverse().join(".");
+  };
+  const logs = () => count(page, `select count(*)::int as n from audit_log where entity_id = '${id}' and action = 'update_due'`);
+
+  // Vazgeç hiçbir şey değiştirmez.
+  await box.getByRole("button", { name: "Öneriyi uygula" }).click();
+  await expect(confirmDialog(page)).toContainText(`${code} termini ${todayText} → ${suggested} olacak.`);
+  await confirmDialog(page).getByRole("button", { name: "Vazgeç" }).click();
+  await expect(confirmDialog(page)).toBeHidden();
+  expect(await due()).toBe(todayText);
+  expect(await logs()).toBe(0);
+
+  await box.getByRole("button", { name: "Öneriyi uygula" }).click();
+  await approve(page, "Termini değiştir");
+  await expect.poll(due).toBe(suggested);
+  expect(await logs()).toBe(1);
+  await expect(box).not.toContainText("Termin önerilenden önce");
+  await expect(box.getByRole("button", { name: "Öneriyi uygula" })).toHaveCount(0);
+  await expect(drawer.getByText(suggested).first()).toBeVisible();
+});

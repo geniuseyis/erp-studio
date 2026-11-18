@@ -32,6 +32,7 @@ export const ACTION_LABEL: Record<string, string> = {
   add_line: "Satır eklendi",
   update_line: "Satır güncellendi",
   remove_line: "Satır silindi",
+  update_due: "Termin değişti",
   confirm: "Onaylandı",
   status: "Durum değişti",
   ship: "Sevk edildi",

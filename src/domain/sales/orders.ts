@@ -110,6 +110,31 @@ export async function createOrder(ctx: Ctx, i: { customerId: string; dueAt: Date
   });
 }
 
+/** Taslak siparişin terminini değiştirir; kural yeni siparişteki gibi (geçmiş gün olmaz). Aynı gün: yazmaz. */
+export async function updateOrderDue(ctx: Ctx, i: { orderId: string; dueAt: Date }): Promise<SalesOrder> {
+  assertCan(ctx.user, "sales", "write");
+  if (!(i.dueAt instanceof Date) || Number.isNaN(i.dueAt.getTime())) throw invalid("Termin geçersiz");
+  if (i.dueAt.getTime() < istanbulDayStart(ctx.now).getTime()) throw invalid("Termin geçmiş bir gün olamaz");
+  const dueAt = istanbulDayStart(i.dueAt);
+
+  return inTx(ctx, async (tx) => {
+    const [order] = isUuid(i.orderId) ? await tx.db.select().from(salesOrders).where(eq(salesOrders.id, i.orderId)).for("update") : [];
+    if (!order) throw new DomainError("NOT_FOUND", "Sipariş bulunamadı");
+    if (order.status !== "draft") throw new DomainError("INVALID_STATE", "Yalnızca taslak siparişin termini değiştirilebilir");
+    if (order.dueAt && istanbulDayStart(order.dueAt).getTime() === dueAt.getTime()) return asOrder(order);
+
+    const [row] = await tx.db.update(salesOrders).set({ dueAt }).where(eq(salesOrders.id, order.id)).returning();
+    if (!row) throw new Error("termin güncellenemedi");
+    await logAudit(tx, {
+      entity: "sales_order",
+      entityId: order.id,
+      action: "update_due",
+      summary: `${order.code}: termin ${order.dueAt ? auditDay(order.dueAt) : "yok"} → ${auditDay(dueAt)}`,
+    });
+    return asOrder(row);
+  });
+}
+
 /**
  * Ürünün o anki fiyatı ve KDV oranı satıra kopyalanır. Aynı ürün varsa adet artar (`merged: true`);
  * iskonto verilmediyse satırın eski iskontosu korunur, verildiyse yerine geçer.
