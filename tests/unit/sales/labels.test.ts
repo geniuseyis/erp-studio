@@ -5,6 +5,7 @@ import {
   applyDueText,
   CUSTOMER_KIND_LABEL,
   dueBeforeSuggestion,
+  suggestionView,
   defaultDueInput,
   dueFromInput,
   formatDue,
@@ -126,4 +127,24 @@ test("termin önerisi: onay metni ve İstanbul gününe göre erkenlik", () => {
   expect(dueBeforeSuggestion(d("2026-12-03T00:00:00+03:00"), d("2026-12-03T15:00:00+03:00"))).toBe(false);
   expect(dueBeforeSuggestion(d("2026-12-02T23:00:00+03:00"), d("2026-12-03T00:00:00+03:00"))).toBe(true);
   expect(dueBeforeSuggestion(d("2026-12-04T00:00:00+03:00"), d("2026-12-03T00:00:00+03:00"))).toBe(false);
+});
+
+test("öneri satırı: yalnızca termin öneriden önceyse uygulanır; sonraysa bilgi; yer yoksa tarih yok", () => {
+  const d = (s: string) => new Date(`${s}T00:00:00+03:00`);
+  const s = { dueAt: d("2026-12-03"), detail: "MAM-0001 × 1: üretim 3 iş günü", overflow: false };
+  expect(suggestionView(d("2026-12-02"), s)).toEqual({
+    line: "Önerilen termin: 03.12.2026 · MAM-0001 × 1: üretim 3 iş günü",
+    warn: "Termin önerilenden önce",
+    note: null,
+    canApply: true,
+  });
+  expect(suggestionView(d("2026-12-03"), s)).toMatchObject({ warn: null, note: null, canApply: false });
+  // 03.12 perşembe → 08.12 salı: 3 iş günü sonra.
+  expect(suggestionView(d("2026-12-08"), s)).toMatchObject({ warn: null, note: "Termin öneriden 3 iş günü sonra", canApply: false });
+  expect(suggestionView(d("2026-12-02"), { ...s, detail: "60 iş günü içinde yer yok", overflow: true })).toEqual({
+    line: "Önerilen termin: 60 iş günü içinde yer yok",
+    warn: null,
+    note: null,
+    canApply: false,
+  });
 });

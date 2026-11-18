@@ -1,5 +1,5 @@
 import { type DomainErrorCode, isDomainError } from "@/domain/errors";
-import { istanbulDayStart } from "@/domain/production/calendar";
+import { istanbulDayStart, workdaysBetween } from "@/domain/production/calendar";
 import type { ProductFinish, Shortage } from "@/domain/production/types";
 import type { CustomerKind, LineStatus, OrderStatus } from "@/domain/sales/types";
 import { orderTotals, type OrderTotals, type TotalsLine } from "@/domain/sales/money";
@@ -191,9 +191,19 @@ export function dueBeforeSuggestion(dueAt: Date, suggested: Date): boolean {
   return istanbulDayStart(dueAt).getTime() < istanbulDayStart(suggested).getTime();
 }
 
-/** Aynı İstanbul günü mü? */
-export function sameDueDay(a: Date, b: Date): boolean {
-  return istanbulDayStart(a).getTime() === istanbulDayStart(b).getTime();
+export type SuggestionView = { line: string; warn: string | null; note: string | null; canApply: boolean };
+
+/**
+ * Çekmecedeki öneri satırı. Öneri en erken ulaşılabilir gündür, hedef değil: "Öneriyi uygula" yalnızca termin öneriden
+ * önceyse sunulur; termin sonraysa bilgi olarak kaç iş günü sonra olduğu yazılır. Yer bulunamadıysa tarih verilmez.
+ */
+export function suggestionView(dueAt: Date, s: { dueAt: Date; detail: string; overflow: boolean }): SuggestionView {
+  if (s.overflow) return { line: `Önerilen termin: ${s.detail}`, warn: null, note: null, canApply: false };
+  const line = `Önerilen termin: ${formatDue(s.dueAt)} · ${s.detail}`;
+  if (dueBeforeSuggestion(dueAt, s.dueAt)) return { line, warn: "Termin önerilenden önce", note: null, canApply: true };
+  const later = workdaysBetween(s.dueAt, dueAt);
+  const note = dueBeforeSuggestion(s.dueAt, dueAt) && later > 0 ? `Termin öneriden ${later} iş günü sonra` : null;
+  return { line, warn: null, note, canApply: false };
 }
 
 export function shipOrderText(order: { code: string }): string {

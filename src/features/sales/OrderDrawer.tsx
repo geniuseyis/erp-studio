@@ -28,7 +28,6 @@ import { useCancelOrder, useConfirmOrder, useDueSuggestion, useOrder, useRemoveL
 import {
   applyDueText,
   confirmOrderText,
-  dueBeforeSuggestion,
   formatDiscount,
   formatDue,
   formatShortage,
@@ -36,8 +35,8 @@ import {
   LINE_STATUS_TONE,
   orderTone,
   removeLineText,
-  sameDueDay,
   shipOrderText,
+  suggestionView,
 } from "./labels";
 import { LineForm } from "./LineForm";
 import { DueDate, OrderStatusChips } from "./OrderStatus";
@@ -194,11 +193,12 @@ export function OrderDrawer({ id, onClose }: { id: string; onClose: () => void }
               ) : null}
             </dl>
 
-            {isDraft && o.lines.length > 0 && suggestion.data ? (
+            {isDraft && o.lines.length > 0 ? (
               <DueSuggestionBox
                 dueAt={o.dueAt}
                 suggestion={suggestion.data}
-                onApply={canWrite ? () => applySuggestion(suggestion.data.dueAt) : undefined}
+                failed={suggestion.isError}
+                onApply={canWrite ? applySuggestion : undefined}
                 busy={busy === "due"}
                 disabled={busy !== null}
               />
@@ -262,39 +262,52 @@ function OrderHero({ order: o }: { order: OrderDetail }) {
   );
 }
 
-/** Taslakta önerilen termin; termin öneriden erkense uyarı. Öneri farklıysa "Öneriyi uygula" (yetki varsa). */
+/**
+ * Taslakta önerilen termin. Öneri en erken ulaşılabilir gündür: termin ondan önceyse uyarı ve (yetki varsa) "Öneriyi
+ * uygula"; sonraysa yalnızca bilgi. Yer bulunamadıysa tarih ve düğme yok. Hesap hata verirse soluk bir not.
+ */
 function DueSuggestionBox({
   dueAt,
   suggestion,
+  failed,
   onApply,
   busy,
   disabled,
 }: {
   dueAt: Date;
-  suggestion: DueSuggestion;
-  onApply?: () => void;
+  suggestion: DueSuggestion | undefined;
+  failed: boolean;
+  onApply?: (dueAt: Date) => void;
   busy: boolean;
   disabled: boolean;
 }) {
-  const early = dueBeforeSuggestion(dueAt, suggestion.dueAt);
+  if (!suggestion) {
+    return failed ? (
+      <p role="note" aria-label="Termin önerisi" className="text-sm text-fg-muted">
+        Öneri hesaplanamadı
+      </p>
+    ) : null;
+  }
+  const view = suggestionView(dueAt, suggestion);
+  const alert = view.warn !== null || suggestion.overflow;
   return (
     <section
       aria-label="Termin önerisi"
-      className={cn("grid gap-2 rounded-2xl px-4 py-3 ring-1 ring-inset", early ? "bg-warn-bg ring-warn/25" : "bg-surface-2/70 ring-line")}
+      className={cn("grid gap-2 rounded-2xl px-4 py-3 ring-1 ring-inset", alert ? "bg-warn-bg ring-warn/25" : "bg-surface-2/70 ring-line")}
     >
-      <p className="break-words">
-        <span className="text-fg-muted">Önerilen termin: </span>
-        <span className="tabular font-semibold">{formatDue(suggestion.dueAt)}</span>
-        <span className="text-fg-muted"> · {suggestion.detail}</span>
+      <p className={cn("break-words", suggestion.overflow && "flex items-center gap-2 font-semibold text-warn")}>
+        {suggestion.overflow ? <AlertIcon size={16} /> : null}
+        {view.line}
       </p>
-      {early ? (
+      {view.warn ? (
         <p className="flex items-center gap-2 text-sm font-semibold text-warn">
           <AlertIcon size={16} />
-          Termin önerilenden önce
+          {view.warn}
         </p>
       ) : null}
-      {onApply && !sameDueDay(dueAt, suggestion.dueAt) ? (
-        <Button size="sm" icon={<ClockIcon />} className="justify-self-start" loading={busy} disabled={disabled} onClick={onApply}>
+      {view.note ? <p className="text-sm text-fg-muted">{view.note}</p> : null}
+      {onApply && view.canApply ? (
+        <Button size="sm" icon={<ClockIcon />} className="justify-self-start" loading={busy} disabled={disabled} onClick={() => onApply(suggestion.dueAt)}>
           Öneriyi uygula
         </Button>
       ) : null}

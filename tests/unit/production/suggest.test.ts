@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import type { Db } from "@/db/client";
 import { workOrders, workOrderSteps } from "@/db/schema";
 import { addWorkdays } from "@/domain/production/calendar";
@@ -49,18 +49,18 @@ async function load(stationId: string, days: Date[], minutes: number) {
 test("mamul stoğu yeten ürün: sonraki iş günü, basis stok", async () => {
   const stocked = await routed({ onHandMilli: 5000, reservedMilli: 1000 });
   const s = await suggestDueDate(db, { lines: [{ productId: stocked.id, qtyMilli: 4000 }], now: NOW });
-  expect(s).toEqual({ dueAt: day("2026-11-16"), basis: "stok", detail: "stokta var" });
+  expect(s).toEqual({ dueAt: day("2026-11-16"), basis: "stok", detail: "stokta var", overflow: false });
 
   // Kullanılabilir 4 adet; 5 isteyince 1 adet üretilir: Kesim 16, Montaj 17, Boya 18 → termin 19.11.
   const partial = await suggestDueDate(db, { lines: [{ productId: stocked.id, qtyMilli: 5000 }], now: NOW });
-  expect(partial).toEqual({ dueAt: day("2026-11-19"), basis: "kapasite", detail: `${stocked.code} × 5: üretim 3 iş günü` });
+  expect(partial).toEqual({ dueAt: day("2026-11-19"), basis: "kapasite", detail: `${stocked.code} × 5: üretim 3 iş günü`, overflow: false });
 });
 
 test("dolu Montaj gününü atlar; adımlar ardışık iş günlerine dizilir", async () => {
   await load(station.Montaj, [day("2026-11-17")], 950);
   const s = await suggestDueDate(db, { lines: [{ productId: product.id, qtyMilli: 1000 }], now: NOW });
   // Kesim 16, Montaj 17'de dolu → 18, Boya 19 → termin 20.11.
-  expect(s).toEqual({ dueAt: day("2026-11-20"), basis: "kapasite", detail: `${product.code} × 1: Montaj 17.11'de dolu` });
+  expect(s).toEqual({ dueAt: day("2026-11-20"), basis: "kapasite", detail: `${product.code} × 1: Montaj 17.11'de dolu`, overflow: false });
 });
 
 test("önceki satırın geçici yükü sayılır; sipariş termini en geç satırdan, detail o satırı söyler", async () => {
@@ -73,14 +73,14 @@ test("önceki satırın geçici yükü sayılır; sipariş termini en geç satı
     now: NOW,
   });
   // İkinci satır: Kesim 17, Montaj 18, Boya 19 → 20.11.
-  expect(s).toEqual({ dueAt: day("2026-11-20"), basis: "kapasite", detail: `${other.code} × 3: Kesim 16.11'de dolu` });
+  expect(s).toEqual({ dueAt: day("2026-11-20"), basis: "kapasite", detail: `${other.code} × 3: Kesim 16.11'de dolu`, overflow: false });
 });
 
 test("kapasiteden büyük adım yükü olmayan ilk güne kendi başına yerleşir", async () => {
   await load(station.Kesim, [day("2026-11-16")], 10);
   const s = await suggestDueDate(db, { lines: [{ productId: product.id, qtyMilli: 10_000 }], now: NOW });
   // Kesim 200 dk > 100: 16.11'de yük var → 17.11; Montaj 18, Boya (200 ≤ 300) 19 → 20.11.
-  expect(s).toEqual({ dueAt: day("2026-11-20"), basis: "kapasite", detail: `${product.code} × 10: Kesim 16.11'de dolu` });
+  expect(s).toEqual({ dueAt: day("2026-11-20"), basis: "kapasite", detail: `${product.code} × 10: Kesim 16.11'de dolu`, overflow: false });
 });
 
 test("malzeme eksikse başlangıç en uzun tedarik süresi kadar kayar", async () => {
@@ -91,7 +91,7 @@ test("malzeme eksikse başlangıç en uzun tedarik süresi kadar kayar", async (
 
   const s = await suggestDueDate(db, { lines: [{ productId: product.id, qtyMilli: 2000 }], now: NOW });
   // 15.11 + 5 iş günü = 23.11; üretim ertesi iş günü 24.11: Kesim 24, Montaj 25, Boya 26 → 27.11.
-  expect(s).toEqual({ dueAt: day("2026-11-27"), basis: "malzeme", detail: `${slow.code} Meşe Tabla için 5 iş günü tedarik` });
+  expect(s).toEqual({ dueAt: day("2026-11-27"), basis: "malzeme", detail: `${slow.code} Meşe Tabla için 5 iş günü tedarik`, overflow: false });
 });
 
 test("cuma öğleden sonra istenen öneri hafta sonunu atlar", async () => {
@@ -100,7 +100,7 @@ test("cuma öğleden sonra istenen öneri hafta sonunu atlar", async () => {
   expect((await suggestDueDate(db, { lines: [{ productId: stocked.id, qtyMilli: 1000 }], now: friday })).dueAt).toEqual(day("2026-11-23"));
   const s = await suggestDueDate(db, { lines: [{ productId: product.id, qtyMilli: 1000 }], now: friday });
   // Kesim pzt 23, Montaj 24, Boya 25 → 26.11.
-  expect(s).toEqual({ dueAt: day("2026-11-26"), basis: "kapasite", detail: `${product.code} × 1: üretim 3 iş günü` });
+  expect(s).toEqual({ dueAt: day("2026-11-26"), basis: "kapasite", detail: `${product.code} × 1: üretim 3 iş günü`, overflow: false });
 });
 
 test("60 iş günü içinde yer yoksa kapasite: 60 iş günü içinde yer yok", async () => {
@@ -111,7 +111,7 @@ test("60 iş günü içinde yer yoksa kapasite: 60 iş günü içinde yer yok", 
     960,
   );
   const s = await suggestDueDate(db, { lines: [{ productId: product.id, qtyMilli: 1000 }], now: NOW });
-  expect(s).toEqual({ dueAt: addWorkdays(first, 60), basis: "kapasite", detail: "60 iş günü içinde yer yok" });
+  expect(s).toEqual({ dueAt: addWorkdays(first, 60), basis: "kapasite", detail: "60 iş günü içinde yer yok", overflow: true });
 });
 
 test("öneri hiçbir şey yazmaz", async () => {
@@ -132,4 +132,44 @@ test("öneri hiçbir şey yazmaz", async () => {
   const before = await counts();
   await suggestDueDate(db, { lines: [{ productId: product.id, qtyMilli: 2000 }], now: NOW });
   expect(await counts()).toEqual(before);
+});
+
+test("kapasiteden büyük adım için 60 iş günü içinde boş gün yoksa yer yok; dolu güne konmaz", async () => {
+  const first = day("2026-11-16");
+  await load(
+    station.Kesim,
+    Array.from({ length: 61 }, (_, i) => addWorkdays(first, i)),
+    10,
+  );
+  const s = await suggestDueDate(db, { lines: [{ productId: product.id, qtyMilli: 10_000 }], now: NOW });
+  expect(s).toEqual({ dueAt: addWorkdays(first, 60), basis: "kapasite", detail: "60 iş günü içinde yer yok", overflow: true });
+});
+
+test("60 iş gününden uzun tedarik: pencere üretim başlangıcından sayılır, basis malzeme", async () => {
+  const m = await addMaterial(db, { name: "İthal Kumaş", leadTimeDays: 70 });
+  await addBomLine(db, { productId: product.id, materialId: m.id, qtyMilli: 1000 });
+  const s = await suggestDueDate(db, { lines: [{ productId: product.id, qtyMilli: 1000 }], now: NOW });
+  // 15.11 + 70 iş günü, üretim ertesi iş günü (16.11 + 71); üç adım ve sevk: 16.11 + 74.
+  expect(s).toEqual({ dueAt: addWorkdays(day("2026-11-16"), 74), basis: "malzeme", detail: `${m.code} İthal Kumaş için 70 iş günü tedarik`, overflow: false });
+});
+
+test("sorgu sayısı arama penceresiyle büyümez: planlı yük tek sorguda okunur", async () => {
+  const spy = vi.spyOn(db, "select");
+  const free = await suggestDueDate(db, { lines: [{ productId: product.id, qtyMilli: 1000 }], now: NOW });
+  const freeCount = spy.mock.calls.length;
+  expect(free.dueAt).toEqual(day("2026-11-19"));
+
+  spy.mockClear();
+  // Montaj 17.11'den itibaren 30 iş günü dolu: adım 30 gün aranır.
+  await load(
+    station.Montaj,
+    Array.from({ length: 30 }, (_, i) => addWorkdays(day("2026-11-17"), i)),
+    960,
+  );
+  spy.mockClear();
+  const busy = await suggestDueDate(db, { lines: [{ productId: product.id, qtyMilli: 1000 }], now: NOW });
+  expect(busy.detail).toBe(`${product.code} × 1: Montaj 17.11'de dolu`);
+  expect(busy.dueAt).toEqual(addWorkdays(day("2026-11-17"), 32));
+  expect(spy.mock.calls.length).toBe(freeCount);
+  spy.mockRestore();
 });

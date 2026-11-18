@@ -367,4 +367,16 @@ test("taslağa satır eklenince önerilen termin görünür; uygula → onay →
   await expect(box).not.toContainText("Termin önerilenden önce");
   await expect(box.getByRole("button", { name: "Öneriyi uygula" })).toHaveCount(0);
   await expect(drawer.getByText(suggested).first()).toBeVisible();
+
+  // Termin öneriden sonraysa öneri yalnızca bilgidir: uygulama düğmesi yok (varsayılan termin 14 gün sonra, ürün stokta).
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const stocked = await product(page, "on_hand_milli - reserved_milli >= 1000");
+  const later = await newDraft(page);
+  await addLine(later.drawer, stocked.code, "1");
+  const laterBox = later.drawer.getByRole("region", { name: "Termin önerisi" });
+  await expect(laterBox).toContainText("stokta var");
+  await expect(laterBox).toContainText(/Termin öneriden \d+ iş günü sonra/);
+  await expect(laterBox).not.toContainText("Termin önerilenden önce");
+  await expect(laterBox.getByRole("button", { name: "Öneriyi uygula" })).toHaveCount(0);
 });
