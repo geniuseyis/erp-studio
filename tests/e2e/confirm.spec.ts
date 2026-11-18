@@ -185,6 +185,32 @@ test("atölye Başla: büyük düğmeli onay iş emrini, istasyonu ve adımı ya
   expect(await started()).toBe(true);
 });
 
+test("atölye Bitti: kart ve düğme kalkınca odak sayfanın main öğesine gider, body'ye düşmez", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await loginAs(page, "Cem Doğru");
+  const pick = await one<{ id: string; code: string; station: string }>(
+    page,
+    `select w.id, w.code, st.code as station
+       from work_orders w
+       join work_order_steps s on s.work_order_id = w.id
+       join stations st on st.id = s.station_id
+      where w.status = 'in_progress' and s.started_at is null
+        and not exists (select 1 from work_order_steps p where p.work_order_id = w.id and p.seq < s.seq and p.finished_at is null)
+      order by w.code limit 1`,
+  );
+  await page.goto(`/atolye?istasyon=${pick.station}`);
+  const card = page.getByRole("article", { name: pick.code });
+  await card.getByRole("button", { name: "Başla" }).click({ timeout: 45_000 });
+  await approve(page, "Başlat");
+  const done = card.getByRole("button", { name: "Bitti" });
+  await expect(done).toBeVisible();
+
+  await done.click();
+  await approve(page, "Bitir");
+  await expect(card).toHaveCount(0);
+  await expect(page.locator("main")).toBeFocused();
+});
+
 test("stok girişi: metin eldekinin öncesini ve sonrasını yazar; formda Enter iki kez basılsa da kaydetmez", async ({ page }) => {
   await loginAs(page, "Onur Tekin");
   const m = await one<{ code: string; name: string; on_hand: number }>(page, "select code, name, on_hand_milli::float8 as on_hand from materials where code = 'MLZ-0001'");

@@ -79,7 +79,7 @@ export function stepControls(wo: Pick<WorkOrderDetail, "status" | "materialsRese
     return { start: null, finish: running.stationName, reason: next ? `Önce ${running.stationName} adımını bitirin.` : null };
   }
   if (!next) return { start: null, finish: null, reason: wo.steps.length === 0 ? "Bu iş emrinin rotası yok." : null };
-  if (next === wo.steps[0] && !wo.materialsReserved) {
+  if (wo.steps.indexOf(next) === 0 && !wo.materialsReserved) {
     return { start: null, finish: null, reason: "Malzeme ayrılmadı: planlama malzemeyi ayırmadan üretim başlamaz." };
   }
   return { start: next.stationName, finish: null, reason: null };
