@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { approve, loginAs, one, sql } from "./helpers";
+import { approve, loginAs, one, settledHeight, sql } from "./helpers";
 
 test("silinen sipariş satırının ürün kodu ve adı Geçmiş'te görünür", async ({ page }) => {
   await loginAs(page, "Elif Karaca");
@@ -11,7 +11,7 @@ test("silinen sipariş satırının ürün kodu ve adı Geçmiş'te görünür",
   await page.getByRole("button", { name: "Yeni sipariş" }).click();
   const dialog = page.getByRole("dialog", { name: "Yeni sipariş" });
   // Normal pencerede kapatma düğmesi küçük kalır (48 px yalnızca atölye onayında).
-  expect((await dialog.getByRole("button", { name: "Kapat" }).boundingBox())?.height ?? 0).toBeLessThan(48);
+  expect(await settledHeight(dialog.getByRole("button", { name: "Kapat" }))).toBeLessThan(48);
   await dialog.getByRole("radio").first().check();
   await dialog.getByRole("button", { name: "Taslağı aç" }).click();
   await approve(page, "Taslağı aç");

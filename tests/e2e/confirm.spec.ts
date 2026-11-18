@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { orderTotals } from "../../src/domain/sales/money";
 import { formatMoney, formatQty } from "../../src/domain/units";
-import { approve, confirmDialog, loginAs, navTo, one, signOut, sql } from "./helpers";
+import { approve, confirmDialog, loginAs, navTo, one, settledHeight, signOut, sql } from "./helpers";
 
 // Her işlem türünden bir temsilci: Vazgeç hiçbir şey yazmaz, Enter tek başına onaylamaz, onay yazar.
 
@@ -125,9 +125,9 @@ test("atölye Başla: büyük düğmeli onay iş emrini, istasyonu ve adımı ya
   const dialog = confirmDialog(page);
   await expect(dialog).toContainText(`${pick.code} · ${pick.name} adımı başlatılacak (adım ${pick.seq}/${pick.total}).`);
   for (const name of ["Vazgeç", "Başlat"]) {
-    expect((await dialog.getByRole("button", { name, exact: true }).boundingBox())?.height ?? 0, name).toBeGreaterThanOrEqual(48);
+    expect(await settledHeight(dialog.getByRole("button", { name, exact: true })), name).toBeGreaterThanOrEqual(48);
   }
-  expect((await dialog.getByRole("button", { name: "Kapat" }).boundingBox())?.height ?? 0, "Kapat").toBeGreaterThanOrEqual(48);
+  expect(await settledHeight(dialog.getByRole("button", { name: "Kapat" })), "Kapat").toBeGreaterThanOrEqual(48);
   await dialog.getByRole("button", { name: "Vazgeç" }).click();
   await expect(dialog).toBeHidden();
   expect(await started()).toBe(false);

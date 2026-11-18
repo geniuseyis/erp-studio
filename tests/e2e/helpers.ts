@@ -58,6 +58,22 @@ export async function approve(page: Page, label: string | RegExp): Promise<void>
   await expect(dialog).toBeHidden({ timeout: 45_000 });
 }
 
+/**
+ * Öğenin ekrandaki yüksekliği, giriş animasyonları bittikten sonra. Pencere `pop-in` ile %97 ölçekten başlar; animasyon
+ * henüz ilk karesini çizmemişken (yavaş makinede, azaltılmış harekette bile) ölçülen kutu 48 px yerine 46,56 px çıkar.
+ * Öğenin ve atalarının sonlu animasyonları beklenir; sonsuz döngüler (dönen işaret, iskelet) beklenmez.
+ */
+export async function settledHeight(locator: Locator): Promise<number> {
+  await locator.evaluate(async (el) => {
+    const running: Promise<unknown>[] = [];
+    for (let node: Element | null = el; node; node = node.parentElement) {
+      for (const a of node.getAnimations()) if (a.effect?.getComputedTiming().endTime !== Infinity) running.push(a.finished.catch(() => undefined));
+    }
+    await Promise.all(running);
+  });
+  return (await locator.boundingBox())?.height ?? 0;
+}
+
 /** Tek satır dönmesi beklenen sorgu; satır yoksa test anlaşılır bir hatayla düşer. */
 export async function one<T>(page: Page, query: string): Promise<T> {
   const [row] = await sql<T>(page, query);

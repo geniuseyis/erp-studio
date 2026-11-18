@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { addWorkdays } from "../../src/domain/production/calendar";
-import { approve, confirmDialog, leave, loginAs, navTo, one, signOut, sql } from "./helpers";
+import { approve, confirmDialog, leave, loginAs, navTo, one, settledHeight, signOut, sql } from "./helpers";
 
 const ISTANBUL_OFFSET_MS = 3 * 60 * 60 * 1000;
 /** "YYYY-AA-GG" → o İstanbul gününün başlangıç anı. */
@@ -239,7 +239,7 @@ test("atölye ekranında Başla sonra Bitti; kart sonraki istasyona geçer", asy
   await start.click();
   const ask = confirmDialog(page);
   await expect(ask).toContainText(`${pick.code} · ${pick.station} adımı başlatılacak`);
-  for (const name of ["Vazgeç", "Başlat"]) expect((await ask.getByRole("button", { name, exact: true }).boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(48);
+  for (const name of ["Vazgeç", "Başlat"]) expect(await settledHeight(ask.getByRole("button", { name, exact: true })), name).toBeGreaterThanOrEqual(48);
   await approve(page, "Başlat");
   const finish = card.getByRole("button", { name: "Bitti" });
   await expect(finish).toBeVisible();
