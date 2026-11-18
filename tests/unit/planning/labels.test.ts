@@ -4,6 +4,7 @@ import {
   announceDay,
   capacityWarning,
   dayMonth,
+  loadPercent,
   loadText,
   longDay,
   moveQuestion,
@@ -87,4 +88,10 @@ test("hafta özeti: yük, kapasite, aşan hücre, termini geçen iş emri, planl
     unscheduled: 4,
   };
   expect(weekSummary(plan)).toEqual({ loadMinutes: 1320, capacityMin: 1920, overCells: 1, lateOrders: 2, unscheduled: 4 });
+});
+
+test("yüzde kapasite 0 iken 0 (bölme hatası yok); uyarı ve başlık aynı yardımcıyı kullanır", () => {
+  expect(loadPercent(1020, 960)).toBe(106);
+  expect(loadPercent(120, 0)).toBe(0);
+  expect(capacityWarning("Montaj", day("2026-11-21"), 120, 0)).toBe("Montaj 21.11: 120 / 0 dk (%0)");
 });

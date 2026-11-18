@@ -62,9 +62,14 @@ export function loadText(load: number, capacity: number): string {
   return `${formatNumber(load)} / ${formatNumber(capacity)} dk`;
 }
 
+/** Yükün kapasiteye oranı, yuvarlanmış yüzde. Kapasite 0 (ya da altı) ise 0: bölme hatası çıkmaz. */
+export function loadPercent(load: number, capacity: number): number {
+  return capacity > 0 ? Math.round((load * 100) / capacity) : 0;
+}
+
 /** Onay penceresindeki kapasite uyarısı: "Montaj 21.11: 1.020 / 960 dk (%106)". */
 export function capacityWarning(station: string, day: Date, load: number, capacity: number): string {
-  return `${station} ${dayMonth(day)}: ${loadText(load, capacity)} (%${Math.round((load * 100) / capacity)})`;
+  return `${station} ${dayMonth(day)}: ${loadText(load, capacity)} (%${loadPercent(load, capacity)})`;
 }
 
 /** "IE-2026-0042 Montaj adımı 20.11 → 23.11 taşınsın mı?" */

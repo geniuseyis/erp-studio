@@ -1,6 +1,6 @@
 import { cn } from "@/ui/cn";
 import { Meter } from "@/ui/Meter";
-import { loadText } from "./labels";
+import { loadPercent, loadText } from "./labels";
 
 /**
  * Hücrenin kapasite çubuğu: %100'e kadar bal tonu, aşınca kırmızı. Yük metni her zaman yazılır ("1.020 / 960 dk");
@@ -8,7 +8,7 @@ import { loadText } from "./labels";
  */
 export function CapacityBar({ load, capacity, label }: { load: number; capacity: number; label: string }) {
   const over = load > capacity;
-  const pct = capacity > 0 ? Math.round((load * 100) / capacity) : 0;
+  const pct = loadPercent(load, capacity);
   return (
     <div className="grid gap-1">
       <div className="flex items-baseline justify-between gap-2 text-xs leading-none">

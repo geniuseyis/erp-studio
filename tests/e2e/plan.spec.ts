@@ -192,17 +192,16 @@ test("çalışan kart sürüklenemez", async ({ page }) => {
   await expect(running).not.toHaveAttribute("aria-roledescription", "taşınabilir kart");
   await drag(page, running, cell(page, ksm.stationCode, plusDays(week, 1)));
   await expect(confirmDialog(page)).toHaveCount(0);
-  // Klavyeyle de tutulmaz.
+  // Aynı iş emrinin başlamamış adımı taşınabilir kalır.
+  await expect(card(page, wo, wo.steps[1]!.seq)).toHaveAttribute("aria-roledescription", "taşınabilir kart");
+  // Klavyeyle de tutulmaz: Space taşınamayan kartta düğme gibi iş emrini açar.
   await running.focus();
   await page.keyboard.press("Space");
-  await expect(running).not.toHaveAttribute("aria-pressed", "true");
-  await page.keyboard.press("ArrowRight");
-  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(new RegExp(`/uretim/is-emirleri\\?ac=${wo.id}`));
+  await expect(page.getByRole("dialog", { name: wo.code })).toBeVisible();
   await expect(confirmDialog(page)).toHaveCount(0);
   expect((await plannedDay(page, wo, ksm.seq)).getTime()).toBe(week.getTime());
   expect(await moves(page, wo)).toBe(0);
-  // Aynı iş emrinin başlamamış adımı taşınabilir kalır.
-  await expect(card(page, wo, wo.steps[1]!.seq)).toHaveAttribute("aria-roledescription", "taşınabilir kart");
 });
 
 test("kapasiteyi aşan taşımada onay metni yükü yazar; hücre kırmızı", async ({ page }) => {
@@ -211,17 +210,16 @@ test("kapasiteyi aşan taşımada onay metni yükü yazar; hücre kırmızı", a
   const wo = await prepareOrder(page, week);
   const knr = wo.steps[1]!;
   const target = plusDays(week, 2);
-  // Hedef günün mevcut yükü; adımın dakikası, taşınınca kapasiteyi 60 dk aşacak kadar büyütülür.
-  const { load } = await one<{ load: number }>(
+  // Hedef hücre örnek veriden bağımsız boşaltılır (oradaki başka adımlar bir hafta ileri); adımın dakikası kapasiteyi
+  // 60 dk aşar. Böylece beklenen yük sabittir: kapasite + 60.
+  await sql(
     page,
-    `select coalesce(sum(s.minutes), 0)::int as load from work_order_steps s join work_orders w on w.id = s.work_order_id
-      join stations st on st.id = s.station_id
-      where st.code = '${knr.stationCode}' and s.finished_at is null and w.status <> 'cancelled'
+    `update work_order_steps s set planned_day = s.planned_day + interval '7 days' from stations st
+      where st.id = s.station_id and st.code = '${knr.stationCode}' and s.work_order_id <> '${wo.id}'
         and s.planned_day >= '${target.toISOString()}' and s.planned_day < '${plusDays(target, 1).toISOString()}'`,
   );
-  const minutes = knr.capacity - load + 60;
-  await sql(page, `update work_order_steps set minutes = ${minutes} where work_order_id = '${wo.id}' and seq = ${knr.seq}`);
-  const total = load + minutes;
+  const total = knr.capacity + 60;
+  await sql(page, `update work_order_steps set minutes = ${total} where work_order_id = '${wo.id}' and seq = ${knr.seq}`);
   await openWeek(page, week);
 
   const targetCell = cell(page, knr.stationCode, target);
@@ -265,6 +263,118 @@ test("cuma kartı klavyeyle sağa: sonraki haftanın pazartesisi, görünüm ge�
   await expect(cell(page, pkt.stationCode, monday).locator(`[data-step-key="${wo.id}:${pkt.seq}"]`)).toBeVisible();
 });
 
+test("cuma kartı sağa alınıp Esc: görünüm kaynak haftaya döner, odak kartta, hiçbir şey yazılmaz", async ({ page }) => {
+  await loginAs(page, "Zeynep Arıkan");
+  const week = nextWeek();
+  const wo = await prepareOrder(page, week);
+  const pkt = wo.steps[4]!;
+  await openWeek(page, week);
+
+  await card(page, wo, pkt.seq).focus();
+  await page.keyboard.press("Space");
+  await page.keyboard.press("ArrowRight");
+  await expect(page).toHaveURL(new RegExp(`hafta=${dayKey(plusDays(week, 7))}`));
+  // Hedef hücredeki gölge kart odakta: odak body'ye düşmez.
+  await expect(page.locator("[data-ghost]")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(new RegExp(`hafta=${dayKey(week)}`));
+  await expect(announcer(page)).toContainText("vazgeçildi");
+  await expect(card(page, wo, pkt.seq)).toBeFocused();
+  expect(await moves(page, wo)).toBe(0);
+  expect((await plannedDay(page, wo, pkt.seq)).getTime()).toBe(plusDays(week, 4).getTime());
+});
+
+test("tutarken kaynak haftaya geri dönülünce odak kaynak kartta", async ({ page }) => {
+  await loginAs(page, "Zeynep Arıkan");
+  const week = nextWeek();
+  const wo = await prepareOrder(page, week);
+  const pkt = wo.steps[4]!;
+  await openWeek(page, week);
+
+  await card(page, wo, pkt.seq).focus();
+  await page.keyboard.press("Space");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator("[data-ghost]")).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(page).toHaveURL(new RegExp(`hafta=${dayKey(week)}`));
+  await expect(card(page, wo, pkt.seq)).toBeFocused();
+  await expect(card(page, wo, pkt.seq)).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  expect(await moves(page, wo)).toBe(0);
+});
+
+const twoFrames = (page: Page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+
+test("Tab ya da Ctrl+K tutmayı bırakır ama odağı karta geri çekmez", async ({ page }) => {
+  await loginAs(page, "Zeynep Arıkan");
+  const week = nextWeek();
+  const wo = await prepareOrder(page, week);
+  const knr = wo.steps[1]!;
+  await openWeek(page, week);
+
+  const kenar = card(page, wo, knr.seq);
+  await kenar.focus();
+  await page.keyboard.press("Space");
+  await expect(kenar).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Tab");
+  await expect(announcer(page)).toContainText("vazgeçildi");
+  await expect(kenar).not.toHaveAttribute("aria-pressed", "true");
+  // Geri çekme olsaydı sonraki karelerde olurdu.
+  await twoFrames(page);
+  await expect(kenar).not.toBeFocused();
+  expect(await page.evaluate(() => document.activeElement !== document.body)).toBe(true);
+
+  await kenar.focus();
+  await page.keyboard.press("Space");
+  await expect(kenar).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Control+k");
+  const input = page.getByRole("dialog", { name: "Ara ve git" }).getByRole("combobox");
+  await expect(input).toBeFocused();
+  await twoFrames(page);
+  await expect(input).toBeFocused();
+  // Palette basılan oklar artık tutmaya gitmez.
+  await page.keyboard.press("ArrowDown");
+  await expect(input).toBeFocused();
+  await page.keyboard.press("Escape");
+  expect(await moves(page, wo)).toBe(0);
+});
+
+test("planlanmamış sayısı iş emri listesinin planlanmamış süzgeciyle aynı", async ({ page }) => {
+  await loginAs(page, "Zeynep Arıkan");
+  // Örnek veriden bağımsız: iki açık iş emrinin birer adımının günü silinir (en az iki planlanmamış).
+  await sql(
+    page,
+    `update work_order_steps set planned_day = null where id in (
+       select id from (select distinct on (s.work_order_id) s.id from work_order_steps s join work_orders w on w.id = s.work_order_id
+        where w.status in ('planned', 'in_progress') and s.started_at is null and s.planned_day is not null
+        order by s.work_order_id, s.seq desc) x limit 2)`,
+  );
+  const expected = (
+    await one<{ n: number }>(
+      page,
+      `select count(*)::int as n from work_orders w where w.status in ('planned', 'in_progress')
+         and exists (select 1 from work_order_steps s where s.work_order_id = w.id and s.planned_day is null)`,
+    )
+  ).n;
+  expect(expected).toBeGreaterThanOrEqual(2);
+  await openWeek(page, nextWeek());
+
+  const stat = page.getByRole("link", { name: /Planlanmamış/ });
+  await expect(stat).toHaveAttribute("href", "/uretim/is-emirleri?planlanmamis=1");
+  await expect(stat.getByTestId("stat-value")).toHaveText(String(expected));
+  await stat.click();
+  await expect(page).toHaveURL(/\/uretim\/is-emirleri\?planlanmamis=1/);
+  const rows = page.getByRole("table", { name: "İş emirleri" }).locator("tbody tr");
+  await expect.poll(() => rows.count()).toBe(expected);
+  // Süzgeç görünür ve kaldırılabilir.
+  const chip = page.getByRole("button", { name: /Planlanmamış/ });
+  await expect(chip).toHaveAttribute("aria-pressed", "true");
+  await chip.click();
+  await expect(page).not.toHaveURL(/planlanmamis/);
+  await expect(chip).toHaveCount(0);
+  await expect.poll(() => rows.count()).toBeGreaterThan(expected);
+});
+
 test("satış kullanıcısı ızgarayı görür ama sürükleyemez", async ({ page }) => {
   await loginAs(page, "Elif Karaca");
   const week = nextWeek();
@@ -285,7 +395,7 @@ test("satış kullanıcısı ızgarayı görür ama sürükleyemez", async ({ pa
 
   // Başlıktaki planlanmamış sayısı iş emirleri listesine götürür.
   const unscheduled = page.getByRole("link", { name: /Planlanmamış/ });
-  await expect(unscheduled).toHaveAttribute("href", /\/uretim\/is-emirleri/);
+  await expect(unscheduled).toHaveAttribute("href", "/uretim/is-emirleri?planlanmamis=1");
 
   // Hafta seçimi: Sonraki ve Bu hafta adresi değiştirir.
   await page.getByRole("button", { name: "Sonraki hafta" }).click();

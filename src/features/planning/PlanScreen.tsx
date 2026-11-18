@@ -18,7 +18,7 @@ import { Skeleton } from "@/ui/Skeleton";
 import { useToast } from "@/ui/Toast";
 import { useEdgeFades } from "@/ui/useEdgeFades";
 import { useMoveStep, usePreviewMove, useWeekPlan } from "./hooks";
-import { announceDay, capacityWarning, dayMonth, loadText, longDay, moveQuestion, parseWeek, weekKey, weekLabel, weekSummary } from "./labels";
+import { announceDay, capacityWarning, dayMonth, loadPercent, loadText, longDay, moveQuestion, parseWeek, weekKey, weekLabel, weekSummary } from "./labels";
 import type { DragData } from "./PlanCard";
 import { stepKey } from "./PlanCard";
 import { type Ghost, PlanGrid } from "./PlanGrid";
@@ -27,11 +27,6 @@ import { type Ghost, PlanGrid } from "./PlanGrid";
 type Held = DragData & { toDay: Date; fromWeek: Date };
 
 const sameDay = (a: Date, b: Date) => istanbulDayStart(a).getTime() === istanbulDayStart(b).getTime();
-const NOT_MOVABLE: Record<PlanStep["state"], string> = {
-  running: "adım çalışıyor",
-  done: "adım bitti",
-  planned: "iş emri açık değil",
-};
 
 /**
  * Kartı odaklar. Onay penceresi kapanırken Radix odağı açan öğeye (ya da main'e) geri verir; kart taşındıysa yeni
@@ -82,12 +77,15 @@ export function PlanScreen() {
     setHeld(h);
   };
   const [pending, setPending] = useState<Ghost | null>(null);
-  const [message, setMessage] = useState("");
+  // Her bırakışın kendi numarası: sonra gelen bırakışın gölgesini önceki bırakışın sonucu silmez.
+  const pendingToken = useRef(0);
+  // Duyuru ve sayacı: aynı metin art arda söylenince de değişsin diye görünmez bir boşluk tek/çift sayıya göre eklenir.
+  const [message, setMessage] = useState({ text: "", n: 0 });
   const instructionsId = useId();
   const scrollRef = useRef<HTMLDivElement>(null);
   useEdgeFades(scrollRef);
 
-  const say = useCallback((text: string) => setMessage(text), []);
+  const say = useCallback((text: string) => setMessage((m) => ({ text, n: m.n + 1 })), []);
   const goWeek = useCallback(
     (day: Date) => {
       const start = weekStartOf(day);
@@ -102,7 +100,11 @@ export function PlanScreen() {
   async function requestMove(d: DragData, toDay: Date, keyboard: { fromWeek: Date } | null) {
     const key = stepKey(d.step);
     const label = `${d.step.code} ${d.stationName}: ${longDay(toDay)} gününe taşınacak`;
+    const token = ++pendingToken.current;
     setPending({ key, stationId: d.stationId, day: istanbulDayStart(toDay), step: d.step, label });
+    const clearPending = () => {
+      if (pendingToken.current === token) setPending(null);
+    };
     const back = () => {
       if (!keyboard) return;
       if (weekStartOf(toDay).getTime() !== keyboard.fromWeek.getTime()) goWeek(keyboard.fromWeek);
@@ -112,13 +114,13 @@ export function PlanScreen() {
     try {
       result = await preview({ workOrderId: d.step.workOrderId, seq: d.step.seq, toDay });
     } catch (error) {
-      setPending(null);
+      clearPending();
       toast.error(errorMessage(error));
       back();
       return;
     }
     if (result.error) {
-      setPending(null);
+      clearPending();
       toast.error(errorMessage(new DomainError("VALIDATION", result.error)));
       back();
       return;
@@ -149,7 +151,7 @@ export function PlanScreen() {
           toast.success(`${d.step.code} ${d.stationName} ${dayMonth(toDay)} gününe taşındı`);
         }),
     });
-    setPending(null);
+    clearPending();
     if (moved) {
       if (keyboard) focusStep(key);
     } else back();
@@ -170,23 +172,27 @@ export function PlanScreen() {
     if (e.key !== " " && e.key !== "Enter") return;
     e.preventDefault();
     if (e.repeat) return;
-    if (!canWrite) {
+    // Taşınamayan kart (okuyucu, çalışan, biten ya da kapalı iş emri) düğme gibi davranır: iş emrini açar.
+    if (!canWrite || !d.step.movable) {
       openOrder(d.step);
       return;
     }
-    if (!d.step.movable || stale) {
-      say(`${d.step.code} ${d.stationName} taşınamaz: ${NOT_MOVABLE[d.step.state]}`);
+    if (stale) {
+      say(`${d.step.code} ${d.stationName}: hafta yükleniyor, birazdan yeniden deneyin.`);
       return;
     }
     pickUp(d);
   }
 
-  /** Tutmayı bırakır; kart başka haftadaysa görünüm kaynağın haftasına döner, odak karta gelir. */
-  function cancelHold(h: Held) {
+  /**
+   * Tutmayı bırakır; kart başka haftadaysa görünüm kaynağın haftasına döner. `restoreFocus` yalnızca Esc ve yerinde
+   * bırakmada: Tab, tıklama ya da başka bir kısayol (Ctrl+K) odağı kendi gittiği yerde bırakır.
+   */
+  function cancelHold(h: Held, restoreFocus: boolean) {
     hold(null);
     say(`Taşımadan vazgeçildi; ${h.step.code} ${h.stationName} yerinde kaldı.`);
     if (weekStartOf(h.toDay).getTime() !== h.fromWeek.getTime()) goWeek(h.fromWeek);
-    focusStep(stepKey(h.step));
+    if (restoreFocus) focusStep(stepKey(h.step));
   }
 
   // Tutulan kart: tuşlar sayfanın neresinde olursa olsun buraya gelir (hafta değişince asıl kart ekrandan kalkar).
@@ -208,20 +214,21 @@ export function PlanScreen() {
       e.preventDefault();
       e.stopPropagation();
       if (e.repeat) return;
-      if (sameDay(h.toDay, h.day)) return cancelHold(h);
+      if (sameDay(h.toDay, h.day)) return cancelHold(h, true);
       hold(null);
       void requestMove(h, h.toDay, { fromWeek: h.fromWeek });
     } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
-      cancelHold(h);
-    } else if (e.key === "Tab") {
-      cancelHold(h);
+      cancelHold(h, true);
+    } else if (!["Shift", "Control", "Alt", "Meta"].includes(e.key)) {
+      // Tab ve başka her tuş (Ctrl+K dahil) tutmayı bırakır ve olduğu gibi işlenir; odak geri çekilmez.
+      cancelHold(h, false);
     }
   });
   // Başka bir yere tıklamak tutmayı bırakır.
   const onHeldPointer = useEffectEvent(() => {
-    if (heldRef.current) cancelHold(heldRef.current);
+    if (heldRef.current) cancelHold(heldRef.current, false);
   });
   const holding = held !== null;
   useEffect(() => {
@@ -236,14 +243,16 @@ export function PlanScreen() {
     };
   }, [holding]);
 
-  // Hafta değişti ve tutulan kartın kaynağı ekranda değil: odak hedef hücredeki gölge karta geçer.
-  const heldWeek = held ? weekStartOf(held.toDay).getTime() : null;
+  // Tutarken odak: kaynak kart ekrandaysa onda, değilse (başka hafta) hedef hücredeki gölge kartta. Gölge hücreden hücreye
+  // geçerken yeniden çizilir; kaynağın haftasına dönünce gölge kalkar. Her iki durumda odak body'ye düşmez.
+  const heldDay = held ? held.toDay.getTime() : null;
   useEffect(() => {
     const h = heldRef.current;
-    if (heldWeek === null || !h || stale || !plan) return;
-    if (document.querySelector(`[data-step-key="${CSS.escape(stepKey(h.step))}"]`)) return;
-    document.querySelector<HTMLElement>("[data-ghost]")?.focus();
-  }, [heldWeek, stale, plan]);
+    if (heldDay === null || !h || stale || !plan) return;
+    const source = document.querySelector<HTMLElement>(`[data-step-key="${CSS.escape(stepKey(h.step))}"]`);
+    const target = source ?? document.querySelector<HTMLElement>("[data-ghost]");
+    if (target && document.activeElement !== target) target.focus();
+  }, [heldDay, stale, plan]);
 
   const ghost: Ghost | null = held
     ? sameDay(held.toDay, held.day)
@@ -272,7 +281,7 @@ export function PlanScreen() {
               <HeroStat
                 index={0}
                 label="Haftanın yükü"
-                value={`%${summary.capacityMin > 0 ? Math.round((summary.loadMinutes * 100) / summary.capacityMin) : 0}`}
+                value={`%${loadPercent(summary.loadMinutes, summary.capacityMin)}`}
                 hint={loadText(summary.loadMinutes, summary.capacityMin)}
               />
               <HeroStat
@@ -353,8 +362,9 @@ export function PlanScreen() {
         </div>
         <Legend />
       </section>
-      <div role="status" aria-label="Plan duyurusu" aria-live="assertive" aria-atomic="true" className="sr-only">
-        {message}
+      <div role="status" aria-label="Plan duyurusu" aria-atomic="true" className="sr-only">
+        {message.text}
+        {message.n % 2 ? "\u00a0" : ""}
       </div>
       {ask.element}
     </Page>
