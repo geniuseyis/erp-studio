@@ -173,6 +173,34 @@ await step("depo hazır siparişi sevk eder", async () => {
   await drawer.getByText("Sevk edildi").first().waitFor();
   await closeDrawer();
 });
+await step("planlama haftalık planda bir adımı klavyeyle taşır", async () => {
+  await signOut();
+  await demo("Zeynep Arıkan");
+  await nav("Haftalık plan");
+  await page.getByRole("table", { name: "Haftalık üretim planı" }).waitFor({ timeout: 60_000 });
+  const cards = page.locator("[aria-roledescription='taşınabilir kart']");
+  await cards.first().waitFor({ timeout: 30_000 });
+  const total = Math.min(await cards.count(), 12);
+  let moved = false;
+  // Rota sırası bazı taşımaları reddeder (toast, pencere yok); pencere açılana kadar kartlar sırayla denenir.
+  for (let i = 0; i < total && !moved; i++) {
+    const card = cards.nth(i);
+    await card.focus();
+    await page.keyboard.press("Space");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("alertdialog");
+    if (await dialog.waitFor({ timeout: 1500 }).then(() => true, () => false)) {
+      if (!/taşınsın mı\?/.test((await dialog.textContent()) ?? "")) throw new Error("taşıma onayı beklenen metni göstermiyor");
+      await approve("Taşı");
+      await page.getByRole("status").filter({ hasText: /taşındı/ }).first().waitFor({ timeout: 15_000 });
+      moved = true;
+    } else {
+      await page.keyboard.press("Escape");
+    }
+  }
+  if (!moved) throw new Error("hiçbir kart klavyeyle taşınamadı");
+});
 await step("bilgi işlem kullanıcı ekler", async () => {
   await signOut();
   await demo("Ece Korkmaz");

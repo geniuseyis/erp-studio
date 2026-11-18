@@ -22,6 +22,12 @@ const sizes = (process.env.SHOTS_SIZES ?? "masaustu,telefon").split(",").filter(
 const outName = process.env.SHOTS_NAME;
 const outDir = process.env.SHOTS_DIR ?? ".shots";
 
+// Verilirse sayfa yüklendikten sonra etkileşimli bir durum hazırlanır (basit yol, SHOTS_CLICK ve SHOTS_BUTTON'ın yetmediği durumlar):
+//   plan-tasima    haftalık planda ilk taşınabilir kart klavyeyle bir güne kaydırılır, taşıma onay penceresi açık kalır
+//   termin-onerisi ilk taslak siparişin çekmecesi açılır, Termin önerisi bölümü görünür
+//   ozet-gizli     liste ekranlarında özet bandı daraltılır
+const scenario = process.env.SHOTS_SCENARIO;
+
 test.skip(paths.length === 0, "SHOTS tanımlı değil");
 
 for (const path of paths) {
@@ -49,7 +55,54 @@ for (const path of paths) {
           await page.getByRole("button", { name: clickButton, exact: true }).click();
           await page.getByRole("dialog").waitFor();
         }
-        await page.waitForTimeout(400);
+        if (scenario === "plan-tasima") {
+          // Rota sırası ve geçmiş günler bazı taşımaları reddeder (pencere yerine toast); pencere açılana kadar kartlar sırayla denenir.
+          const cards = page.locator("[aria-roledescription='taşınabilir kart']");
+          await cards.first().waitFor({ timeout: 30_000 });
+          const dialog = page.getByRole("alertdialog");
+          const today = new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 10);
+          for (let i = 0, n = await cards.count(); i < n; i++) {
+            // Geçmiş günün kartı taşınamaz (reddedilir, ekranda boşuna toast kalır): bugün ve sonrası denenir.
+            const day = await cards.nth(i).evaluate((el) => el.closest("[data-cell]")?.getAttribute("data-cell")?.split(":")[1] ?? "");
+            if (day < today) continue;
+            await cards.nth(i).focus();
+            await page.keyboard.press("Space");
+            await page.keyboard.press("ArrowRight");
+            await page.keyboard.press("Enter");
+            if (await dialog.waitFor({ timeout: 1500 }).then(() => true, () => false)) break;
+            await page.keyboard.press("Escape");
+          }
+          await dialog.waitFor({ timeout: 1000 });
+        }
+        if (scenario === "termin-onerisi") {
+          // Termini bugün olan yeni bir taslağa üretim gerektiren bir ürün eklenir: öneri termini erken bulur ve uygulama düğmesi çıkar.
+          const confirmAndWait = async () => {
+            const dialog = page.getByRole("alertdialog");
+            await dialog.getByRole("button").last().click();
+            await dialog.waitFor({ state: "hidden", timeout: 30_000 });
+          };
+          await page.getByRole("button", { name: "Yeni sipariş" }).click();
+          const form = page.getByRole("dialog", { name: "Yeni sipariş" });
+          await form.getByRole("radio").first().check();
+          await form.getByLabel("Termin").fill(new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 10));
+          await form.getByRole("button", { name: "Taslağı aç" }).click();
+          await confirmAndWait();
+          const drawer = page.getByRole("dialog").filter({ hasText: /SIP-/ });
+          await drawer.getByRole("searchbox", { name: "Ürün ara" }).fill("URN-0021");
+          await drawer.getByRole("radio").first().check();
+          await drawer.getByLabel("Adet", { exact: true }).fill("2");
+          await drawer.getByRole("button", { name: "Satırı ekle" }).click();
+          await confirmAndWait();
+          const suggestion = drawer.getByRole("region", { name: "Termin önerisi" });
+          await suggestion.waitFor({ timeout: 30_000 });
+          await suggestion.scrollIntoViewIfNeeded();
+        }
+        if (scenario === "ozet-gizli") {
+          await page.getByRole("button", { name: "Özeti gizle" }).click();
+          await page.getByRole("button", { name: "Özeti göster" }).waitFor();
+        }
+        // Bildirimler görüntüyü örtmesin: kendiliğinden kapanana kadar beklenir.
+        await page.waitForTimeout(scenario === "termin-onerisi" ? 7000 : 400);
         const file = outName ? `${outDir}/${outName}.png` : `${outDir}/${path.replace(/[/?=&]/g, "_")}${clickRow ? "-cekmece" : ""}${clickButton ? "-pencere" : ""}-${theme}-${name}.png`;
         await page.screenshot({ path: file, fullPage: true });
         // Uygulama kabuğunda sayfa kendi içinde kayar; alt kısım ayrıca çekilir.
