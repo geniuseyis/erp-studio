@@ -1,14 +1,16 @@
 "use client";
 
 import { DropdownMenu } from "radix-ui";
-import { type ReactNode, useMemo, useRef, useState } from "react";
+import { type ReactNode, useContext, useMemo, useRef, useState } from "react";
 import { Button } from "./Button";
 import { cn } from "./cn";
 import { downloadCsv, toCsv } from "./csv";
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon, ColumnsIcon, DownloadIcon, SortIcon } from "./icons";
 import { Skeleton } from "./Skeleton";
+import { PageFillContext } from "./page-fill";
 import { type Column, sortRows } from "./table-types";
 import { useEdgeFades } from "./useEdgeFades";
+import { useTableHeight } from "./useTableHeight";
 
 export type { Column } from "./table-types";
 
@@ -58,6 +60,12 @@ export function DataTable<T>({
   const scrollRef = useRef<HTMLDivElement>(null);
   useEdgeFades(scrollRef);
 
+  // `Page fill` içindeyse alt kenarda yükseklik tutamacı çıkar; ayar ekran başına bu tarayıcıda saklanır.
+  const fill = useContext(PageFillContext);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const resize = useTableHeight(rootRef, fill?.screen ?? null);
+  const fixed = fill !== null && resize.height !== null;
+
   const visible = columns.filter((c) => !hidden.has(c.id));
   const sorted = useMemo(() => {
     const column = sort ? columns.find((c) => c.id === sort.id) : undefined;
@@ -87,7 +95,15 @@ export function DataTable<T>({
   const colSpan = visible.length + (selectable ? 1 : 0);
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[22px] border border-line bg-surface shadow-card">
+    <div
+      ref={rootRef}
+      // Ayar yokken kap kalan yüksekliği doldurur ama 24rem'den kısalmaz (kalan alan azsa sayfa kayar); ayarlıyken sabit yükseklik, en az 16rem.
+      className={cn(
+        "flex min-w-0 flex-col overflow-hidden rounded-[22px] border border-line bg-surface shadow-card",
+        fixed ? "min-h-[16rem] md:mb-5" : fill ? "min-h-0 md:min-h-[24rem] md:flex-1" : "min-h-0",
+      )}
+      style={fixed ? { height: resize.height ?? undefined, flex: "none" } : undefined}
+    >
       <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
         <div className="flex min-w-0 flex-1 basis-60 flex-wrap items-center gap-2">{toolbar}</div>
         <DropdownMenu.Root>
@@ -243,6 +259,17 @@ export function DataTable<T>({
         <div className="flex items-center justify-between gap-3 border-t border-line bg-surface-2/40 px-4 py-2 text-xs text-fg-muted">
           <span className="tabular">{sorted.length} kayıt</span>
           {sort ? <span>Sıralama: {columns.find((c) => c.id === sort.id)?.header}, {sort.desc ? "azalan" : "artan"}</span> : null}
+        </div>
+      ) : null}
+      {fill ? (
+        <div
+          {...resize.handleProps}
+          className="group/handle relative h-1.5 shrink-0 cursor-row-resize touch-none border-t border-line bg-surface-2/60 outline-none before:absolute before:inset-x-0 before:-top-1.5 before:bottom-0 focus-visible:bg-surface-2 [@media(pointer:coarse)]:h-6"
+        >
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute top-1/2 left-1/2 h-0.5 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--scroll-thumb)] transition-[width,background-color] group-hover/handle:w-14 group-hover/handle:bg-accent group-focus-visible/handle:w-14 group-focus-visible/handle:bg-accent"
+          />
         </div>
       ) : null}
     </div>

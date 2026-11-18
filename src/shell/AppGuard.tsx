@@ -2,10 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { can, type Module } from "@/domain/permissions";
 import { AppShell } from "./AppShell";
 import { useDb } from "./db-context";
+import { cn } from "@/ui/cn";
+import { ChevronDownIcon, ChevronUpIcon } from "@/ui/icons";
+import { HeroCollapsedContext, PageFillContext } from "@/ui/page-fill";
+import { HERO_KEY, readPref, resolveHeroCollapsed, screenKey, writePref } from "@/ui/pref";
 import { restoreSession, useSession } from "./session";
 
 /** Oturum yoksa giriş ekranına yönlendirir; varsa ekranı uygulama kabuğu içinde gösterir. */
@@ -61,20 +65,85 @@ type PageHeaderProps = {
  * Bütün ekranlar bununla başlar.
  */
 export function PageHeader({ title, description, actions, stats, kicker }: PageHeaderProps) {
+  const fill = useContext(PageFillContext);
+  const { ref, collapsed, toggle } = useHeroCollapse(fill?.screen ?? null);
+  const statsId = useId();
   return (
-    <div className="page-hero walnut shrink-0 overflow-hidden rounded-[28px] px-5 pt-6 pb-[4.5rem] shadow-card animate-[rise-in_520ms_var(--ease-spring)] sm:px-8 sm:pt-7">
-      <div className="flex flex-wrap items-start gap-x-6 gap-y-4">
-        <div className="min-w-0 flex-1 basis-72">
-          {kicker ? <div className="mb-1.5 text-sm text-hero-fg-muted">{kicker}</div> : null}
-          <h1 className="text-[1.75rem] leading-tight font-semibold tracking-tight text-hero-fg sm:text-3xl">{title}</h1>
-          {description ? <p className="mt-1.5 max-w-prose text-hero-fg-muted">{description}</p> : null}
+    <div
+      ref={ref}
+      data-collapsed={collapsed || undefined}
+      className="page-hero walnut shrink-0 overflow-hidden rounded-[28px] px-5 pt-6 pb-[4.5rem] shadow-card animate-[rise-in_520ms_var(--ease-spring)] data-[collapsed]:pt-4 sm:px-8 sm:pt-7 sm:data-[collapsed]:pt-4"
+    >
+      <div className={cn("flex flex-wrap gap-x-6 gap-y-4", collapsed ? "items-center" : "items-start")}>
+        <div className={cn("min-w-0 flex-1", collapsed ? "order-[-2] basis-40" : "basis-72")}>
+          {kicker && !collapsed ? <div className="mb-1.5 text-sm text-hero-fg-muted">{kicker}</div> : null}
+          <h1 className={cn("leading-tight font-semibold tracking-tight text-hero-fg", collapsed ? "truncate text-xl sm:text-2xl" : "text-[1.75rem] sm:text-3xl")}>{title}</h1>
+          {description && !collapsed ? <p className="mt-1.5 max-w-prose text-hero-fg-muted">{description}</p> : null}
         </div>
         {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+        {fill ? (
+          <button
+            type="button"
+            aria-expanded={!collapsed}
+            aria-controls={stats ? statsId : undefined}
+            onClick={toggle}
+            className="press inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-medium text-hero-fg-muted transition-colors hover:bg-white/[0.1] hover:text-hero-fg"
+          >
+            {collapsed ? <ChevronDownIcon size={16} /> : <ChevronUpIcon size={16} />}
+            {collapsed ? "Özeti göster" : "Özeti gizle"}
+          </button>
+        ) : null}
+        {stats ? (
+          <div
+            id={statsId}
+            className={cn(collapsed ? "order-[-1] flex min-w-0" : "order-1 grid w-full grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4", !collapsed && "mt-2")}
+          >
+            <HeroCollapsedContext.Provider value={collapsed}>{stats}</HeroCollapsedContext.Provider>
+          </div>
+        ) : null}
       </div>
-      {stats ? <div className="mt-6 grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">{stats}</div> : null}
       <span className="walnut-ruler" aria-hidden="true" />
     </div>
   );
+}
+
+/**
+ * Özet bandının açık/kapalı durumu. İlk çizim kayıtlı seçimle ya da pencere ölçüsüne göre
+ * varsayılanla başlar; sonradan düzeltme olmadığı için görünür sıçrama olmaz. Seçim `erp:hero:<ekran>` anahtarında durur; depo yoksa varsayılan geçerlidir.
+ * Düğmeyle değişimde bandın yüksekliği animasyonla geçer; azaltılmış harekette anında olur.
+ */
+function useHeroCollapse(screen: string | null) {
+  const ref = useRef<HTMLDivElement>(null);
+  // Sunucuda çizilmeyen ekranlarda ilk çizim doğrudan kayıtlı seçimle başlar (bkz. useTableHeight).
+  const [collapsed, setCollapsed] = useState(() =>
+    screen === null || typeof window === "undefined" ? false : resolveHeroCollapsed(readPref(HERO_KEY + screen), window.innerWidth, window.innerHeight),
+  );
+  const previousHeight = useRef<number | null>(null);
+  const running = useRef<Animation | null>(null);
+
+  // Yalnızca düğmeyle değişimde çalışır (previousHeight o zaman dolar): eski yükseklikten yenisine geçiş.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const from = previousHeight.current;
+    previousHeight.current = null;
+    if (!el || from === null) return;
+    const to = el.offsetHeight;
+    if (Math.abs(from - to) < 2 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    running.current = el.animate([{ height: `${from}px` }, { height: `${to}px` }], { duration: 320, easing: "cubic-bezier(0.22, 1, 0.36, 1)" });
+  }, [collapsed]);
+
+  function toggle() {
+    const el = ref.current;
+    if (el) {
+      previousHeight.current = el.offsetHeight;
+      running.current?.cancel();
+    }
+    const next = !collapsed;
+    setCollapsed(next);
+    if (screen !== null) writePref(HERO_KEY + screen, next ? "1" : "0");
+  }
+
+  return { ref, collapsed, toggle };
 }
 
 type HeroStatProps = {
@@ -91,7 +160,17 @@ type HeroStatProps = {
 
 /** Bant üstündeki cam özet kutusu: küçük etiket, büyük rakam. */
 export function HeroStat({ label, value, hint, href, tone = "default", index = 0 }: HeroStatProps) {
-  const body = (
+  const compact = useContext(HeroCollapsedContext);
+  // Daraltılmış bantta yalnızca ilk kutu, etiket ve rakam tek satırda görünür.
+  if (compact && index > 0) return null;
+  const body = compact ? (
+    <span className="flex min-w-0 items-baseline gap-2.5">
+      <span className="truncate text-sm text-hero-fg-muted">{label}</span>
+      <span data-testid="stat-value" className="tabular font-display text-xl leading-none font-semibold tracking-tight text-hero-fg">
+        {value}
+      </span>
+    </span>
+  ) : (
     <>
       <span className="flex items-center gap-2 text-sm text-hero-fg-muted">
         {tone === "alert" ? <span aria-hidden="true" className="size-2 rounded-full bg-[#f4aa97] shadow-[0_0_0_4px_rgb(244_170_151/0.18)]" /> : null}
@@ -101,7 +180,7 @@ export function HeroStat({ label, value, hint, href, tone = "default", index = 0
       {hint ? <span className="mt-1.5 block truncate text-xs text-hero-fg-muted">{hint}</span> : null}
     </>
   );
-  const cls = "glass block min-w-0 rounded-2xl px-4 py-3.5 animate-[rise-in_600ms_var(--ease-spring)_both]";
+  const cls = cn("glass block min-w-0 animate-[rise-in_600ms_var(--ease-spring)_both]", compact ? "rounded-xl px-3.5 py-2" : "rounded-2xl px-4 py-3.5");
   const style = { animationDelay: `${120 + index * 70}ms` };
   return href ? (
     <Link href={href} className={`${cls} press transition-colors hover:bg-white/[0.13]`} style={style}>
@@ -116,9 +195,12 @@ export function HeroStat({ label, value, hint, href, tone = "default", index = 0
 
 /** Ekran gövdesi: kenar boşlukları ve dikey aralık. `fill` tablo gibi kalan yüksekliği dolduran ekranlar içindir. */
 export function Page({ children, fill = false }: { children: ReactNode; fill?: boolean }) {
-  return (
+  const screen = screenKey(usePathname());
+  const fillValue = useMemo(() => ({ screen }), [screen]);
+  const body = (
     <div className={fill ? "flex flex-col gap-5 px-3 pb-5 sm:px-6 md:h-full md:min-h-[44rem]" : "grid grid-cols-[minmax(0,1fr)] gap-5 px-3 pb-8 sm:px-6"}>
       {children}
     </div>
   );
+  return fill ? <PageFillContext.Provider value={fillValue}>{body}</PageFillContext.Provider> : body;
 }

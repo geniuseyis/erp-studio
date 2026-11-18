@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { loginAs } from "./helpers";
+import { loginAs, navTo, settledHeight } from "./helpers";
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/bilesenler");
@@ -268,5 +268,113 @@ test.describe("kaydırma çubuğu", () => {
     const palette = page.getByRole("dialog", { name: "Ara ve git" });
     await expect(palette).toBeVisible();
     expect(await width(palette.locator("[cmdk-list]"))).toBe("6px");
+  });
+});
+
+test.describe("liste ekranlarında yerleşim ayarı", () => {
+  async function openActivity(page: Page, reload = false) {
+    if (reload) await page.reload();
+    else {
+      await loginAs(page, "Onur Tekin");
+      await navTo(page, "İşlemler");
+    }
+    await expect(page.getByRole("heading", { name: "İşlemler", level: 1 })).toBeVisible({ timeout: 45_000 });
+    const table = page.getByRole("table", { name: "İşlemler" });
+    await expect(table.locator("tbody tr").first()).toBeVisible({ timeout: 45_000 });
+    // Özet kutuları veri gelince belirir ve bandı uzatır (tablo kısalır); ölçmeden önce beklenir.
+    await expect(page.getByTestId("stat-value").first()).toBeVisible({ timeout: 45_000 });
+    const handle = page.getByRole("separator", { name: "Tablo yüksekliği" });
+    return { handle, root: handle.locator("xpath=.."), hero: page.locator(".page-hero") };
+  }
+
+  test("özet bandı gizlenince bant küçülür, tablo kabı büyür; seçim yenilemede kalır", async ({ page }) => {
+    const { root, hero } = await openActivity(page);
+    const heroOpen = await settledHeight(hero);
+    const rootOpen = await settledHeight(root);
+    const toggle = page.getByRole("button", { name: "Özeti gizle" });
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect((await toggle.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+    await toggle.click();
+    const show = page.getByRole("button", { name: "Özeti göster" });
+    await expect(show).toHaveAttribute("aria-expanded", "false");
+    await expect.poll(() => settledHeight(hero)).toBeLessThan(heroOpen - 80);
+    await expect.poll(() => settledHeight(root)).toBeGreaterThan(rootOpen + 80);
+
+    const again = await openActivity(page, true);
+    await expect(page.getByRole("button", { name: "Özeti göster" })).toBeVisible();
+    await expect.poll(() => settledHeight(again.hero)).toBeLessThan(heroOpen - 80);
+
+    await page.getByRole("button", { name: "Özeti göster" }).click();
+    await expect(page.getByRole("button", { name: "Özeti gizle" })).toBeVisible();
+    await expect.poll(() => settledHeight(again.hero)).toBeGreaterThan(heroOpen - 4);
+  });
+
+  test("tutamaç klavyeyle çalışır: ↓ × 3 = 120 px, yenilemede kalır, Home en küçük, çift tık otomatik", async ({ page }) => {
+    const { handle, root } = await openActivity(page);
+    await expect(handle).toHaveAttribute("aria-orientation", "horizontal");
+    await expect(handle).toHaveAttribute("tabindex", "0");
+    const before = await settledHeight(root);
+    const startNow = Number(await handle.getAttribute("aria-valuenow"));
+
+    await handle.focus();
+    for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
+    await expect.poll(async () => (await settledHeight(root)) - before).toBeGreaterThanOrEqual(118);
+    expect((await settledHeight(root)) - before).toBeLessThanOrEqual(122);
+    await expect.poll(async () => Number(await handle.getAttribute("aria-valuenow"))).toBeGreaterThan(startNow + 116);
+    const stored = await settledHeight(root);
+
+    const again = await openActivity(page, true);
+    await expect.poll(async () => Math.abs((await settledHeight(again.root)) - stored)).toBeLessThanOrEqual(2);
+
+    const min = Number(await again.handle.getAttribute("aria-valuemin"));
+    await again.handle.focus();
+    await page.keyboard.press("Home");
+    await expect.poll(async () => Math.abs((await settledHeight(again.root)) - min)).toBeLessThanOrEqual(2);
+    await expect(again.handle).toHaveAttribute("aria-valuenow", String(min));
+
+    await again.handle.dblclick();
+    await expect.poll(async () => Math.abs((await settledHeight(again.root)) - before)).toBeLessThanOrEqual(2);
+  });
+
+  test("tutamaç fareyle 200 px sürüklenince kap uzar ve main kayar", async ({ page }) => {
+    const { handle, root } = await openActivity(page);
+    const before = await settledHeight(root);
+    const box = await handle.boundingBox();
+    if (!box) throw new Error("tutamaç yok");
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i++) await page.mouse.move(x, y + i * 20);
+    await page.mouse.up();
+    await expect.poll(async () => (await settledHeight(root)) - before).toBeGreaterThanOrEqual(194);
+    expect((await settledHeight(root)) - before).toBeLessThanOrEqual(206);
+    await expect.poll(() => page.locator("main").evaluate((el) => el.scrollHeight > el.clientHeight + 4)).toBe(true);
+  });
+
+  test("1280×720'de varsayılan durumda tablo kabı en az 24rem", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    const { root } = await openActivity(page);
+    await expect.poll(() => settledHeight(root)).toBeGreaterThanOrEqual(384);
+  });
+
+  test("localStorage engelliyken ekran hatasız açılır", async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.addInitScript(() => {
+      const blocked = () => {
+        throw new DOMException("engellendi", "SecurityError");
+      };
+      for (const m of ["getItem", "setItem", "removeItem"] as const) Storage.prototype[m] = blocked;
+    });
+    await page.setViewportSize({ width: 1280, height: 720 });
+    const { handle, root } = await openActivity(page);
+    await expect(handle).toBeVisible();
+    await expect.poll(() => settledHeight(root)).toBeGreaterThanOrEqual(384);
+    await handle.focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByRole("heading", { name: "İşlemler", level: 1 })).toBeVisible();
+    expect(errors).toEqual([]);
   });
 });
