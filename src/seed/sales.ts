@@ -454,7 +454,11 @@ export async function seedSales(db: Db, opts: { now: Date; seed?: number }): Pro
     const busyDays = [dayA, dayA, dayA, dayB, dayB, dayB, dayC, dayC, dayC];
     const busyStarts = [0, 0, 1, 0, 1, 2, 0, 1, 3];
     for (const [k, day] of busyDays.entries()) {
-      extras.push({ kind: "busy", day, minute: int(14 * 60, 15 * 60 + 30), due: addWorkdays(day, int(7, 12)), start: ahead(busyStarts[k] as number), ...mix(int(2, 3)) });
+      // Termin, rotanın en uzun satırı bitince birkaç iş günü pay bırakır: yoğun hafta gerçekçi görünür, geciken siparişler ayrıca "late" ile yapılır.
+      const start = ahead(busyStarts[k] as number);
+      const order = mix(int(2, 3));
+      const span = Math.max(...order.products.map((i) => routeOf(i).length));
+      extras.push({ kind: "busy", day, minute: int(14 * 60, 15 * 60 + 30), due: addWorkdays(start, span + int(1, 4)), start, ...order });
     }
     // Toplu iş: sürmekte olan ikinci adım istasyonun günlük kapasitesini tek başına aşar (geçen haftanın ızgarasında da kırmızı hücre kalır).
     const secondStep = (i: number) => SEED_PRODUCTS[i]?.routing[1];

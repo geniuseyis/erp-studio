@@ -90,7 +90,7 @@ npm run test:e2e   # tarayıcı testleri (Playwright, başsız Chrome)
 npm run verify     # tür denetimi, lint, birim testleri ve üretim derlemesi
 ```
 
-602 birim testi ve 132 tarayıcı testi var. Tarayıcı testleri siparişten sevke beş departmanlı akışı, haftalık planda sürükle-bırak ve klavyeyle taşımayı, kanbanı, yetkileri, Türkçe aramayı, çift tıklamayı, iki sekmeyi, kapalı tarayıcı deposunu, klavye odağını ve telefon genişliğini kapsar.
+601 birim testi ve 133 tarayıcı testi var. Tarayıcı testleri siparişten sevke beş departmanlı akışı, haftalık planda sürükle-bırak ve klavyeyle taşımayı, kanbanı, yetkileri, Türkçe aramayı, çift tıklamayı, iki sekmeyi, kapalı tarayıcı deposunu, klavye odağını ve telefon genişliğini kapsar.
 
 ## Durum
 

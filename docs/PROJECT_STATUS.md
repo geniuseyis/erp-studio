@@ -26,7 +26,7 @@ Son güncelleme: 2026-11-18 (Plan 2B: haftalık plan, termin önerisi ve kanban 
 
 ## Yapılanlar (Plan 2B: haftalık plan)
 
-- **Örnek veri küçüldü:** anlık görüntü 958 KB'tan 615 KB'a indi (kimlikler dosyada yazılmıyor, `deterministicUuid` ile yüklemede üretiliyor; `audit_log.search_key` yüklemede türetiliyor). Test sınırı 700 KB.
+- **Örnek veri küçüldü:** anlık görüntü 958 KB'tan 621 KB'a indi (kimlikler dosyada yazılmıyor, `deterministicUuid` ile yüklemede üretiliyor; `audit_log.search_key` yüklemede türetiliyor). Test sınırı 700 KB.
 - **İşlemler araması SQL'de:** süzgeç ve arama veritabanında (`search_key`, açık `ESCAPE`); 222 ms'den 6,8 ms'ye. Aramada kayıt adı da (müşteri, ürün, malzeme) eşleşir.
 - **Odak ve adım konumu:** çekmece ve pencere kapanınca odak tetikleyen öğeye döner (yoksa ana alana); iş emri adımları "2/5" biçiminde konumunu gösterir.
 - **Planlama iş kuralları (`src/domain/production/schedule.ts`):** `weekPlan` (5 iş günü × istasyon, dört sorgu), `stationLoad`, `previewMove` ve `moveStep` (rota sırası bozulamaz, geçmiş güne taşınamaz, kapasite aşımı uyarı olarak döner, `planning:write`), `suggestDueDate` (stok, istasyon kapasitesi ve malzeme temin süresine göre en erken ulaşılabilir termin).
@@ -42,8 +42,8 @@ Son güncelleme: 2026-11-18 (Plan 2B: haftalık plan, termin önerisi ve kanban 
 
 | Tür | Sayı | Not |
 |---|---|---|
-| Birim (Vitest) | 602 | Gerçek PGlite veritabanıyla; dosya başına paylaşılan veritabanı |
-| Tarayıcı (Playwright) | 132 (+1 elle çalıştırılan: ekran görüntüsü) | Başsız Chrome, "hareketi azalt" açık |
+| Birim (Vitest) | 601 | Gerçek PGlite veritabanıyla; dosya başına paylaşılan veritabanı |
+| Tarayıcı (Playwright) | 133 (+1 elle çalıştırılan: ekran görüntüsü) | Başsız Chrome, "hareketi azalt" açık |
 | Üretim dolaşımı | `scripts/walkthrough.mjs` | Giriş, stok girişi, sayım, palet, siparişten sevke (satış, planlama, atölye, depo), haftalık planda klavyeyle bir adım taşıma, kullanıcı ekleme, sıfırlama; konsol hatası ve 4xx yok |
 
 ## Tarayıcıda PostgreSQL
@@ -53,7 +53,7 @@ Son güncelleme: 2026-11-18 (Plan 2B: haftalık plan, termin önerisi ve kanban 
 - **Çok sekme:** PGlite sekmelerden birini lider seçer, diğerleri sorgularını ona yollar. Kurulum ve örnek veri yüklemesi Web Locks ile tek sekmede çalışır. Bir sekmedeki değişiklik `BroadcastChannel` ile diğer sekmelerin sorgularını yeniler.
 - **Depolama kapalıysa** (OPFS yok, ya da site verisi engellendiği için Worker içinde reddediliyor): veritabanı bellekte açılır (`persistent: false`) ve ekranda kalıcı bir uyarı durur. Worker reddi açıkça bildirir; sessizce takılırsa 60 sn sonra bellekte devam edilir.
 - **Sıfırlama ve sürüm değişimi:** `public` şeması silinip yeniden kurulur.
-- **Örnek veri:** derleme sırasında üretilen anlık görüntüden (`src/seed/snapshot.generated.json`, 615 KB; test sınırı 700 KB) tablo başına toplu INSERT ile yüklenir; tarihler yükleme anına iş günü olarak kaydırılır, hiçbir kayıt hafta sonuna düşmez. Anlık görüntü `npm run seed:snapshot` ile yenilenir; güncel olup olmadığını bir birim testi denetler.
+- **Örnek veri:** derleme sırasında üretilen anlık görüntüden (`src/seed/snapshot.generated.json`, 621 KB; test sınırı 700 KB) tablo başına toplu INSERT ile yüklenir; tarihler yükleme anına iş günü olarak kaydırılır, hiçbir kayıt hafta sonuna düşmez. Anlık görüntü `npm run seed:snapshot` ile yenilenir; güncel olup olmadığını bir birim testi denetler.
 
 ### Neden bu depolama (2026-11-15 ölçümleri, başsız Chrome, RTX 4070 makine)
 

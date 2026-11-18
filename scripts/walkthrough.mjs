@@ -178,6 +178,9 @@ await step("planlama haftalık planda bir adımı klavyeyle taşır", async () =
   await demo("Zeynep Arıkan");
   await nav("Haftalık plan");
   await page.getByRole("table", { name: "Haftalık üretim planı" }).waitFor({ timeout: 60_000 });
+  // Hafta sonu açılışta ya da haftanın sonunda bu haftada taşınabilir kart kalmayabilir: gelecek haftaya geçilir (günler hep gelecekte).
+  await page.getByRole("button", { name: "Sonraki hafta" }).click();
+  await page.waitForURL(/hafta=/);
   const cards = page.locator("[aria-roledescription='taşınabilir kart']");
   await cards.first().waitFor({ timeout: 30_000 });
   const total = Math.min(await cards.count(), 12);
