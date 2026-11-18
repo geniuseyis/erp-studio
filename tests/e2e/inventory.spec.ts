@@ -205,7 +205,9 @@ test("sayım: uzman açar ve sayar, müdür onaylar, fark harekete yazılır", a
   const inputs = detail.getByRole("textbox", { name: /^Sayılan/ });
   await expect(inputs).toHaveCount(2);
   const system = await sql<{ n: number }>(page, "select on_hand_milli::float8 as n from materials where name like 'Koli Bandı%'");
-  await inputs.nth(0).fill("7");
+  // Ayrılmış miktarın altına sayılamaz; açık siparişler paketleme malzemesi de ayırır. Bu yüzden eldekinden bir eksik sayılır (örnek veriden bağımsız).
+  const bubble = await sql<{ n: number }>(page, "select on_hand_milli::float8 as n from materials where name like 'Balonlu Naylon%'");
+  await inputs.nth(0).fill(String((bubble[0]?.n ?? 0) / 1000 - 1));
   await inputs.nth(0).press("Enter");
   await inputs.nth(1).fill(String((system[0]?.n ?? 0) / 1000 - 5));
   await inputs.nth(1).press("Enter");
@@ -242,7 +244,7 @@ test("malzeme listesi CSV olarak indirilir", async ({ page }) => {
   for await (const chunk of stream) chunks.push(chunk as Buffer);
   const lines = Buffer.concat(chunks).toString("utf8").split("\r\n");
   expect(lines[0]).toBe("﻿Kod;Ad;Kategori;Eldeki;Ayrılmış;Kullanılabilir;Yeniden sipariş noktası;Birim;Ortalama maliyet;Stok değeri;Raf");
-  expect(lines[1]).toMatch(/^MLZ-0001;MDF Lam 18 mm Parlak Beyaz 2100×2800;Panel;\d+(,\d+)?;0;/);
+  expect(lines[1]).toMatch(/^MLZ-0001;MDF Lam 18 mm Parlak Beyaz 2100×2800;Panel;\d+(,\d+)?;\d+(,\d+)?;/);
   expect(lines.length).toBeGreaterThanOrEqual(43);
 });
 
