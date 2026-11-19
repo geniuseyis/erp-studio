@@ -102,3 +102,73 @@ test("satış uzmanı önerileri görür ama 'Taslak oluştur' düğmesi yok", a
   await expect(card).toContainText(formatMoney(f.netKurus));
   await expect(page.getByRole("button", { name: "Taslak oluştur" })).toHaveCount(0);
 });
+
+test("tedarikçiye fiyat eklenir; onay penceresi değeri yazar; çekmecedeki listede ve Geçmiş'te görünür", async ({ page }) => {
+  await loginAs(page, BUYER);
+  await navTo(page, "Tedarikçiler");
+
+  // Yeni tedarikçi formdan eklenir; onay penceresi alanları yazar.
+  const name = `Form Tedarik ${Date.now() % 100000}`;
+  await page.getByRole("button", { name: "Yeni tedarikçi" }).click();
+  const form = page.getByRole("dialog", { name: "Yeni tedarikçi" });
+  await form.getByLabel("Ad", { exact: true }).fill(name);
+  await form.getByLabel("İl", { exact: true }).fill("Kocaeli");
+  await form.getByLabel("Yetkili", { exact: true }).fill("Selin Akın");
+  await form.getByLabel("Telefon", { exact: true }).fill("0262 555 01 02");
+  await form.getByLabel("Teslim süresi", { exact: true }).fill("6");
+  await form.getByLabel("Ödeme vadesi", { exact: true }).fill("45");
+  await form.getByRole("button", { name: "Tedarikçiyi ekle" }).click();
+  await expect(confirmDialog(page)).toContainText(name);
+  await approve(page, "Tedarikçiyi ekle");
+  await expect(form).toBeHidden();
+
+  const [row] = await sql<{ id: string; code: string; lead: number }>(page, `select id, code, lead_time_days as lead from suppliers where name = '${name}'`);
+  expect(row?.lead).toBe(6);
+  // Eklenen tedarikçinin çekmecesi kendiliğinden açılır.
+  await expect(page).toHaveURL(new RegExp(`ac=${row?.id}`));
+  const drawer = page.getByRole("dialog", { name });
+  await expect(drawer).toBeVisible();
+
+  const [mat] = await sql<{ id: string; code: string; name: string; unit: string }>(page, "select id, code, name, unit from materials where active order by code limit 1");
+  await drawer.getByRole("button", { name: "Fiyat ekle" }).click();
+  const priceForm = page.getByRole("dialog", { name: "Fiyat ekle" });
+  await priceForm.getByRole("searchbox", { name: "Malzeme ara" }).fill(mat?.code ?? "");
+  await priceForm.getByRole("radio", { name: new RegExp(mat?.code ?? "") }).check();
+  await priceForm.getByLabel("Birim fiyat", { exact: true }).fill("1580,50");
+  await priceForm.getByLabel("En az sipariş miktarı", { exact: true }).fill("10");
+  await priceForm.getByRole("checkbox", { name: "Tercihli tedarikçi" }).check();
+  await priceForm.getByRole("button", { name: "Fiyatı ekle" }).click();
+  await expect(confirmDialog(page)).toContainText(`${mat?.code}`);
+  await expect(confirmDialog(page)).toContainText(formatMoney(158050));
+  await expect(confirmDialog(page)).toContainText("tercihli");
+  await approve(page, "Fiyatı ekle");
+  await expect(priceForm).toBeHidden();
+
+  const prices = drawer.getByRole("list", { name: "Fiyat listesi" });
+  await expect(prices.getByRole("listitem").filter({ hasText: mat?.code ?? "" })).toContainText(formatMoney(158050));
+  await expect(prices.getByRole("listitem").filter({ hasText: mat?.code ?? "" })).toContainText("Tercihli");
+  const [item] = await sql<{ price: number; moq: number; pref: boolean }>(
+    page,
+    `select unit_price_minor::float8 as price, moq_milli::float8 as moq, is_preferred as pref from supplier_items where supplier_id = '${row?.id}' and material_id = '${mat?.id}'`,
+  );
+  expect(item).toEqual({ price: 158050, moq: 10_000, pref: true });
+
+  const history = drawer.getByRole("region", { name: "Geçmiş" });
+  await expect(history).toContainText(`${mat?.code}`);
+  await expect(history).toContainText("fiyatı ₺1.580,50");
+});
+
+test("390 px'te öneriler ve tedarikçiler sayfası yatay taşmaz", async ({ page }) => {
+  await loginAs(page, BUYER);
+  const f = await setupSupplier(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+
+  await page.goto("/satin-alma/oneriler");
+  await expect(group(page, f.name)).toBeVisible();
+  await expect.poll(overflow).toBeLessThanOrEqual(0);
+
+  await page.goto("/satin-alma/tedarikciler");
+  await expect(page.getByRole("table", { name: "Tedarikçiler" }).getByRole("row", { name: new RegExp(f.code) })).toBeVisible();
+  await expect.poll(overflow).toBeLessThanOrEqual(0);
+});
