@@ -73,3 +73,7 @@ export const MalletIcon = make(<><path d="m13 11-8.5 8.5a1.5 1.5 0 0 1-2-2L11 9"
 /** Haftalık plan: takvim yaprağı üzerinde gün sütunları ve bir kart. */
 export const PlanIcon = make(<><rect x="3" y="4.5" width="18" height="16" rx="2" /><path d="M8 3v3M16 3v3M3 9.5h18M9 9.5v11M15 9.5v11" /><path d="M10.5 13h3v3h-3z" /></>);
 export const GripIcon = make(<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" strokeWidth={2.6} />);
+/** Satın alma: sepet. */
+export const CartIcon = make(<><path d="M3 4h2.5l2 11h10.5l2-8H6.5" /><circle cx="9.5" cy="19" r="1.5" /><circle cx="17" cy="19" r="1.5" /></>);
+/** Tedarikçi: çatılı fabrika ve baca. */
+export const FactoryIcon = make(<><path d="M3 20V9l6 3.5V9l6 3.5V5h3v15H3Z" /><path d="M7 20v-3M11 20v-3M15 20v-3" /></>);

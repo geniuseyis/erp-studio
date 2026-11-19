@@ -73,3 +73,20 @@ test("İşlemler herkese görünür, Genel grubunda ana panelin hemen altında",
     for (const level of ["operator", "uzman", "mudur"] as const) expect(labels(user(dept, level))).toContain("İşlemler");
   }
 });
+
+test("satın alma ekranları 'Satın alma' grubunda, üretimden sonra stoktan önce", () => {
+  const purchasing = NAV.filter((n) => n.group === "Satın alma");
+  expect(purchasing.map((n) => n.href)).toEqual(["/satin-alma/oneriler", "/satin-alma/siparisler", "/satin-alma/tedarikciler"]);
+  expect(purchasing.map((n) => n.label)).toEqual(["Öneriler", "Satın alma siparişleri", "Tedarikçiler"]);
+  expect(purchasing.every((n) => n.module === "purchasing")).toBe(true);
+  expect(NAV_GROUPS).toEqual(["Genel", "Satış", "Üretim", "Satın alma", "Stok", "Yönetim"]);
+  // Menüdeki sıra grup sırasını izler: bir grubun maddeleri hiçbir zaman sonraki grubun maddesinden sonra gelmez.
+  const order = NAV.map((n) => NAV_GROUPS.indexOf(n.group));
+  expect(order).toEqual([...order].sort((a, b) => a - b));
+});
+
+test("satış uzmanı satın alma ekranlarını görür (görüntüleme serbest)", () => {
+  for (const dept of ["satis", "depo", "planlama", "atolye", "satinalma", "yonetim"] as const) {
+    expect(labels(user(dept, "uzman"))).toEqual(expect.arrayContaining(["Öneriler", "Satın alma siparişleri", "Tedarikçiler"]));
+  }
+});

@@ -6,7 +6,24 @@ import { usePathname } from "next/navigation";
 import { type ComponentType, useEffect, useRef } from "react";
 import { DEPARTMENT_NAMES, type SessionUser } from "@/domain/context";
 import { cn } from "@/ui/cn";
-import { ArrowsIcon, BoxIcon, ClipboardIcon, ContactIcon, HistoryIcon, HomeIcon, MalletIcon, PanelIcon, PlanIcon, ReceiptIcon, SawIcon, TagIcon, UsersIcon } from "@/ui/icons";
+import {
+  ArrowsIcon,
+  BoxIcon,
+  CartIcon,
+  ClipboardIcon,
+  ContactIcon,
+  FactoryIcon,
+  HistoryIcon,
+  HomeIcon,
+  MalletIcon,
+  PanelIcon,
+  PlanIcon,
+  ReceiptIcon,
+  SawIcon,
+  SparkIcon,
+  TagIcon,
+  UsersIcon,
+} from "@/ui/icons";
 import { SLIDE_SPRING } from "@/ui/motion";
 import { Brand } from "./Brand";
 import { NAV_GROUPS, visibleNav } from "./nav";
@@ -20,6 +37,9 @@ const ICON: Record<string, ComponentType<{ size?: number }>> = {
   "/uretim/is-emirleri": SawIcon,
   "/uretim/plan": PlanIcon,
   "/atolye": MalletIcon,
+  "/satin-alma/oneriler": SparkIcon,
+  "/satin-alma/siparisler": CartIcon,
+  "/satin-alma/tedarikciler": FactoryIcon,
   "/stok/malzemeler": BoxIcon,
   "/stok/hareketler": ArrowsIcon,
   "/stok/sayim": ClipboardIcon,
