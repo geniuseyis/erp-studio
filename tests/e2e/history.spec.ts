@@ -3,7 +3,7 @@ import { approve, loginAs, one, settledHeight, sql } from "./helpers";
 
 test("silinen sipariş satırının ürün kodu ve adı Geçmiş'te görünür", async ({ page }) => {
   await loginAs(page, "Elif Karaca");
-  await page.getByRole("navigation", { name: "Ana menü" }).getByRole("link", { name: "Siparişler" }).click();
+  await page.getByRole("navigation", { name: "Ana menü" }).getByRole("link", { name: "Siparişler", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Siparişler", level: 1 })).toBeVisible();
 
   const product = await one<{ code: string; name: string }>(page, "select code, name from products where active order by code limit 1");

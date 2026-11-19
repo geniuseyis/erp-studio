@@ -194,3 +194,35 @@ export function approvalView(user: Pick<SessionUser, "id" | "departmentCode" | "
   }
   return { required: tier === 0 ? "Onay gerekmez, doğrudan gönderilir" : `Bu sipariş ${TIER_LABEL[tier]} ister`, steps, can, waiting, note };
 }
+
+/** Listedeki "Onay durumu" sütunu: sıradaki kademe, onaylandı ya da onay gerekmedi. */
+export function approvalLabel(po: ApprovalSubject): string {
+  if (po.status === "draft" || po.status === "cancelled") return "—";
+  const tier = pendingTier(po);
+  if (tier === "manager") return "Müdür onayı bekliyor";
+  if (tier === "board") return "Yönetim onayı bekliyor";
+  return po.requiredTier === 0 ? "Onay gerekmedi" : "Onaylandı";
+}
+
+/** Kalemlerden KDV hariç, oran başına KDV ve KDV dahil tutar (kuruş). Her oranın KDV'si o orandaki kalemlerin toplamından yuvarlanır. */
+export function purchaseTotals(lines: readonly Pick<PurchaseOrderLineRow, "lineNetMinor" | "vatRate">[]): {
+  netKurus: number;
+  vatByRate: Record<string, number>;
+  vatKurus: number;
+  totalKurus: number;
+} {
+  const netByRate = new Map<number, number>();
+  let netKurus = 0;
+  for (const l of lines) {
+    netKurus += l.lineNetMinor;
+    netByRate.set(l.vatRate, (netByRate.get(l.vatRate) ?? 0) + l.lineNetMinor);
+  }
+  const vatByRate: Record<string, number> = {};
+  let vatKurus = 0;
+  for (const [rate, net] of netByRate) {
+    const vat = Math.round((net * rate) / 100);
+    vatByRate[String(rate)] = vat;
+    vatKurus += vat;
+  }
+  return { netKurus, vatByRate, vatKurus, totalKurus: netKurus + vatKurus };
+}

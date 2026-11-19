@@ -9,7 +9,7 @@ const SHORT_MATERIAL = "MDF Lam 8 mm Beyaz Arkalık";
 type ProductPick = { id: string; code: string; price: number };
 
 async function openOrders(page: Page): Promise<void> {
-  await page.getByRole("navigation", { name: "Ana menü" }).getByRole("link", { name: "Siparişler" }).click();
+  await page.getByRole("navigation", { name: "Ana menü" }).getByRole("link", { name: "Siparişler", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Siparişler", level: 1 })).toBeVisible();
   await expect(page.getByRole("table", { name: "Siparişler" }).locator("tbody tr").first()).toContainText(/SIP-/);
 }

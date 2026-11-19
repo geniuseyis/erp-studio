@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { formatMoney, lineValueKurus, roundUpToStep, type Unit } from "../../src/domain/units";
-import { approve, confirmDialog, loginAs, navTo, sql } from "./helpers";
+import { formatMoney, formatQty, lineValueKurus, roundUpToStep, UNIT_STEP_MILLI, type Unit } from "../../src/domain/units";
+import { approve, confirmDialog, leave, loginAs, navTo, sql } from "./helpers";
 
 type Fixture = {
   supplierId: string;
@@ -13,6 +13,8 @@ type Fixture = {
 };
 
 const BUYER = "Kerem Uysal"; // Satın Alma uzmanı: taslak açar, onaylayamaz
+const MANAGER = "Ayla Güneş"; // Satın Alma müdürü: müdür kademesini onaylar
+const BOARD = "Nermin Aksoy"; // Yönetim: iki kademeyi de onaylar
 
 /**
  * Kritik, bekleyen iş emri ihtiyacı ve yoldaki siparişi olmayan bir malzeme için tercihli tedarikçi açar. Öneri miktarı
@@ -72,25 +74,16 @@ test("satın alma uzmanı öneriden taslak açar: onay penceresi tutarı ve kade
 
   await expect(page).toHaveURL(/\/satin-alma\/siparisler\?ac=/);
   const id = new URL(page.url()).searchParams.get("ac") ?? "";
-  // Veritabanı sondası uygulama açılınca gelir; sipariş ekranından bağımsız olarak öneri sayfasına dönülüp okunur.
-  await page.goto("/satin-alma/oneriler");
-  await expect(page.getByRole("heading", { name: "Satın alma önerileri", level: 1 })).toBeVisible();
-  const read = async () => {
-    try {
-      const [po] = await sql<{ status: string; lines: number; net: number; creator: string }>(
-        page,
-        `select o.status, count(l.id)::int as lines, sum(round(l.qty_milli * l.unit_price_minor / 1000.0))::float8 as net, u.name as creator
-           from purchase_orders o join purchase_order_lines l on l.order_id = o.id join users u on u.id = o.created_by
-          where o.id = '${id}' group by o.status, u.name`,
-      );
-      return po;
-    } catch {
-      return undefined;
-    }
-  };
-  await expect.poll(read).toEqual({ status: "draft", lines: 1, net: f.netKurus, creator: BUYER });
-  const [order] = await sql<{ code: string }>(page, `select code from purchase_orders where id = '${id}'`);
+  const [order] = await sql<{ code: string; status: string; lines: number; net: number; creator: string }>(
+    page,
+    `select o.code, o.status, count(l.id)::int as lines, sum(round(l.qty_milli * l.unit_price_minor / 1000.0))::float8 as net, u.name as creator
+       from purchase_orders o join purchase_order_lines l on l.order_id = o.id join users u on u.id = o.created_by
+      where o.id = '${id}' group by o.code, o.status, u.name`,
+  );
+  expect(order).toMatchObject({ status: "draft", lines: 1, net: f.netKurus, creator: BUYER });
   expect(order?.code).toMatch(/^SAS-\d{4}-\d{4}$/);
+  await expect(page.getByRole("status").filter({ hasText: `${order?.code} taslağı açıldı` })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: order?.code })).toBeVisible();
 });
 
 test("satış uzmanı önerileri görür ama 'Taslak oluştur' düğmesi yok", async ({ page }) => {
@@ -184,4 +177,237 @@ test("390 px'te öneriler ve tedarikçiler sayfası yatay taşmaz", async ({ pag
   await page.goto("/satin-alma/tedarikciler");
   await expect(page.getByRole("table", { name: "Tedarikçiler" }).getByRole("row", { name: new RegExp(f.code) })).toBeVisible();
   await expect.poll(overflow).toBeLessThanOrEqual(0);
+});
+
+// ---- Satın alma siparişleri (Görev 8) ----
+
+type OrderStatus = "draft" | "pending_approval" | "sent" | "partial" | "cancelled";
+type Seeded = { id: string; code: string };
+
+/**
+ * Kurulan tedarikçiye tek kalemli sipariş yazar (kalem miktarı ve fiyatı fixture'dan). Kod, İstanbul yılına göre sıradaki
+ * SAS kodudur. `sent` siparişte beklenen gün üç gün sonradır (gecikmez).
+ */
+async function insertOrder(page: Page, f: Fixture, o: { status: OrderStatus; tier: 0 | 1 | 2; creator?: string; managerApproved?: string }): Promise<Seeded> {
+  const [c] = await sql<{ code: string }>(
+    page,
+    `select 'SAS-' || t.y || '-' || lpad((coalesce(max(substring(p.code from 10)::int), 0) + 1)::text, 4, '0') as code
+       from (select to_char(now() at time zone 'Europe/Istanbul', 'YYYY') as y) t
+       left join purchase_orders p on p.code like 'SAS-' || t.y || '-%' group by t.y`,
+  );
+  const code = c?.code ?? "";
+  const sent = o.status === "sent" || o.status === "partial";
+  const submitted = o.status !== "draft";
+  const manager = o.managerApproved ? `(select id from users where name = '${o.managerApproved}')` : "null";
+  const cancelled = o.status === "cancelled";
+  const [po] = await sql<{ id: string }>(
+    page,
+    `insert into purchase_orders (code, supplier_id, status, required_tier, created_by, submitted_at, sent_at, expected_at, manager_approved_by, manager_approved_at, cancelled_at, cancel_reason)
+     values ('${code}', '${f.supplierId}', '${o.status}', ${o.tier}, (select id from users where name = '${o.creator ?? BUYER}'),
+             ${submitted ? "now()" : "null"}, ${sent ? "now()" : "null"}, ${sent ? "now() + interval '3 days'" : "null"},
+             ${manager}, ${o.managerApproved ? "now()" : "null"}, ${cancelled ? "now()" : "null"}, ${cancelled ? "'deneme'" : "''"}) returning id`,
+  );
+  const id = po?.id ?? "";
+  await sql(page, `insert into purchase_order_lines (order_id, material_id, qty_milli, unit_price_minor) values ('${id}', '${f.material.id}', ${f.qtyMilli}, ${f.priceKurus})`);
+  return { id, code };
+}
+
+const poTable = (page: Page): Locator => page.getByRole("table", { name: "Satın alma siparişleri" });
+const poRows = (page: Page): Locator => poTable(page).locator("tbody tr");
+
+/** Sipariş listesini açar, kodu satırdan seçip çekmeceyi döner. */
+async function openPo(page: Page, code: string): Promise<Locator> {
+  await navTo(page, "Satın alma siparişleri");
+  await poRows(page).filter({ hasText: code }).click();
+  const drawer = page.getByRole("dialog", { name: code });
+  await expect(drawer).toBeVisible();
+  return drawer;
+}
+
+const statusOf = async (page: Page, id: string) =>
+  (await sql<{ s: string; t: number }>(page, `select status as s, required_tier as t from purchase_orders where id = '${id}'`))[0];
+
+test("uzman taslağı 'Onaya gönder'ir; kendi siparişinde 'Onayla' yok, onay notu var", async ({ page }) => {
+  await loginAs(page, BUYER);
+  const f = await setupSupplier(page);
+  const po = await insertOrder(page, f, { status: "draft", tier: 0 });
+  const drawer = await openPo(page, po.code);
+
+  await expect(drawer).toContainText("Bu sipariş Müdür onayı ister");
+  await expect(drawer.getByRole("button", { name: "Gönder", exact: true })).toHaveCount(0);
+  await drawer.getByRole("button", { name: "Onaya gönder" }).click();
+  await expect(confirmDialog(page)).toContainText(`${po.code}: ${formatMoney(f.netKurus)} KDV hariç 50.000 TL eşiğini aşıyor; Satın Alma müdürünün onayına gider.`);
+  await expect(confirmDialog(page).getByRole("button", { name: "Vazgeç" })).toBeFocused();
+  await approve(page, "Onaya gönder");
+
+  await expect.poll(() => statusOf(page, po.id)).toEqual({ s: "pending_approval", t: 1 });
+  await expect(drawer.getByText("Onay bekleniyor: Satın Alma müdürü")).toBeVisible();
+  await expect(drawer.getByText("Kendi siparişinizi onaylayamazsınız")).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Onayla" })).toHaveCount(0);
+  await expect(drawer.getByRole("button", { name: "Onaya gönder" })).toHaveCount(0);
+  await expect(drawer.getByRole("region", { name: "Geçmiş" })).toContainText(`${po.code} onaya gönderildi`);
+});
+
+test("müdür 'Onay bekliyor' süzgecinde siparişi açar, onaylar; durum Gönderildi, beklenen teslim yazılı", async ({ page }) => {
+  await loginAs(page, BUYER);
+  const f = await setupSupplier(page);
+  const po = await insertOrder(page, f, { status: "pending_approval", tier: 1 });
+  await leave(page);
+  await loginAs(page, MANAGER);
+
+  await navTo(page, "Satın alma siparişleri");
+  await page.getByRole("button", { name: "Onay bekliyor", exact: true }).click();
+  await expect(page).toHaveURL(/durum=pending_approval/);
+  const pendingCount = async () => (await sql<{ n: number }>(page, "select count(*)::int as n from purchase_orders where status = 'pending_approval'"))[0]?.n;
+  await expect.poll(async () => (await poRows(page).count()) === (await pendingCount())).toBe(true);
+  await expect(poRows(page).filter({ hasText: po.code })).toContainText("Müdür onayı bekliyor");
+  await poRows(page).filter({ hasText: po.code }).click();
+  const drawer = page.getByRole("dialog", { name: po.code });
+  await expect(drawer).toContainText("Bu kademeyi siz onaylayabilirsiniz");
+
+  await drawer.getByRole("button", { name: "Onayla", exact: true }).click();
+  const text = confirmDialog(page);
+  await expect(text).toContainText(`${po.code}: Müdür onayı gerekiyor; ${formatMoney(f.netKurus)} KDV hariç, müdür kademesi onaylanacak.`);
+  await expect(text).toContainText(/Onaylanınca tedarikçiye gönderilir, beklenen teslim \d{2}\.\d{2}\.\d{4}\./);
+  await approve(page, "Onayla");
+
+  await expect.poll(() => statusOf(page, po.id)).toEqual({ s: "sent", t: 1 });
+  const [row] = await sql<{ d: string; approver: string }>(
+    page,
+    `select to_char(o.expected_at at time zone 'Europe/Istanbul', 'DD.MM.YYYY') as d, u.name as approver
+       from purchase_orders o join users u on u.id = o.manager_approved_by where o.id = '${po.id}'`,
+  );
+  expect(row?.approver).toBe(MANAGER);
+  await expect(drawer.getByRole("list", { name: "Onay zinciri" })).toContainText(`Onayladı: ${MANAGER}`);
+  await expect(drawer.getByText("Beklenen teslim").locator("xpath=following-sibling::dd[1]")).toContainText(row?.d ?? "");
+  await expect(drawer.getByRole("button", { name: "Onayla", exact: true })).toHaveCount(0);
+});
+
+test("iki kademe: müdür onaylar, Yönetim bekler ve müdür bir daha onaylayamaz; Yönetim onaylayınca gönderilir", async ({ page }) => {
+  await loginAs(page, BUYER);
+  const f = await setupSupplier(page, { targetNetKurus: 30_000_000 });
+  const po = await insertOrder(page, f, { status: "pending_approval", tier: 2 });
+  await leave(page);
+  await loginAs(page, MANAGER);
+
+  let drawer = await openPo(page, po.code);
+  await expect(drawer).toContainText("Bu sipariş Müdür + Yönetim onayı ister");
+  await drawer.getByRole("button", { name: "Onayla", exact: true }).click();
+  await expect(confirmDialog(page)).toContainText("Sipariş ardından Yönetim onayı bekler");
+  await approve(page, "Onayla");
+  await expect.poll(() => statusOf(page, po.id)).toEqual({ s: "pending_approval", t: 2 });
+  await expect(drawer.getByText("Onay bekleniyor: Yönetim")).toBeVisible();
+  await expect(drawer.getByText("Bu kademe Yönetim onayı ister")).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Onayla", exact: true })).toHaveCount(0);
+  await leave(page);
+
+  await loginAs(page, BOARD);
+  drawer = await openPo(page, po.code);
+  await expect(drawer.getByRole("list", { name: "Onay zinciri" })).toContainText(`Onayladı: ${MANAGER}`);
+  await drawer.getByRole("button", { name: "Onayla", exact: true }).click();
+  await approve(page, "Onayla");
+  await expect.poll(() => statusOf(page, po.id)).toEqual({ s: "sent", t: 2 });
+  await expect(drawer.getByRole("list", { name: "Onay zinciri" })).toContainText(`Onayladı: ${BOARD}`);
+});
+
+test("satış uzmanı siparişi okur: onay, iptal ve gönder düğmeleri yok, nedeni yazılı", async ({ page }) => {
+  await loginAs(page, BUYER);
+  const f = await setupSupplier(page);
+  const po = await insertOrder(page, f, { status: "pending_approval", tier: 1 });
+  await leave(page);
+  await loginAs(page, "Elif Karaca");
+
+  const drawer = await openPo(page, po.code);
+  await expect(drawer.getByText("Bu kademe Satın Alma müdürü onayı ister")).toBeVisible();
+  for (const name of ["Onayla", "Onaya gönder", "Gönder", "İptal et"]) {
+    await expect(drawer.getByRole("button", { name, exact: true })).toHaveCount(0);
+  }
+  await expect(drawer.getByRole("button", { name: /^Kalemi (düzenle|sil)/ })).toHaveCount(0);
+});
+
+test("taslakta kalem miktarı değişir; onay penceresi eski → yeni miktarı ve yeni toplamı yazar", async ({ page }) => {
+  await loginAs(page, BUYER);
+  const f = await setupSupplier(page);
+  const po = await insertOrder(page, f, { status: "draft", tier: 0 });
+  const drawer = await openPo(page, po.code);
+
+  const nextQty = f.qtyMilli + UNIT_STEP_MILLI[f.material.unit];
+  const nextNet = lineValueKurus(nextQty, f.priceKurus);
+  await drawer.getByRole("button", { name: `Kalemi düzenle: ${f.material.code}` }).click();
+  const form = drawer.getByRole("form", { name: `Kalemi düzenle: ${f.material.code}` });
+  // Değişiklik yokken kaydet kapalı.
+  await expect(form.getByRole("button", { name: "Kaydet" })).toBeDisabled();
+  await form.getByLabel("Miktar", { exact: true }).fill(String(nextQty / 1000).replace(".", ","));
+  await form.getByRole("button", { name: "Kaydet" }).click();
+  const text = confirmDialog(page);
+  await expect(text).toContainText(`Miktar: ${formatQty(f.qtyMilli, f.material.unit)} → ${formatQty(nextQty, f.material.unit)}`);
+  await expect(text).toContainText(`Sipariş tutarı ${formatMoney(f.netKurus)} → ${formatMoney(nextNet)} olacak`);
+  await approve(page, "Kalemi güncelle");
+
+  await expect.poll(async () => (await sql<{ q: number }>(page, `select qty_milli::float8 as q from purchase_order_lines where order_id = '${po.id}'`))[0]?.q).toBe(nextQty);
+  await expect(drawer.getByRole("table", { name: "Tutar özeti" }).getByRole("row", { name: /KDV hariç/ })).toContainText(formatMoney(nextNet));
+  await expect(drawer.getByRole("region", { name: "Geçmiş" })).toContainText(`${f.material.code} miktar`);
+});
+
+test("iptal gerekçesiz gönderilemez; iptal sonrası Geçmiş'te gerekçe", async ({ page }) => {
+  await loginAs(page, BUYER);
+  const f = await setupSupplier(page);
+  const po = await insertOrder(page, f, { status: "sent", tier: 0 });
+  const drawer = await openPo(page, po.code);
+
+  await drawer.getByRole("button", { name: "İptal et" }).click();
+  const dialog = page.getByRole("dialog", { name: "Siparişi iptal et" });
+  await expect(dialog).toContainText(`${po.code}, ${f.name}: 1 kalem, ${formatMoney(f.netKurus)} KDV hariç gönderildi sipariş iptal edilecek.`);
+  await dialog.getByRole("button", { name: "Siparişi iptal et" }).click();
+  await expect(dialog.getByText("Gerekçe girin")).toBeVisible();
+  expect(await statusOf(page, po.id)).toEqual({ s: "sent", t: 0 });
+
+  await dialog.getByLabel("Gerekçe").fill("Tedarikçi fiyatı değiştirdi");
+  await dialog.getByRole("button", { name: "Siparişi iptal et" }).click();
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => statusOf(page, po.id)).toEqual({ s: "cancelled", t: 0 });
+  await expect(drawer.getByRole("region", { name: "İptal gerekçesi" })).toContainText("Tedarikçi fiyatı değiştirdi");
+  await expect(drawer.getByRole("region", { name: "Geçmiş" })).toContainText(`${po.code} iptal edildi: Tedarikçi fiyatı değiştirdi`);
+  await expect(drawer.getByRole("button", { name: "İptal et" })).toHaveCount(0);
+});
+
+test("durum süzgeci adreste kalır, yenilemede korunur", async ({ page }) => {
+  await loginAs(page, BUYER);
+  const f = await setupSupplier(page);
+  await insertOrder(page, f, { status: "draft", tier: 0 });
+  const sent = await insertOrder(page, f, { status: "sent", tier: 0 });
+  await navTo(page, "Satın alma siparişleri");
+
+  const sentCount = async () => (await sql<{ n: number }>(page, "select count(*)::int as n from purchase_orders where status = 'sent'"))[0]?.n;
+  await page.getByRole("button", { name: "Gönderildi", exact: true }).click();
+  await expect(page).toHaveURL(/durum=sent/);
+  await expect.poll(async () => (await poRows(page).count()) === (await sentCount())).toBe(true);
+  await expect(poRows(page).filter({ hasText: sent.code })).toBeVisible();
+
+  await page.reload();
+  await expect(page).toHaveURL(/durum=sent/);
+  await expect(page.getByRole("button", { name: "Gönderildi", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(async () => (await poRows(page).count()) === (await sentCount())).toBe(true);
+  await expect(poRows(page).filter({ hasText: sent.code })).toBeVisible();
+  await expect(poRows(page).filter({ hasText: "Taslak" })).toHaveCount(0);
+});
+
+test("390 px'te sipariş listesi ve çekmecesi yatay taşmaz", async ({ page }) => {
+  await loginAs(page, BUYER);
+  const f = await setupSupplier(page);
+  const po = await insertOrder(page, f, { status: "pending_approval", tier: 1 });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+
+  await page.goto("/satin-alma/siparisler");
+  await expect(poRows(page).filter({ hasText: po.code })).toBeVisible();
+  await expect.poll(overflow).toBeLessThanOrEqual(0);
+
+  await page.goto(`/satin-alma/siparisler?ac=${po.id}`);
+  const drawer = page.getByRole("dialog", { name: po.code });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByRole("list", { name: "Kalemler" })).toBeVisible();
+  await expect.poll(overflow).toBeLessThanOrEqual(0);
+  // Çekmecenin kendi içeriği de taşmaz.
+  await expect.poll(() => drawer.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
 });
