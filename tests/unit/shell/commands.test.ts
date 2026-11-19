@@ -98,7 +98,7 @@ test("komutlar: tema, hesap değiştir, çıkış; eşleşmeyen sorguda boş", (
 });
 
 test("SIP- yazınca sipariş grubu çıkar, en çok 5 kayıt", () => {
-  const found = build(user("satis", "uzman"), "SIP-").items.filter((i) => i.group === "Siparişler");
+  const found = build(user("satis", "uzman"), "SIP-").items.filter((i) => i.group === "Satış siparişleri");
   expect(found).toHaveLength(5);
   expect(found[0]).toMatchObject({ label: "SIP-2026-0001", hint: "Ayhan Mobilya" });
 });
@@ -106,7 +106,7 @@ test("SIP- yazınca sipariş grubu çıkar, en çok 5 kayıt", () => {
 test("boş sorguda kayıt yok; kayıt grupları sayfalardan sonra, komutlardan önce gelir", () => {
   expect(build(user("satis", "uzman"), "").items.some((i) => i.id.startsWith("siparis:"))).toBe(false);
   const groups = [...new Set(build(user("yonetim", "mudur"), "i").items.map((i) => i.group))];
-  expect(groups).toEqual(["Sayfalar", "Siparişler", "Satın alma", "İş emirleri", "Müşteriler", "Tedarikçiler", "Ürünler", "Malzemeler", "Komutlar"]);
+  expect(groups).toEqual(["Sayfalar", "Satış siparişleri", "Satın alma siparişleri", "İş emirleri", "Müşteriler", "Tedarikçiler", "Ürünler", "Malzemeler", "Komutlar"]);
 });
 
 test("iş emri, müşteri ve ürün kodla ya da adla bulunur ve çekmeceyi açan adrese gider", () => {
@@ -114,7 +114,7 @@ test("iş emri, müşteri ve ürün kodla ya da adla bulunur ve çekmeceyi açan
     ["IE-2026-0002", "İş emirleri", "/uretim/is-emirleri?ac=w2"],
     ["sahin", "Müşteriler", "/satis/musteriler?ac=c1"],
     ["ritim", "Ürünler", "/uretim/urunler?ac=p2"],
-    ["SIP-2026-0003", "Siparişler", "/satis/siparisler?ac=o3"],
+    ["SIP-2026-0003", "Satış siparişleri", "/satis/siparisler?ac=o3"],
   ];
   for (const [q, group, href] of targets) {
     const { items, go } = build(user("depo", "uzman"), q);
@@ -151,7 +151,7 @@ test.each(["plan", "kapasite", "takvim"])("'%s' yazınca Haftalık plan sayfası
 
 test("SAS- yazınca Satın alma grubu çıkar ve çekmeceyi açan adrese gider; tedarikçi adıyla bulunur", () => {
   const { items, go } = build(user("satis", "uzman"), "SAS-2026");
-  const found = items.filter((i) => i.group === "Satın alma");
+  const found = items.filter((i) => i.group === "Satın alma siparişleri");
   expect(found).toHaveLength(5);
   expect(found[0]).toMatchObject({ label: "SAS-2026-0001", hint: "Karadeniz Panel" });
   found[0]?.run();
@@ -163,12 +163,12 @@ test("SAS- yazınca Satın alma grubu çıkar ve çekmeceyi açan adrese gider; 
   byName.items.find((i) => i.group === "Tedarikçiler")?.run();
   expect(byName.go).toHaveBeenCalledWith("/satin-alma/tedarikciler?ac=t2");
   expect(build(user("depo", "uzman"), "TED-0001").items.filter((i) => i.group === "Tedarikçiler").map((i) => i.id)).toEqual(["tedarikci:t1"]);
-  expect(build(user("depo", "uzman"), "karadeniz").items.filter((i) => i.group === "Satın alma")).toHaveLength(5);
+  expect(build(user("depo", "uzman"), "karadeniz").items.filter((i) => i.group === "Satın alma siparişleri")).toHaveLength(5);
 });
 
 test("boş sorguda satın alma kayıtları listelenmez; sayfalar adıyla ve anahtar sözcükle bulunur", () => {
   const empty = build(user("satis", "uzman"), "");
-  expect(empty.items.some((i) => i.group === "Satın alma" || i.group === "Tedarikçiler")).toBe(false);
+  expect(empty.items.some((i) => i.group === "Satın alma siparişleri" || i.group === "Tedarikçiler")).toBe(false);
   expect(empty.items.map((i) => i.label)).toEqual(expect.arrayContaining(["Öneriler", "Satın alma siparişleri", "Tedarikçiler"]));
   expect(build(user("satis", "uzman"), "eksik malzeme").items[0]).toMatchObject({ group: "Sayfalar", label: "Öneriler" });
 });

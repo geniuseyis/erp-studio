@@ -42,8 +42,8 @@ export async function receiveGoods(ctx: Ctx, i: ReceiptInput): Promise<ReceiptRe
     if (!po) throw new DomainError("NOT_FOUND", "Sipariş bulunamadı");
     if (po.status !== "sent" && po.status !== "partial") throw new DomainError("INVALID_STATE", "Bu sipariş mal kabule açık değil");
 
-    // Tedarikçi başına danışma kilidi: aynı irsaliyeyi aynı anda giren iki işlem sırayla çalışır (ikincisi kopyayı görür),
-    // MK kodu üretimi de bu tedarikçi için seri hale gelir. Kilit işlem bitince kendiliğinden kalkar.
+    // Tedarikçi başına danışma kilidi: aynı irsaliyeyi aynı anda giren iki işlem sırayla çalışır, ikincisi kopyayı görür.
+    // Kilit işlem bitince kendiliğinden kalkar. MK kodu için ayrı, genel bir kilit aşağıdadır (farklı tedarikçiler çakışabilir).
     await tx.db.execute(sql`select pg_advisory_xact_lock(hashtext(${po.supplierId}))`);
     const [dup] = await tx.db
       .select({ code: goodsReceipts.code })
@@ -75,6 +75,8 @@ export async function receiveGoods(ctx: Ctx, i: ReceiptInput): Promise<ReceiptRe
       if (l.qtyMilli % UNIT_STEP_MILLI[unit] !== 0) throw invalid(`${l.code} miktarı ${formatQty(UNIT_STEP_MILLI[unit], unit)} katı olmalı`);
     }
 
+    // MK kodu max+1 ile üretilir: farklı tedarikçilere aynı anda yapılan mal kabuller aynı kodu görmesin diye tüm kodlar tek kilitle seri.
+    await tx.db.execute(sql`select pg_advisory_xact_lock(hashtext('goods_receipt_code'))`);
     const prefix = `${CODE_PREFIX}${istanbulYear(tx.now)}-`;
     const existing = await tx.db.select({ code: goodsReceipts.code }).from(goodsReceipts).where(like(goodsReceipts.code, `${prefix}%`));
     const max = existing.reduce((n, r) => Math.max(n, Number(r.code.slice(prefix.length)) || 0), 0);

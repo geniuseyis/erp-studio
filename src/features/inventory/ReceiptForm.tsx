@@ -29,7 +29,9 @@ export function ReceiptForm({ id, onClose }: { id: string; onClose: () => void }
   const { user } = useSession();
   const order = usePurchaseOrder(id);
   const o = order.data;
-  const canReceive = user ? can(user, "inventory", "execute") && (o?.status === "sent" || o?.status === "partial") : false;
+  const guard = useGuardedRun<"receive">();
+  const permitted = user ? can(user, "inventory", "execute") : false;
+  const canReceive = permitted && (o?.status === "sent" || o?.status === "partial");
 
   return (
     <Drawer
@@ -53,15 +55,15 @@ export function ReceiptForm({ id, onClose }: { id: string; onClose: () => void }
       }
       footer={
         o && canReceive ? (
-          <ReceiptFooter />
+          <ReceiptFooter busy={guard.busy === "receive"} />
         ) : undefined
       }
     >
       {o ? (
         canReceive ? (
-          <Form key={o.id} order={o} onDone={onClose} />
+          <Form key={o.id} order={o} onDone={onClose} run={guard.run} />
         ) : (
-          <ReadOnly order={o} />
+          <ReadOnly order={o} permitted={permitted} />
         )
       ) : order.isPending ? (
         <div className="grid gap-3">
@@ -77,9 +79,9 @@ export function ReceiptForm({ id, onClose }: { id: string; onClose: () => void }
 
 const FORM_ID = "receipt-form";
 
-function ReceiptFooter() {
+function ReceiptFooter({ busy }: { busy: boolean }) {
   return (
-    <Button variant="primary" icon={<CheckIcon />} type="submit" form={FORM_ID}>
+    <Button variant="primary" icon={<CheckIcon />} type="submit" form={FORM_ID} loading={busy} disabled={busy}>
       Mal kabul et
     </Button>
   );
@@ -98,7 +100,15 @@ function Header({ order: o }: { order: PurchaseOrderDetail }) {
   );
 }
 
-function ReadOnly({ order: o }: { order: PurchaseOrderDetail }) {
+/** Form yokken nedeni söyler: yetki yok, sipariş tamamlandı, iptal edildi ya da henüz gönderilmedi. */
+function readOnlyReason(o: PurchaseOrderDetail, permitted: boolean): string {
+  if (!permitted) return "Mal kabul etmek için depo yetkisi gerekir.";
+  if (o.status === "received") return "Bu sipariş tamamen teslim alındı.";
+  if (o.status === "cancelled") return "Bu sipariş iptal edildi.";
+  return "Bu sipariş henüz tedarikçiye gönderilmedi; mal kabule açık değil.";
+}
+
+function ReadOnly({ order: o, permitted }: { order: PurchaseOrderDetail; permitted: boolean }) {
   return (
     <div className="grid gap-6">
       <Header order={o} />
@@ -115,18 +125,17 @@ function ReadOnly({ order: o }: { order: PurchaseOrderDetail }) {
         ))}
       </ul>
       <p role="note" className="text-sm text-fg-muted">
-        Mal kabul etmek için depo yetkisi gerekir.
+        {readOnlyReason(o, permitted)}
       </p>
     </div>
   );
 }
 
-function Form({ order: o, onDone }: { order: PurchaseOrderDetail; onDone: () => void }) {
+function Form({ order: o, onDone, run }: { order: PurchaseOrderDetail; onDone: () => void; run: ReturnType<typeof useGuardedRun<"receive">>["run"] }) {
   const { db } = useDb();
   const toast = useToast();
   const receive = useReceiveGoods();
   const ask = useConfirm();
-  const { run } = useGuardedRun<"receive">();
   const open = o.lines.filter((l) => l.remainingMilli > 0);
   const [note, setNote] = useState("");
   const [noteError, setNoteError] = useState<string | null>(null);

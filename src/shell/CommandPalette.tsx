@@ -18,7 +18,7 @@ import { buildItems, type PaletteGroup, type PaletteItem } from "./commands";
 import { useDb } from "./db-context";
 import { useSession } from "./session";
 
-const GROUPS: PaletteGroup[] = ["Sayfalar", "Siparişler", "Satın alma", "İş emirleri", "Müşteriler", "Tedarikçiler", "Ürünler", "Malzemeler", "Komutlar"];
+const GROUPS: PaletteGroup[] = ["Sayfalar", "Satış siparişleri", "Satın alma siparişleri", "İş emirleri", "Müşteriler", "Tedarikçiler", "Ürünler", "Malzemeler", "Komutlar"];
 const COMMAND_ICON: Record<string, ComponentType<{ size?: number }>> = {
   "komut:yeni-siparis": PlusIcon,
   "komut:tema": MoonIcon,

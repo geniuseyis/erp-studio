@@ -7,7 +7,7 @@ export const ENTITY_LABEL = {
   work_order: "İş emri",
   product: "Ürün",
   material: "Malzeme",
-  purchase_order: "Satın alma",
+  purchase_order: "Satın alma siparişi",
   supplier: "Tedarikçi",
   stock_count: "Sayım",
   user: "Kullanıcı",

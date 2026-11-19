@@ -8,7 +8,7 @@ import type { CustomerRow, OrderRow } from "@/domain/sales/queries";
 import { matchesSearch } from "@/domain/text";
 import { visibleNav } from "./nav";
 
-export type PaletteGroup = "Sayfalar" | "Siparişler" | "Satın alma" | "İş emirleri" | "Müşteriler" | "Tedarikçiler" | "Ürünler" | "Malzemeler" | "Komutlar";
+export type PaletteGroup = "Sayfalar" | "Satış siparişleri" | "Satın alma siparişleri" | "İş emirleri" | "Müşteriler" | "Tedarikçiler" | "Ürünler" | "Malzemeler" | "Komutlar";
 export type PaletteItem = { id: string; group: PaletteGroup; label: string; hint?: string; run: () => void };
 
 /** Yazınca listelenen en çok malzeme sayısı. */
@@ -61,14 +61,14 @@ export function buildItems({ user, query, materials, orders, purchaseOrders, wor
   const found: PaletteItem[] = [
     ...records("/satis/siparisler", orders, (o) => [o.code, o.customerName], MAX_RECORDS, (o) => ({
       id: `siparis:${o.id}`,
-      group: "Siparişler",
+      group: "Satış siparişleri",
       label: o.code,
       hint: o.customerName,
       open: `/satis/siparisler?ac=${o.id}`,
     })),
     ...records("/satin-alma/siparisler", purchaseOrders, (o) => [o.code, o.supplierCode, o.supplierName], MAX_RECORDS, (o) => ({
       id: `satin-alma:${o.id}`,
-      group: "Satın alma",
+      group: "Satın alma siparişleri",
       label: o.code,
       hint: o.supplierName,
       open: `/satin-alma/siparisler?ac=${o.id}`,
