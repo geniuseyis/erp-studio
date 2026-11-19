@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { formatMoney, formatQty, lineValueKurus, roundUpToStep, UNIT_STEP_MILLI, type Unit } from "../../src/domain/units";
-import { approve, confirmDialog, leave, loginAs, navTo, sql } from "./helpers";
+import { approve, confirmDialog, insertSupplier, leave, loginAs, navTo, nextPoCode, sql } from "./helpers";
 
 type Fixture = {
   supplierId: string;
@@ -16,11 +16,6 @@ const BUYER = "Kerem Uysal"; // Satın Alma uzmanı: taslak açar, onaylayamaz
 const MANAGER = "Ayla Güneş"; // Satın Alma müdürü: müdür kademesini onaylar
 const BOARD = "Nermin Aksoy"; // Yönetim: iki kademeyi de onaylar
 
-/**
- * Kritik, bekleyen iş emri ihtiyacı ve yoldaki siparişi olmayan bir malzeme için tercihli tedarikçi açar. Öneri miktarı
- * `kritik açık = sipariş noktası − kullanılabilir` değerinin birim adımına yukarı yuvarlanmışıdır; birim fiyat öyle seçilir ki
- * KDV hariç tutar hedefe (varsayılan 100.000 TL: müdür kademesi) yaklaşır. Beklenen değerler SQL'den türer, sabit değildir.
- */
 /** Boşluğu hâlâ pozitif olan ilk kritik malzeme: bekleyen iş emri ihtiyacı olmayan, açık siparişle henüz karşılanmamış. */
 async function criticalMaterial(page: Page) {
   const [m] = await sql<{ id: string; code: string; name: string; unit: Unit; gap: number }>(
@@ -41,18 +36,17 @@ async function criticalMaterial(page: Page) {
   return m;
 }
 
+/**
+ * Kritik, bekleyen iş emri ihtiyacı ve yoldaki siparişi olmayan bir malzeme için tercihli tedarikçi açar. Öneri miktarı
+ * `kritik açık = sipariş noktası − kullanılabilir` değerinin birim adımına yukarı yuvarlanmışıdır; birim fiyat öyle seçilir ki
+ * KDV hariç tutar hedefe (varsayılan 100.000 TL: müdür kademesi) yaklaşır. Beklenen değerler SQL'den türer, sabit değildir.
+ */
 async function setupSupplier(page: Page, opts: { targetNetKurus?: number } = {}): Promise<Fixture> {
-  const m = await criticalMaterial(page);  const qtyMilli = roundUpToStep(m.gap, m.unit);
+  const m = await criticalMaterial(page);
+  const qtyMilli = roundUpToStep(m.gap, m.unit);
   const priceKurus = Math.max(1, Math.round(((opts.targetNetKurus ?? 10_000_000) * 1000) / qtyMilli));
-  const [next] = await sql<{ n: number }>(page, "select coalesce(max(substring(code from 5)::int), 0) + 1 as n from suppliers");
-  const code = `TED-${String(next?.n ?? 1).padStart(4, "0")}`;
-  const name = `Deneme Tedarik ${code}`;
   await sql(page, `update supplier_items set is_preferred = false where material_id = '${m.id}'`);
-  const [s] = await sql<{ id: string }>(
-    page,
-    `insert into suppliers (code, name, city, phone, lead_time_days, payment_term_days) values ('${code}', '${name}', 'Bursa', '0224 555 01 01', 5, 30) returning id`,
-  );
-  const supplierId = s?.id ?? "";
+  const { id: supplierId, code, name } = await insertSupplier(page, (c) => `Deneme Tedarik ${c}`);
   await sql(
     page,
     `insert into supplier_items (supplier_id, material_id, unit_price_minor, moq_milli, is_preferred) values ('${supplierId}', '${m.id}', ${priceKurus}, 0, true)`,
@@ -195,13 +189,7 @@ type Seeded = { id: string; code: string };
  * SAS kodudur. `sent` siparişte beklenen gün üç gün sonradır (gecikmez).
  */
 async function insertOrder(page: Page, f: Fixture, o: { status: OrderStatus; tier: 0 | 1 | 2; creator?: string; managerApproved?: string }): Promise<Seeded> {
-  const [c] = await sql<{ code: string }>(
-    page,
-    `select 'SAS-' || t.y || '-' || lpad((coalesce(max(substring(p.code from 10)::int), 0) + 1)::text, 4, '0') as code
-       from (select to_char(now() at time zone 'Europe/Istanbul', 'YYYY') as y) t
-       left join purchase_orders p on p.code like 'SAS-' || t.y || '-%' group by t.y`,
-  );
-  const code = c?.code ?? "";
+  const code = await nextPoCode(page);
   const sent = o.status === "sent" || o.status === "partial";
   const submitted = o.status !== "draft";
   const manager = o.managerApproved ? `(select id from users where name = '${o.managerApproved}')` : "null";

@@ -99,6 +99,10 @@ test("eksik malzemeden üretime: öneri → taslak → müdür onayı → gönde
   await page.goto("/uretim/is-emirleri?gorunum=kanban");
   const column = page.getByRole("region", { name: "Malzeme bekliyor", exact: true });
   await expect(column).toBeVisible({ timeout: 45_000 });
+  // Yüklendi işareti: sütunun başlık sayısı, SQL'deki bekleyen iş emri sayısıyla eşleşir (olumsuz denetim boşuna geçmesin).
+  const stillWaiting = await one<{ n: number }>(page, "select count(*)::int as n from work_orders where status = 'planned' and not materials_reserved");
+  await expect(column.getByTestId("kanban-count")).toHaveText(String(stillWaiting.n));
+  await expect(column.getByRole("listitem")).toHaveCount(stillWaiting.n);
   for (const w of waiting) await expect(column.getByText(w.code, { exact: true })).toHaveCount(0);
   await page.goto("/uretim/is-emirleri");
   await page.getByRole("searchbox", { name: "İş emri ara" }).fill(waiting[0]?.code ?? "");
@@ -107,5 +111,7 @@ test("eksik malzemeden üretime: öneri → taslak → müdür onayı → gönde
   await rows.first().click();
   const wo = page.getByRole("dialog", { name: waiting[0]?.code ?? "" });
   await expect(wo).toBeVisible();
+  // Yüklendi işareti: malzeme tablosunda "Ayrılan" sütunu var (ayrılmış iş emri); ancak ondan sonra chip yokluğu denetlenir.
+  await expect(wo.getByRole("table", { name: "Malzemeler" }).getByRole("columnheader", { name: "Ayrılan" })).toBeVisible();
   await expect(wo.getByText("Malzeme bekliyor", { exact: true })).toHaveCount(0);
 });

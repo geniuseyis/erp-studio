@@ -80,3 +80,26 @@ export async function one<T>(page: Page, query: string): Promise<T> {
   if (!row) throw new Error(`satır yok: ${query}`);
   return row;
 }
+
+/** Sıradaki tedarikçi kodu (TED-NNNN) ile deneme tedarikçisi yazar; telefon örnek verideki `0 2xx 000 00 NN` desenindedir. */
+export async function insertSupplier(page: Page, name: (code: string) => string, leadTimeDays = 5): Promise<{ id: string; code: string; name: string }> {
+  const [next] = await sql<{ n: number }>(page, "select coalesce(max(substring(code from 5)::int), 0) + 1 as n from suppliers");
+  const code = `TED-${String(next?.n ?? 1).padStart(4, "0")}`;
+  const label = name(code);
+  const row = await one<{ id: string }>(
+    page,
+    `insert into suppliers (code, name, city, phone, lead_time_days, payment_term_days) values ('${code}', '${label}', 'Bursa', '0 224 000 00 99', ${leadTimeDays}, 30) returning id`,
+  );
+  return { id: row.id, code, name: label };
+}
+
+/** İstanbul yılına göre sıradaki SAS kodu. */
+export async function nextPoCode(page: Page): Promise<string> {
+  const row = await one<{ code: string }>(
+    page,
+    `select 'SAS-' || t.y || '-' || lpad((coalesce(max(substring(p.code from 10)::int), 0) + 1)::text, 4, '0') as code
+       from (select to_char(now() at time zone 'Europe/Istanbul', 'YYYY') as y) t
+       left join purchase_orders p on p.code like 'SAS-' || t.y || '-%' group by t.y`,
+  );
+  return row.code;
+}

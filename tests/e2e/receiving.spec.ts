@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
-import { confirmDialog, loginAs, navTo, one, sql, approve } from "./helpers";
+import { approve, confirmDialog, insertSupplier, loginAs, navTo, nextPoCode, one, sql } from "./helpers";
 
-const DEPO = "Onur Tekin"; // depo operatörü: inventory:execute
+const DEPO = "Onur Tekin"; // depo uzmanı: inventory:execute
 const SALES = "Elif Karaca"; // yalnızca görüntüler
 
 type Receivable = { id: string; code: string; lineA: string; lineB: string; matA: string; matB: string };
@@ -14,17 +14,8 @@ async function sentOrder(page: Page): Promise<Receivable> {
   const mats = await sql<{ id: string; code: string }>(page, `select id, code from materials where active and unit in ('adet','plaka') order by code limit 2`);
   const [a, b] = mats;
   if (!a || !b) throw new Error("iki malzeme yok");
-  const [next] = await sql<{ n: number }>(page, "select coalesce(max(substring(code from 5)::int), 0) + 1 as n from suppliers");
-  const sup = await one<{ id: string }>(
-    page,
-    `insert into suppliers (code, name, city, phone, lead_time_days, payment_term_days) values ('TED-${String(next?.n ?? 1).padStart(4, "0")}', 'Mal Kabul Deneme', 'Bursa', '0224 555 01 01', 3, 30) returning id`,
-  );
-  const { code } = await one<{ code: string }>(
-    page,
-    `select 'SAS-' || t.y || '-' || lpad((coalesce(max(substring(p.code from 10)::int), 0) + 1)::text, 4, '0') as code
-       from (select to_char(now() at time zone 'Europe/Istanbul', 'YYYY') as y) t
-       left join purchase_orders p on p.code like 'SAS-' || t.y || '-%' group by t.y`,
-  );
+  const sup = await insertSupplier(page, () => "Mal Kabul Deneme", 3);
+  const code = await nextPoCode(page);
   const po = await one<{ id: string }>(
     page,
     `insert into purchase_orders (code, supplier_id, status, required_tier, created_by, submitted_at, sent_at, expected_at)
@@ -120,6 +111,7 @@ test("satış uzmanı listeyi görür, 'Mal kabul et' düğmesi yok", async ({ p
   await expect(drawer).toContainText(o.matA);
   await expect(page.getByRole("button", { name: "Mal kabul et" })).toHaveCount(0);
   await expect(drawer.getByLabel("İrsaliye no")).toHaveCount(0);
+  await expect(drawer).toContainText("Mal kabul etmek için depo yetkisi gerekir");
 });
 
 test("390 px'te sayfa yatay taşmaz", async ({ page }) => {
