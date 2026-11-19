@@ -20,6 +20,14 @@ const CODE_PREFIX = "IE-";
 export type MaterialNeed = { materialId: string; neededMilli: number };
 
 /**
+ * Bir reçete satırının `woQtyMilli` adet için ihtiyacı: reçete miktarı × adet × (1000 + fire) / 1000. Pay tam sayıdır
+ * (reçete milli × adet milli × binde); 1000 × 1000'e bölünüp tam milliye, sonra birimin adımına yukarı yuvarlanır.
+ */
+export function bomNeedMilli(bomQtyMilli: number, woQtyMilli: number, scrapPermille: number, unit: Unit): number {
+  return roundUpToStep(Math.ceil((bomQtyMilli * woQtyMilli * (1000 + scrapPermille)) / 1_000_000), unit);
+}
+
+/**
  * Ürünün `qtyMilli` adedi için malzeme ihtiyacı: Σ reçete miktarı × adet × (1000 + fire) / 1000,
  * malzemenin birim adımına yukarı yuvarlanır (0,782 plaka → 1 plaka). Malzeme koduna göre sıralı.
  */
@@ -30,10 +38,9 @@ export async function materialNeeds(db: Db, productId: string, qtyMilli: number)
     .innerJoin(materials, eq(materials.id, bomLines.materialId))
     .where(eq(bomLines.productId, productId))
     .orderBy(asc(materials.code));
-  // Pay tam sayıdır (reçete milli × sipariş milli × binde); 1000 × 1000'e bölünüp tam milliye, sonra adıma yukarı yuvarlanır.
   return rows.map((r) => ({
     materialId: r.materialId,
-    neededMilli: roundUpToStep(Math.ceil((r.qtyMilli * qtyMilli * (1000 + r.scrapPermille)) / 1_000_000), r.unit as Unit),
+    neededMilli: bomNeedMilli(r.qtyMilli, qtyMilli, r.scrapPermille, r.unit as Unit),
   }));
 }
 
