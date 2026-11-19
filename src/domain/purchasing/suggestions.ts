@@ -3,10 +3,9 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { bomLines, materials, purchaseOrderLines, purchaseOrders, supplierItems, suppliers, workOrders } from "@/db/schema";
-import { approvalThresholds } from "../settings";
+import { approvalThresholds, requiredTier } from "../settings";
 import { bomNeedMilli } from "../production/workOrders";
 import { lineValueKurus, roundUpToStep, type Unit } from "../units";
-import { requiredTier } from "./approval";
 import type { ApprovalTier, Currency, PurchaseOrderStatus } from "./types";
 
 export type SuggestionReason = "kritik" | "bekleyen_is";

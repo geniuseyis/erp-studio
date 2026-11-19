@@ -1,12 +1,13 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, expect, test } from "vitest";
 import type { Db } from "@/db/client";
-import { auditLog, purchaseOrderLines, purchaseOrders, settings } from "@/db/schema";
+import { auditLog, purchaseOrderLines, purchaseOrders, settings, users } from "@/db/schema";
 import type { Ctx } from "@/domain/context";
 import { addWorkdays, istanbulDayStart } from "@/domain/production/calendar";
 import { approvePurchaseOrder, canApprove, pendingTier, submitPurchaseOrder } from "@/domain/purchasing/approval";
-import { createPurchaseOrder } from "@/domain/purchasing/orders";
-import { SETTING_KEYS } from "@/domain/settings";
+import { createPurchaseOrder, orderNet } from "@/domain/purchasing/orders";
+import { listPurchaseOrders } from "@/domain/purchasing/queries";
+import { approvalThresholds, requiredTier, SETTING_KEYS } from "@/domain/settings";
 import { addMaterial, addSupplier, addSupplierItem, addUser, ctxFor, NOW } from "../../helpers/fixtures";
 import { createTestDb } from "../../helpers/testDb";
 
@@ -168,3 +169,67 @@ test("çift tıklama: aynı anda iki onay yalnızca birini geçirir", async () =
   expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
   expect(await history(po.id, "approve")).toHaveLength(1);
 });
+
+test("tek müdür kademe 1 siparişi gönderemez: başka onaycı yoksa reddedilir, sipariş taslak kalır", async () => {
+  const tek = ctxFor(db, await addUser(db, "satinalma", "mudur", { name: "Tek Müdür", email: "tek@baltacioglus.example" }));
+  // Ayla Güneş (müdür) ve Nermin Aksoy (Yönetim) hesabı kapalı; yalnızca Tek Müdür onaycı.
+  await db.update(users).set({ active: false }).where(eq(users.id, mudur.user.id));
+  await db.update(users).set({ active: false }).where(eq(users.id, yonetim.user.id));
+  const po = await draft(9_250_020, tek);
+  await expect(submitPurchaseOrder(tek, po.id)).rejects.toMatchObject({
+    code: "VALIDATION",
+    message: "Bu tutarı onaylayabilecek başka bir kullanıcı yok",
+  });
+  expect(await row(po.id)).toMatchObject({ status: "draft", submittedAt: null });
+});
+
+test("etkin olmayan kullanıcı 'başka onaycı' sayılmaz; hesap açılınca gönderim geçer", async () => {
+  await db.update(users).set({ active: false }).where(eq(users.id, mudur.user.id));
+  await db.update(users).set({ active: false }).where(eq(users.id, yonetim.user.id));
+  const po = await draft(9_250_020);
+  await expect(submitPurchaseOrder(uzman, po.id)).rejects.toMatchObject({ code: "VALIDATION" });
+  await db.update(users).set({ active: true }).where(eq(users.id, mudur.user.id));
+  expect(await submitPurchaseOrder(uzman, po.id)).toMatchObject({ sent: false, order: { status: "pending_approval", requiredTier: 1 } });
+});
+
+test("kademe 2 gönderim özeti: iki onay ve Yönetim eşiği yazılır", async () => {
+  const po = await draft(30_000_000);
+  await submitPurchaseOrder(uzman, po.id);
+  expect(await history(po.id, "submit")).toEqual([
+    `${po.code} onaya gönderildi: ₺300.000,00 KDV hariç, 250.000 TL eşiği aşıldı → Satın Alma müdürü ve Yönetim onayı`,
+  ]);
+});
+
+test("Yönetim kademe 1 siparişi onaylarsa yalnızca müdür alanları dolar", async () => {
+  const po = await draft(9_250_020);
+  await submitPurchaseOrder(uzman, po.id);
+  const { order, sent } = await approvePurchaseOrder(yonetim, po.id);
+  expect(sent).toBe(true);
+  expect(order).toMatchObject({ status: "sent", managerApprovedBy: yonetim.user.id, managerApprovedAt: NOW, boardApprovedBy: null, boardApprovedAt: null });
+});
+
+test("kademe ve gösterilen net aynı yuvarlamayı kullanır: kuruşun yarısı yukarı, SQL ile JS aynı", async () => {
+  // 1,5 adet × ₺33.333,33 = 4.999.999,5 kuruş → 5.000.000 (eşik dahil, onay yok); bir kuruş fazlası 5.000.001 (müdür onayı).
+  const at = await draft(3_333_333);
+  await db.update(purchaseOrderLines).set({ qtyMilli: 1500 }).where(eq(purchaseOrderLines.orderId, at.id));
+  const over = await draft(3_333_334);
+  await db.update(purchaseOrderLines).set({ qtyMilli: 1500 }).where(eq(purchaseOrderLines.orderId, over.id));
+  const thresholds = await approvalThresholds(db);
+
+  const rows = await listPurchaseOrders(db, { now: NOW });
+  for (const [po, net, tier] of [
+    [at, 5_000_000, 0],
+    [over, 5_000_001, 1],
+  ] as const) {
+    const listed = rows.find((r) => r.id === po.id)!;
+    expect(listed.netKurus).toBe(net); // sorgudaki SQL net
+    expect(await inTxNet(po.id)).toBe(net); // servis (orderNet)
+    expect(requiredTier(listed.netKurus, thresholds)).toBe(tier);
+  }
+  expect((await submitPurchaseOrder(uzman, at.id)).order.requiredTier).toBe(0);
+  expect((await submitPurchaseOrder(uzman, over.id)).order.requiredTier).toBe(1);
+});
+
+async function inTxNet(orderId: string): Promise<number> {
+  return orderNet(uzman, orderId);
+}

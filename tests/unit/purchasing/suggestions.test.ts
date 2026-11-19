@@ -2,11 +2,10 @@ import { eq } from "drizzle-orm";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { Db } from "@/db/client";
 import { materials, purchaseOrderLines, purchaseOrders, settings, workOrders } from "@/db/schema";
-import { requiredTier } from "@/domain/purchasing/approval";
 import { purchaseSuggestions } from "@/domain/purchasing/suggestions";
 import type { PurchaseOrderStatus } from "@/domain/purchasing/types";
 import { bomNeedMilli } from "@/domain/production/workOrders";
-import { DEFAULT_THRESHOLDS } from "@/domain/settings";
+import { DEFAULT_THRESHOLDS, requiredTier } from "@/domain/settings";
 import { addBomLine, addMaterial, addProduct, addSupplier, addSupplierItem, addUser } from "../../helpers/fixtures";
 import { createTestDb } from "../../helpers/testDb";
 

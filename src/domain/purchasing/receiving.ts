@@ -8,7 +8,7 @@ import { DomainError } from "../errors";
 import { receiveStock } from "../inventory/ledger";
 import { assertCan } from "../permissions";
 import { istanbulYear } from "../production/calendar";
-import { reserveWaitingWorkOrders } from "../production/workOrders";
+import { reserveWaitingWorkOrdersInternal } from "../production/workOrders";
 import { formatMoney, formatQty, UNIT_STEP_MILLI, type Unit } from "../units";
 import { asGoodsReceipt, type GoodsReceipt, type PurchaseOrderStatus } from "./types";
 
@@ -42,6 +42,9 @@ export async function receiveGoods(ctx: Ctx, i: ReceiptInput): Promise<ReceiptRe
     if (!po) throw new DomainError("NOT_FOUND", "Sipariş bulunamadı");
     if (po.status !== "sent" && po.status !== "partial") throw new DomainError("INVALID_STATE", "Bu sipariş mal kabule açık değil");
 
+    // Tedarikçi başına danışma kilidi: aynı irsaliyeyi aynı anda giren iki işlem sırayla çalışır (ikincisi kopyayı görür),
+    // MK kodu üretimi de bu tedarikçi için seri hale gelir. Kilit işlem bitince kendiliğinden kalkar.
+    await tx.db.execute(sql`select pg_advisory_xact_lock(hashtext(${po.supplierId}))`);
     const [dup] = await tx.db
       .select({ code: goodsReceipts.code })
       .from(goodsReceipts)
@@ -118,7 +121,7 @@ export async function receiveGoods(ctx: Ctx, i: ReceiptInput): Promise<ReceiptRe
       summary: `${po.code} mal kabul ${receiptCode} (irsaliye ${deliveryNote}): ${what}; ${done ? "teslim alındı" : `kısmi teslim, ${complete}/${lines.length} kalem tamam`}`,
     });
 
-    const reserved = await reserveWaitingWorkOrders(tx, {
+    const reserved = await reserveWaitingWorkOrdersInternal(tx, {
       materialIds: incoming.map((l) => l.line.materialId),
       source: `${po.code} mal kabulü`,
     });

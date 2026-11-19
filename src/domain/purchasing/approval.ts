@@ -7,19 +7,10 @@ import { type Ctx, type SessionUser, inTx, isUuid } from "../context";
 import { DomainError } from "../errors";
 import { assertCan, can } from "../permissions";
 import { addWorkdays, istanbulDayStart } from "../production/calendar";
-import { type ApprovalThresholds, approvalThresholds } from "../settings";
-import { formatMoney, formatNumber, lineValueKurus } from "../units";
+import { approvalThresholds, requiredTier } from "../settings";
+import { formatMoney, formatNumber } from "../units";
+import { orderNet } from "./orders";
 import { type ApprovalTier, asPurchaseOrder, type PurchaseOrder } from "./types";
-
-/**
- * Siparişin KDV hariç tutarına (kuruş) göre gereken onay kademesi: eşiğe kadar (eşik dahil) onay yok, müdür eşiğinden
- * Yönetim eşiğine kadar müdür, üstü müdür + Yönetim.
- */
-export function requiredTier(netKurus: number, t: ApprovalThresholds): ApprovalTier {
-  if (netKurus <= t.managerKurus) return 0;
-  if (netKurus <= t.boardKurus) return 1;
-  return 2;
-}
 
 type OrderApproval = Pick<PurchaseOrder, "status" | "requiredTier" | "managerApprovedBy" | "boardApprovedBy">;
 
@@ -161,10 +152,4 @@ export async function approvePurchaseOrder(ctx: Ctx, purchaseOrderId: string): P
     });
     return { order: await reload(tx, po.id), sent: true };
   });
-}
-
-/** KDV hariç sipariş tutarı (kuruş): kalem başına kuruşa yuvarlanmış toplam. orders.ts'e bağımlılık döngüsü olmasın diye burada. */
-async function orderNet(tx: Ctx, orderId: string): Promise<number> {
-  const rows = await tx.db.select().from(purchaseOrderLines).where(eq(purchaseOrderLines.orderId, orderId));
-  return rows.reduce((sum, l) => sum + lineValueKurus(l.qtyMilli, l.unitPriceMinor), 0);
 }

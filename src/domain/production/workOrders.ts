@@ -182,11 +182,12 @@ export async function retryMaterials(ctx: Ctx, workOrderId: string): Promise<{ w
 }
 
 /**
- * Modül içi (mal kabul çağırır, yetki denetlemez): verilen malzemelerden birini kullanan, malzemesi ayrılmamış planlı iş
+ * YALNIZCA `receiveGoods` ÇAĞIRABİLİR (src/app ve src/features içe aktaramaz; birim testi denetler). Yetki denetlemez; arayüzden
+ * doğrudan ulaşılırsa yetkisiz kullanıcı malzeme ayırabilir. Verilen malzemelerden birini kullanan, malzemesi ayrılmamış planlı iş
  * emirlerini bağlı siparişin terminine göre (termini olmayan sonda, sonra iş emri kodu) sırayla, iş emri başına
  * hepsi-ya-hiçbiri ayırır. Ayrılabilenler ayrılma sırasıyla döner; yetmeyenler beklemeye devam eder.
  */
-export async function reserveWaitingWorkOrders(ctx: Ctx, i: { materialIds: string[]; source: string }): Promise<WorkOrder[]> {
+export async function reserveWaitingWorkOrdersInternal(ctx: Ctx, i: { materialIds: string[]; source: string }): Promise<WorkOrder[]> {
   const ids = [...new Set(i.materialIds)].filter(isUuid);
   if (ids.length === 0) return [];
   return inTx(ctx, async (tx) => {

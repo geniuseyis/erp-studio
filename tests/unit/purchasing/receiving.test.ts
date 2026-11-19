@@ -122,6 +122,20 @@ test("kısmi teslim: durum kısmi, kalan doğru; ikinci teslimle teslim alındı
   expect(await verifyLedger(db)).toEqual([]);
 });
 
+test("kısmi tesliminde ortalama maliyet her seferinde değişmez değerle güncellenir", async () => {
+  // Stok 40 plaka × ₺1.000,00. 20 plaka × ₺1.541,67: (40·100000 + 20·154167) / 60 = 118055,67 → 118056 kuruş.
+  const { po, lineMdf } = await sentOrder();
+  await receiveGoods(depo, { purchaseOrderId: po.id, deliveryNote: "K-1", lines: [{ lineId: lineMdf, qtyMilli: 20_000 }] });
+  expect(await stock(mdf.id)).toMatchObject({ onHandMilli: 60_000, avgCostKurus: 118_056 });
+
+  // Kalan 40 plaka başka fiyatla (₺1.600,00) gelir: (60·118056 + 40·160000) / 100 = 134833,6 → 134834 kuruş.
+  await db.update(purchaseOrderLines).set({ unitPriceMinor: 160_000 }).where(eq(purchaseOrderLines.id, lineMdf));
+  const rest = await receiveGoods(depo, { purchaseOrderId: po.id, deliveryNote: "K-2", lines: [{ lineId: lineMdf, qtyMilli: 40_000 }] });
+  expect(rest.status).toBe("received");
+  expect(await stock(mdf.id)).toMatchObject({ onHandMilli: 100_000, avgCostKurus: 134_834 });
+  expect(await verifyLedger(db)).toEqual([]);
+});
+
 test("kalandan fazlası malzeme kodu ve kalanla reddedilir; hiçbir şey yazılmaz", async () => {
   const { po, lineMdf, lineKapak } = await sentOrder({ withCover: true });
   await receiveGoods(depo, { purchaseOrderId: po.id, deliveryNote: "A-1", lines: [{ lineId: lineMdf, qtyMilli: 20_000 }] });
@@ -177,6 +191,17 @@ test("aynı tedarikçide aynı irsaliye no DUPLICATE; başka tedarikçide serbes
   expect(await db.select().from(goodsReceipts)).toHaveLength(2);
 });
 
+test("aynı anda aynı irsaliye iki siparişe girilirse yalnızca biri geçer, MK kodları çakışmaz", async () => {
+  const a = await sentOrder();
+  const b = await sentOrder();
+  const results = await Promise.allSettled([
+    receiveGoods(depo, { purchaseOrderId: a.po.id, deliveryNote: "Y-77", lines: [{ lineId: a.lineMdf, qtyMilli: 10_000 }] }),
+    receiveGoods(depo, { purchaseOrderId: b.po.id, deliveryNote: "y-77", lines: [{ lineId: b.lineMdf, qtyMilli: 10_000 }] }),
+  ]);
+  expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+  expect(results.find((r) => r.status === "rejected")).toMatchObject({ reason: { code: "DUPLICATE" } });
+  expect(await db.select().from(goodsReceipts)).toHaveLength(1);
+});
 test("iptal ve teslim alınmış sipariş INVALID_STATE; taslak ve onay bekleyen de", async () => {
   for (const status of ["cancelled", "received", "draft", "pending_approval"] as const) {
     const { po, lineMdf } = await sentOrder({ status });

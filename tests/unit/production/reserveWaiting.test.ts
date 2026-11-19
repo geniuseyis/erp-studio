@@ -4,7 +4,7 @@ import type { Db } from "@/db/client";
 import { auditLog, materials, salesOrderLines, salesOrders, workOrders } from "@/db/schema";
 import type { Ctx } from "@/domain/context";
 import { receiveStock, verifyLedger } from "@/domain/inventory/ledger";
-import { reserveWaitingWorkOrders, retryMaterials } from "@/domain/production/workOrders";
+import { reserveWaitingWorkOrdersInternal, retryMaterials } from "@/domain/production/workOrders";
 import { addBomLine, addCustomer, addMaterial, addProduct, addUser, ctxFor } from "../../helpers/fixtures";
 import { createTestDb } from "../../helpers/testDb";
 
@@ -69,7 +69,7 @@ test("iki bekleyen iş emrine yetmeyen stok: termini erken olan ayrılır, diğe
   const early = await waiting({ due: "2026-12-01T00:00:00+03:00" });
   await receiveStock(depo, { materialId: m.id, qtyMilli: 6000, unitCostKurus: 100 });
 
-  const reserved = await reserveWaitingWorkOrders(depo, { materialIds: [m.id], source: "SAS-2026-0001 mal kabulü" });
+  const reserved = await reserveWaitingWorkOrdersInternal(depo, { materialIds: [m.id], source: "SAS-2026-0001 mal kabulü" });
   expect(reserved.map((w) => w.id)).toEqual([early.id]);
   expect(await reservedOf(early.id)).toBe(true);
   expect(await reservedOf(late.id)).toBe(false);
@@ -86,7 +86,7 @@ test("termini olmayan iş emri sonda, termin eşitse iş emri koduna göre; sat�
   const none = await waiting({ linked: false });
   const b = await waiting({ due: "2026-12-05T00:00:00+03:00" });
   const a = await waiting({ due: "2026-12-05T00:00:00+03:00" });
-  const reserved = await reserveWaitingWorkOrders(depo, { materialIds: [m.id], source: "x" });
+  const reserved = await reserveWaitingWorkOrdersInternal(depo, { materialIds: [m.id], source: "x" });
   expect(reserved.map((w) => w.id)).toEqual([b.id, a.id, none.id]); // b kodu a'dan küçük (IE-0002 < IE-0003)
   const [line] = await db.select().from(salesOrderLines).where(eq(salesOrderLines.id, b.salesOrderLineId!));
   expect(line?.status).toBe("in_production");
@@ -103,7 +103,7 @@ test("başka malzemesi de eksik iş emri ayrılmaz; ilgisiz malzemeyi kullanan d
   await addBomLine(db, { productId: unrelated.id, materialId: third.id, qtyMilli: 1000 });
   const free = await waiting({ productId: unrelated.id, due: "2026-12-01T00:00:00+03:00" });
 
-  expect(await reserveWaitingWorkOrders(depo, { materialIds: [m.id], source: "x" })).toEqual([]);
+  expect(await reserveWaitingWorkOrdersInternal(depo, { materialIds: [m.id], source: "x" })).toEqual([]);
   expect(await reservedOf(blocked.id)).toBe(false);
   expect(await reservedOf(free.id)).toBe(false);
   const [mat] = await db.select().from(materials).where(eq(materials.id, m.id));

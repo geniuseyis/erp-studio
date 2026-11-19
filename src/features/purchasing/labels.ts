@@ -1,10 +1,10 @@
 import type { SessionUser } from "@/domain/context";
 import { addWorkdays, istanbulDayStart } from "@/domain/production/calendar";
-import { canApprove, pendingTier, requiredTier } from "@/domain/purchasing/approval";
+import { canApprove, pendingTier } from "@/domain/purchasing/approval";
 import type { PurchaseOrderDetail, PurchaseOrderLineRow, PurchaseOrderRow } from "@/domain/purchasing/queries";
 import type { SuggestionGroup, SuggestionReason } from "@/domain/purchasing/suggestions";
 import type { ApprovalTier, PurchaseOrderStatus } from "@/domain/purchasing/types";
-import type { ApprovalThresholds } from "@/domain/settings";
+import { type ApprovalThresholds, requiredTier } from "@/domain/settings";
 import { formatMoney, formatNumber, formatQty, lineValueKurus, parseDecimal, toKurus, toMilli, UNIT_STEP_MILLI, unitLabel, type Unit } from "@/domain/units";
 import { formatDate } from "@/ui/format";
 import type { Tone } from "@/ui/StatusChip";

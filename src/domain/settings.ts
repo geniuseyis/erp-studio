@@ -1,6 +1,7 @@
 import { inArray } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { settings } from "@/db/schema";
+import type { ApprovalTier } from "./purchasing/types";
 
 /** `settings` tablosundaki satın alma anahtarları; değerler jsonb sayıdır (KDV hariç kuruş). */
 export const SETTING_KEYS = {
@@ -27,4 +28,15 @@ export async function approvalThresholds(db: Db): Promise<ApprovalThresholds> {
   // Yönetim eşiği müdür eşiğinin altına inemez; yalnız müdür eşiği yükseltilince kademeler ters dönmesin.
   const boardKurus = Math.max(managerKurus, read(SETTING_KEYS.approvalBoardKurus, DEFAULT_THRESHOLDS.boardKurus));
   return { managerKurus, boardKurus };
+}
+
+/**
+ * Siparişin KDV hariç tutarına (kuruş) göre gereken onay kademesi: eşiğe kadar (eşik dahil) onay yok, müdür eşiğinden
+ * Yönetim eşiğine kadar müdür, üstü müdür + Yönetim. Eşiklerle birlikte burada durur ki sipariş, öneri ve onay modülleri
+ * birbirini içe aktarmadan aynı kuralı kullansın.
+ */
+export function requiredTier(netKurus: number, t: ApprovalThresholds): ApprovalTier {
+  if (netKurus <= t.managerKurus) return 0;
+  if (netKurus <= t.boardKurus) return 1;
+  return 2;
 }
