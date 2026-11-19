@@ -28,6 +28,8 @@ Demo hesaplarındaki çalışan adları kurgusaldır. E-postalar `@baltacioglus.
 
 Müşteriler (`src/seed/data/customers.ts`, 25 kayıt) kurgusaldır: bireysel müşteri adları sık görülen ad ve soyadların rastgele birleşimidir; kurumsal adlar ("… Mimarlık", "… Otelcilik", "… Ofis Mobilyaları") gerçek bir firmaya benzemesin diye sıradan olmayan birleşimlerden seçildi. İl ve ilçe çiftleri gerçektir. Telefonlar `0 5xx 000 00 NN` biçimindedir; ortadaki "000 00" bir abone numarasına denk gelmez. Vade bireyselde 0, kurumsalda 30, 45 ya da 60 gündür.
 
+Tedarikçiler (`src/seed/data/suppliers.ts`, 7 kayıt) kurgusaldır: ad ("Sapanca Yonga Levha" gibi il ya da ilçe ve iş kolu birleşimleri) ve irtibat kişileri gerçek bir firmaya ya da kişiye karşılık gelmesin diye sıradan olmayan birleşimlerden seçildi; il ve ilçeler gerçektir. Telefonlar `0 2xx 000 00 NN` biçimindedir. Fiyatlar aşağıdaki malzeme tablosundaki kaynaklı KDV hariç fiyattır: kategorinin tercihli tedarikçisi o fiyatı aynen verir, panel ve hırdavatın alternatif tedarikçileri %6–7 daha pahalıdır. Teslim süresi tedarikçinin tercihli olduğu malzemelerin en kısa süresidir; en az sipariş miktarı birime göre (plaka 10, kenar bandı 500 m, menteşe gibi hırdavat 200 adet, boya 20 L) seçilmiştir.
+
 ## Malzeme fiyatları
 
 | Malzeme | Kategori | Birim fiyat (KDV hariç) | Dayanak | Doğrulama |

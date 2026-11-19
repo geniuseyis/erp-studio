@@ -8,6 +8,7 @@ import { applyMigrations } from "@/db/migrate";
 import { verifyLedger } from "@/domain/inventory/ledger";
 import { verifyProductLedger } from "@/domain/production/productLedger";
 import { seedBase } from "@/seed/base";
+import { seedPurchasing } from "@/seed/purchasing";
 import { seedSales } from "@/seed/sales";
 import { exportSnapshot, SNAPSHOT_NOW } from "@/seed/snapshot";
 
@@ -17,6 +18,7 @@ test("örnek veri anlık görüntüsünü yaz", async () => {
   const db = makeDb(pg);
   await seedBase(db, { now: SNAPSHOT_NOW });
   await seedSales(db, { now: SNAPSHOT_NOW });
+  await seedPurchasing(db, { now: SNAPSHOT_NOW });
   expect(await verifyLedger(db)).toEqual([]);
   expect(await verifyProductLedger(db)).toEqual([]);
 

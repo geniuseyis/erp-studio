@@ -22,6 +22,7 @@ import { receiveStock, verifyLedger } from "@/domain/inventory/ledger";
 import { listCounts, listMaterials } from "@/domain/inventory/queries";
 import { verifyProductLedger } from "@/domain/production/productLedger";
 import { DEMO_PASSWORD, seedBase } from "@/seed/base";
+import { seedPurchasing } from "@/seed/purchasing";
 import { seedSales } from "@/seed/sales";
 import {
   deterministicUuid,
@@ -67,6 +68,7 @@ beforeAll(async () => {
   generated = await createTestDb({ fresh: true });
   await seedBase(generated, { now: SNAPSHOT_NOW });
   await seedSales(generated, { now: SNAPSHOT_NOW });
+  await seedPurchasing(generated, { now: SNAPSHOT_NOW });
 }, 300_000);
 
 test("depodaki anlık görüntü güncel: seedBase ve seedSales çıktısıyla aynı veriyi taşır", async () => {

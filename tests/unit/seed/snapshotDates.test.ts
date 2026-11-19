@@ -5,13 +5,16 @@ import type { Db } from "@/db/client";
 import {
   auditLog,
   customers,
+  goodsReceipts,
   materials,
   productMovements,
   products,
+  purchaseOrders,
   salesOrderLines,
   salesOrders,
   stockCounts,
   stockMovements,
+  suppliers,
   users,
   workOrders,
   workOrderSteps,
@@ -37,10 +40,13 @@ const TABLES: PgTable[] = [
   workOrders,
   workOrderSteps,
   productMovements,
+  suppliers,
+  purchaseOrders,
+  goodsReceipts,
   auditLog,
 ];
 /** Planlanan gün ve termin gelecekte olabilir; geri kalan her şey yükleme anında geçmiştir. */
-const MAY_BE_FUTURE = new Set(["dueAt", "plannedDay", "plannedStart"]);
+const MAY_BE_FUTURE = new Set(["dueAt", "plannedDay", "plannedStart", "expectedAt"]);
 
 const dateColumns = (table: PgTable) =>
   Object.entries(getTableColumns(table))
