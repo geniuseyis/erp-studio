@@ -158,6 +158,19 @@ test("tedarikçiye fiyat eklenir; onay penceresi değeri yazar; çekmecedeki lis
   await expect(history).toContainText("fiyatı ₺1.580,50");
 });
 
+test("Ctrl+K'da tedarikçi kodu tedarikçi çekmecesini açar; adıyla da bulunur", async ({ page }) => {
+  await loginAs(page, "Elif Karaca");
+  const f = await setupSupplier(page);
+  // Kayıtlar palet açılınca okunur; kurulum sonrası paleti açmak yeterli.
+  await page.keyboard.press("Control+k");
+  await page.keyboard.type(f.code);
+  const option = page.getByRole("option", { name: new RegExp(f.name) });
+  await expect(option).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(new RegExp(`/satin-alma/tedarikciler\\?ac=${f.supplierId}`));
+  await expect(page.getByRole("dialog", { name: f.name })).toBeVisible();
+});
+
 test("390 px'te öneriler ve tedarikçiler sayfası yatay taşmaz", async ({ page }) => {
   await loginAs(page, BUYER);
   const f = await setupSupplier(page);

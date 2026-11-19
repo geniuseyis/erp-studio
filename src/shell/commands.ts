@@ -3,16 +3,17 @@ import type { SessionUser } from "@/domain/context";
 import type { MaterialRow } from "@/domain/inventory/queries";
 import { can } from "@/domain/permissions";
 import type { ProductRow, WorkOrderRow } from "@/domain/production/queries";
+import type { PurchaseOrderRow, SupplierRow } from "@/domain/purchasing/queries";
 import type { CustomerRow, OrderRow } from "@/domain/sales/queries";
 import { matchesSearch } from "@/domain/text";
 import { visibleNav } from "./nav";
 
-export type PaletteGroup = "Sayfalar" | "Siparişler" | "İş emirleri" | "Müşteriler" | "Ürünler" | "Malzemeler" | "Komutlar";
+export type PaletteGroup = "Sayfalar" | "Siparişler" | "Satın alma" | "İş emirleri" | "Müşteriler" | "Tedarikçiler" | "Ürünler" | "Malzemeler" | "Komutlar";
 export type PaletteItem = { id: string; group: PaletteGroup; label: string; hint?: string; run: () => void };
 
 /** Yazınca listelenen en çok malzeme sayısı. */
 export const MAX_MATERIALS = 8;
-/** Sipariş, iş emri, müşteri ve ürün gruplarının her birinde listelenen en çok kayıt. */
+/** Sipariş, satın alma siparişi, iş emri, müşteri, tedarikçi ve ürün gruplarının her birinde listelenen en çok kayıt. */
 export const MAX_RECORDS = 5;
 
 type Args = {
@@ -20,8 +21,10 @@ type Args = {
   query: string;
   materials: readonly MaterialRow[];
   orders: readonly OrderRow[];
+  purchaseOrders: readonly PurchaseOrderRow[];
   workOrders: readonly WorkOrderRow[];
   customers: readonly CustomerRow[];
+  suppliers: readonly SupplierRow[];
   products: readonly ProductRow[];
   go: (href: string) => void;
   actions: { toggleTheme(): void; switchAccount(): void; signOut(): void };
@@ -31,10 +34,10 @@ type RecordItem = Omit<PaletteItem, "run"> & { open: string };
 
 /**
  * Boş sorguda sayfalar ve komutlar; yazınca sayfalar, kayıtlar ve komutlar süzülür.
- * Sıra: sayfalar, siparişler, iş emirleri, müşteriler, ürünler (her biri en çok 5), malzemeler (en çok 8), komutlar.
+ * Sıra: sayfalar, siparişler, satın alma siparişleri, iş emirleri, müşteriler, tedarikçiler, ürünler (her biri en çok 5), malzemeler (en çok 8), komutlar.
  * Kullanıcının göremediği sayfalar ve o sayfalara ait kayıtlar hiç listelenmez.
  */
-export function buildItems({ user, query, materials, orders, workOrders, customers, products, go, actions }: Args): PaletteItem[] {
+export function buildItems({ user, query, materials, orders, purchaseOrders, workOrders, customers, suppliers, products, go, actions }: Args): PaletteItem[] {
   const q = query.trim();
   const nav = visibleNav(user);
   const sees = (href: string) => nav.some((n) => n.href === href);
@@ -63,6 +66,13 @@ export function buildItems({ user, query, materials, orders, workOrders, custome
       hint: o.customerName,
       open: `/satis/siparisler?ac=${o.id}`,
     })),
+    ...records("/satin-alma/siparisler", purchaseOrders, (o) => [o.code, o.supplierCode, o.supplierName], MAX_RECORDS, (o) => ({
+      id: `satin-alma:${o.id}`,
+      group: "Satın alma",
+      label: o.code,
+      hint: o.supplierName,
+      open: `/satin-alma/siparisler?ac=${o.id}`,
+    })),
     ...records("/uretim/is-emirleri", workOrders, (w) => [w.code, w.productName, w.orderCode ?? ""], MAX_RECORDS, (w) => ({
       id: `is-emri:${w.id}`,
       group: "İş emirleri",
@@ -76,6 +86,13 @@ export function buildItems({ user, query, materials, orders, workOrders, custome
       label: c.name,
       hint: c.code,
       open: `/satis/musteriler?ac=${c.id}`,
+    })),
+    ...records("/satin-alma/tedarikciler", suppliers, (s) => [s.code, s.name], MAX_RECORDS, (s) => ({
+      id: `tedarikci:${s.id}`,
+      group: "Tedarikçiler",
+      label: s.name,
+      hint: s.code,
+      open: `/satin-alma/tedarikciler?ac=${s.id}`,
     })),
     ...records("/uretim/urunler", products, (p) => [p.code, p.name], MAX_RECORDS, (p) => ({
       id: `urun:${p.id}`,

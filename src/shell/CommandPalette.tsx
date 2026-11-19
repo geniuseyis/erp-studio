@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { type ComponentType, useMemo, useState } from "react";
 import type { SessionUser } from "@/domain/context";
 import { listProducts, listWorkOrders } from "@/domain/production/queries";
+import { listPurchaseOrders, listSuppliers } from "@/domain/purchasing/queries";
 import { listCustomers, listOrders } from "@/domain/sales/queries";
 import { CategorySwatch } from "@/features/inventory/CategorySwatch";
 import { useMaterials } from "@/features/inventory/hooks";
@@ -17,7 +18,7 @@ import { buildItems, type PaletteGroup, type PaletteItem } from "./commands";
 import { useDb } from "./db-context";
 import { useSession } from "./session";
 
-const GROUPS: PaletteGroup[] = ["Sayfalar", "Siparişler", "İş emirleri", "Müşteriler", "Ürünler", "Malzemeler", "Komutlar"];
+const GROUPS: PaletteGroup[] = ["Sayfalar", "Siparişler", "Satın alma", "İş emirleri", "Müşteriler", "Tedarikçiler", "Ürünler", "Malzemeler", "Komutlar"];
 const COMMAND_ICON: Record<string, ComponentType<{ size?: number }>> = {
   "komut:yeni-siparis": PlusIcon,
   "komut:tema": MoonIcon,
@@ -35,7 +36,16 @@ function usePaletteRecords(open: boolean) {
   const customers = useQuery({ queryKey: ["sales", "palette", "customers"], queryFn: () => listCustomers(db), enabled: open });
   const workOrders = useQuery({ queryKey: ["production", "palette", "workOrders"], queryFn: () => listWorkOrders(db), enabled: open });
   const products = useQuery({ queryKey: ["production", "palette", "products"], queryFn: () => listProducts(db), enabled: open });
-  return { orders: orders.data, customers: customers.data, workOrders: workOrders.data, products: products.data };
+  const purchaseOrders = useQuery({ queryKey: ["purchasing", "palette", "orders"], queryFn: () => listPurchaseOrders(db), enabled: open });
+  const suppliers = useQuery({ queryKey: ["purchasing", "palette", "suppliers"], queryFn: () => listSuppliers(db), enabled: open });
+  return {
+    orders: orders.data,
+    purchaseOrders: purchaseOrders.data,
+    customers: customers.data,
+    suppliers: suppliers.data,
+    workOrders: workOrders.data,
+    products: products.data,
+  };
 }
 
 /** Ctrl+K ya da Cmd+K ile açılan arama: sayfaya git, malzemeyi aç, komut çalıştır. */
@@ -55,13 +65,15 @@ export function CommandPalette({ user, open, onOpenChange }: { user: SessionUser
         query,
         materials: materials.data ?? [],
         orders: records.orders ?? [],
+        purchaseOrders: records.purchaseOrders ?? [],
         workOrders: records.workOrders ?? [],
         customers: records.customers ?? [],
+        suppliers: records.suppliers ?? [],
         products: records.products ?? [],
         go: (href) => router.push(href),
         actions: { toggleTheme: () => setTheme(resolved === "dark" ? "light" : "dark"), switchAccount: signOut, signOut },
       }),
-    [user, query, materials.data, records.orders, records.workOrders, records.customers, records.products, router, resolved, setTheme, signOut],
+    [user, query, materials.data, records.orders, records.purchaseOrders, records.workOrders, records.customers, records.suppliers, records.products, router, resolved, setTheme, signOut],
   );
   const categoryOf = useMemo(() => new Map((materials.data ?? []).map((m) => [`malzeme:${m.id}`, m.category])), [materials.data]);
 

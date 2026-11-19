@@ -2,6 +2,7 @@ import { expect, test, vi } from "vitest";
 import type { DepartmentCode, Level, SessionUser } from "@/domain/context";
 import type { MaterialRow } from "@/domain/inventory/queries";
 import type { ProductRow, WorkOrderRow } from "@/domain/production/queries";
+import type { PurchaseOrderRow, SupplierRow } from "@/domain/purchasing/queries";
 import type { CustomerRow, OrderRow } from "@/domain/sales/queries";
 import { buildItems } from "@/shell/commands";
 
@@ -30,6 +31,14 @@ const CUSTOMERS = [
   { id: "c1", code: "MUS-0001", name: "Şahin Yapı Dekorasyon" },
   { id: "c2", code: "MUS-0002", name: "Ayhan Mobilya" },
 ] as CustomerRow[];
+const PURCHASE_ORDERS = Array.from(
+  { length: 7 },
+  (_, i) => ({ id: `s${i + 1}`, code: `SAS-2026-${String(i + 1).padStart(4, "0")}`, supplierCode: "TED-0001", supplierName: "Karadeniz Panel" }) as PurchaseOrderRow,
+);
+const SUPPLIERS = [
+  { id: "t1", code: "TED-0001", name: "Karadeniz Panel" },
+  { id: "t2", code: "TED-0002", name: "Ege Hırdavat" },
+] as SupplierRow[];
 const PRODUCTS = [
   { id: "p1", code: "URN-0001", name: "Eksen Gardırop" },
   { id: "p2", code: "URN-0002", name: "Ritim Şifonyer" },
@@ -38,7 +47,7 @@ const PRODUCTS = [
 function build(u: SessionUser, query: string) {
   const go = vi.fn();
   const actions = { toggleTheme: vi.fn(), switchAccount: vi.fn(), signOut: vi.fn() };
-  const items = buildItems({ user: u, query, materials: MATERIALS, orders: ORDERS, workOrders: WORK_ORDERS, customers: CUSTOMERS, products: PRODUCTS, go, actions });
+  const items = buildItems({ user: u, query, materials: MATERIALS, orders: ORDERS, purchaseOrders: PURCHASE_ORDERS, workOrders: WORK_ORDERS, customers: CUSTOMERS, suppliers: SUPPLIERS, products: PRODUCTS, go, actions });
   return { items, go, actions };
 }
 
@@ -97,7 +106,7 @@ test("SIP- yazınca sipariş grubu çıkar, en çok 5 kayıt", () => {
 test("boş sorguda kayıt yok; kayıt grupları sayfalardan sonra, komutlardan önce gelir", () => {
   expect(build(user("satis", "uzman"), "").items.some((i) => i.id.startsWith("siparis:"))).toBe(false);
   const groups = [...new Set(build(user("yonetim", "mudur"), "i").items.map((i) => i.group))];
-  expect(groups).toEqual(["Sayfalar", "Siparişler", "İş emirleri", "Müşteriler", "Ürünler", "Malzemeler", "Komutlar"]);
+  expect(groups).toEqual(["Sayfalar", "Siparişler", "Satın alma", "İş emirleri", "Müşteriler", "Tedarikçiler", "Ürünler", "Malzemeler", "Komutlar"]);
 });
 
 test("iş emri, müşteri ve ürün kodla ya da adla bulunur ve çekmeceyi açan adrese gider", () => {
@@ -138,4 +147,28 @@ test.each(["plan", "kapasite", "takvim"])("'%s' yazınca Haftalık plan sayfası
   expect(page).toMatchObject({ group: "Sayfalar", hint: "Üretim" });
   page?.run();
   expect(go).toHaveBeenCalledWith("/uretim/plan");
+});
+
+test("SAS- yazınca Satın alma grubu çıkar ve çekmeceyi açan adrese gider; tedarikçi adıyla bulunur", () => {
+  const { items, go } = build(user("satis", "uzman"), "SAS-2026");
+  const found = items.filter((i) => i.group === "Satın alma");
+  expect(found).toHaveLength(5);
+  expect(found[0]).toMatchObject({ label: "SAS-2026-0001", hint: "Karadeniz Panel" });
+  found[0]?.run();
+  expect(go).toHaveBeenCalledWith("/satin-alma/siparisler?ac=s1");
+
+  // Tedarikçi adıyla ve kodla; sipariş de tedarikçi adıyla bulunur.
+  const byName = build(user("depo", "uzman"), "ege hirdavat");
+  expect(byName.items.find((i) => i.group === "Tedarikçiler")).toMatchObject({ label: "Ege Hırdavat", hint: "TED-0002" });
+  byName.items.find((i) => i.group === "Tedarikçiler")?.run();
+  expect(byName.go).toHaveBeenCalledWith("/satin-alma/tedarikciler?ac=t2");
+  expect(build(user("depo", "uzman"), "TED-0001").items.filter((i) => i.group === "Tedarikçiler").map((i) => i.id)).toEqual(["tedarikci:t1"]);
+  expect(build(user("depo", "uzman"), "karadeniz").items.filter((i) => i.group === "Satın alma")).toHaveLength(5);
+});
+
+test("boş sorguda satın alma kayıtları listelenmez; sayfalar adıyla ve anahtar sözcükle bulunur", () => {
+  const empty = build(user("satis", "uzman"), "");
+  expect(empty.items.some((i) => i.group === "Satın alma" || i.group === "Tedarikçiler")).toBe(false);
+  expect(empty.items.map((i) => i.label)).toEqual(expect.arrayContaining(["Öneriler", "Satın alma siparişleri", "Tedarikçiler"]));
+  expect(build(user("satis", "uzman"), "eksik malzeme").items[0]).toMatchObject({ group: "Sayfalar", label: "Öneriler" });
 });
