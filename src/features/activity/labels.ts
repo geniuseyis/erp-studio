@@ -39,6 +39,8 @@ export const ACTION_LABEL: Record<string, string> = {
   status: "Durum değişti",
   ship: "Sevk edildi",
   cancel: "İptal edildi",
+  submit: "Onaya gönderildi",
+  send: "Gönderildi",
   approve: "Onaylandı",
   plan: "Planlandı",
   reserve_materials: "Malzeme ayrıldı",
