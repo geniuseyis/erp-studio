@@ -152,3 +152,16 @@ test("depo uzmanı sipariş açamaz: FORBIDDEN", async () => {
   await expect(removePurchaseLine(depo, line!.id)).rejects.toMatchObject({ code: "FORBIDDEN" });
   await expect(cancelPurchaseOrder(depo, { purchaseOrderId: po.id, reason: "x" })).rejects.toMatchObject({ code: "FORBIDDEN" });
 });
+
+test("aynı kalemin ikinci silinmesi NOT_FOUND olur ve ikinci denetim kaydı yazılmaz", async () => {
+  const { supplier, mdf } = await setup();
+  const po = await createPurchaseOrder(alim, { supplierId: supplier.id, lines: [{ materialId: mdf.id, qtyMilli: 1000 }] });
+  const [line] = await db.select().from(purchaseOrderLines);
+  const results = await Promise.allSettled([removePurchaseLine(alim, line!.id), removePurchaseLine(alim, line!.id)]);
+  expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+  const failed = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
+  expect(failed.reason).toMatchObject({ code: "NOT_FOUND" });
+  expect(await history(po.id, "remove_line")).toHaveLength(1);
+  await expect(removePurchaseLine(alim, line!.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  expect(await history(po.id, "remove_line")).toHaveLength(1);
+});

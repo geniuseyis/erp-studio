@@ -133,7 +133,7 @@ export async function purchaseSuggestions(db: Db): Promise<SuggestionGroup[]> {
     if (gapMilli <= 0) continue;
 
     const source = pickSource(sources.get(m.id) ?? []);
-    const qtyMilli = Math.max(roundUpToStep(gapMilli, unit), source?.moqMilli ?? 0);
+    const qtyMilli = roundUpToStep(Math.max(gapMilli, source?.moqMilli ?? 0), unit);
     const unitPriceMinor = source?.unitPriceMinor ?? 0;
     const reasons: SuggestionReason[] = [];
     if (availableMilli < m.reorderPointMilli) reasons.push("kritik");

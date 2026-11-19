@@ -102,24 +102,25 @@ export async function createFromSuggestion(ctx: Ctx, supplierId: string): Promis
   });
 }
 
-/** Sipariş ve kalemini kilitleyip okur; yalnızca taslakta düzenlenir. */
+/** Önce siparişi kilitler, sonra kalemi okur (eşzamanlı düzenleme eski değer yazmaz); yalnızca taslakta düzenlenir. */
 async function draftLine(tx: Ctx, lineId: string) {
-  const [found] = isUuid(lineId)
-    ? await tx.db
-        .select({ line: purchaseOrderLines, order: purchaseOrders, code: materials.code, unit: materials.unit })
-        .from(purchaseOrderLines)
-        .innerJoin(purchaseOrders, eq(purchaseOrders.id, purchaseOrderLines.orderId))
-        .innerJoin(materials, eq(materials.id, purchaseOrderLines.materialId))
-        .where(eq(purchaseOrderLines.id, lineId))
+  const [owner] = isUuid(lineId)
+    ? await tx.db.select({ orderId: purchaseOrderLines.orderId }).from(purchaseOrderLines).where(eq(purchaseOrderLines.id, lineId))
     : [];
-  if (!found) throw new DomainError("NOT_FOUND", "Sipariş kalemi bulunamadı");
-  await tx.db.select({ id: purchaseOrders.id }).from(purchaseOrders).where(eq(purchaseOrders.id, found.order.id)).for("update");
-  const [order] = await tx.db.select().from(purchaseOrders).where(eq(purchaseOrders.id, found.order.id));
-  if (order?.status !== "draft") throw new DomainError("INVALID_STATE", "Yalnızca taslak sipariş düzenlenir");
+  if (!owner) throw new DomainError("NOT_FOUND", "Sipariş kalemi bulunamadı");
+  const [order] = await tx.db.select().from(purchaseOrders).where(eq(purchaseOrders.id, owner.orderId)).for("update");
+  // Kilit alındıktan sonra yeniden okunur: bu arada silinen kalem için hiçbir şey yazılmaz.
+  const [found] = await tx.db
+    .select({ line: purchaseOrderLines, code: materials.code, unit: materials.unit })
+    .from(purchaseOrderLines)
+    .innerJoin(materials, eq(materials.id, purchaseOrderLines.materialId))
+    .where(eq(purchaseOrderLines.id, lineId));
+  if (!order || !found) throw new DomainError("NOT_FOUND", "Sipariş kalemi bulunamadı");
+  if (order.status !== "draft") throw new DomainError("INVALID_STATE", "Yalnızca taslak sipariş düzenlenir");
   return { line: found.line, order, materialCode: found.code, unit: found.unit as Unit };
 }
 
-async function orderNet(tx: Ctx, orderId: string): Promise<number> {
+export async function orderNet(tx: Ctx, orderId: string): Promise<number> {
   const rows = await tx.db.select().from(purchaseOrderLines).where(eq(purchaseOrderLines.orderId, orderId));
   return rows.reduce((sum, l) => sum + lineValueKurus(l.qtyMilli, l.unitPriceMinor), 0);
 }

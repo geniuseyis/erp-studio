@@ -184,7 +184,7 @@ async function writeSupplierItem(ctx: Ctx, i: SupplierItemInput): Promise<Suppli
 }
 
 /** PostgreSQL benzersizlik ihlali (23505) bu kısıt için mi? Sürücü hatayı `cause` içine sarmış olabilir. */
-function isPreferredConflict(e: unknown): boolean {
+export function isPreferredConflict(e: unknown): boolean {
   for (let err = e as { code?: string; constraint?: string; message?: string; cause?: unknown } | undefined; err; err = err.cause as typeof err) {
     if (err.code === "23505" && (err.constraint === "supplier_items_preferred_idx" || err.message?.includes("supplier_items_preferred_idx"))) return true;
   }

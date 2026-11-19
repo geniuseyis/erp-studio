@@ -4,7 +4,7 @@ import type { Db } from "@/db/client";
 import { auditLog, purchaseOrderLines, purchaseOrders, supplierItems } from "@/db/schema";
 import type { Ctx } from "@/domain/context";
 import { getSupplier, listSuppliers } from "@/domain/purchasing/queries";
-import { createSupplier, removeSupplierItem, setSupplierItem, updateSupplier } from "@/domain/purchasing/suppliers";
+import { createSupplier, isPreferredConflict, removeSupplierItem, setSupplierItem, updateSupplier } from "@/domain/purchasing/suppliers";
 import { addMaterial, addSupplier, addSupplierItem, addUser, ctxFor } from "../../helpers/fixtures";
 import { createTestDb } from "../../helpers/testDb";
 
@@ -184,4 +184,20 @@ test("tercihli kalem benzersizlik ihlali (23505) ham hata yerine CONFLICT olur; 
     spy.mockRestore();
   }
   expect((await setSupplierItem(alim, input)).isPreferred).toBe(true);
+});
+
+test("gerçek sürücü hatası: iki tercihli kalem eklenince 23505 tanınır, başka hata tanınmaz", async () => {
+  const a = await addSupplier(db);
+  const b = await addSupplier(db);
+  const m = await addMaterial(db);
+  await addSupplierItem(db, { supplierId: a.id, materialId: m.id, unitPriceMinor: 100, isPreferred: true });
+  let caught: unknown;
+  try {
+    await addSupplierItem(db, { supplierId: b.id, materialId: m.id, unitPriceMinor: 100, isPreferred: true });
+  } catch (e) {
+    caught = e;
+  }
+  expect(caught).toBeDefined();
+  expect(isPreferredConflict(caught)).toBe(true);
+  expect(isPreferredConflict(new Error("başka"))).toBe(false);
 });

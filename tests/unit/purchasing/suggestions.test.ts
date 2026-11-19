@@ -241,3 +241,11 @@ test("sabit sayıda sorgu: 30 bekleyen iş emrinde ≤ 5 sorgu", async () => {
   expect(many).toBeLessThanOrEqual(5);
   expect((await purchaseSuggestions(db))[0]!.lines[0]!.waitingWorkOrders).toHaveLength(30);
 }, 60_000);
+
+test("en az sipariş miktarı birim adımına yukarı yuvarlanır: 1,5 plaka MOQ 2 plaka olur", async () => {
+  const m = await stocked({ unit: "plaka", onHandMilli: 0, reorderPointMilli: 500 });
+  const s = await addSupplier(db);
+  await addSupplierItem(db, { supplierId: s.id, materialId: m.id, unitPriceMinor: 100, moqMilli: 1500 });
+  const line = (await purchaseSuggestions(db))[0]!.lines[0]!;
+  expect(line.qtyMilli).toBe(2000);
+});
