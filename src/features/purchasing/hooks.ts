@@ -5,7 +5,7 @@ import type { Ctx } from "@/domain/context";
 import { approvePurchaseOrder, submitPurchaseOrder } from "@/domain/purchasing/approval";
 import { cancelPurchaseOrder, createFromSuggestion, removePurchaseLine, updatePurchaseLine } from "@/domain/purchasing/orders";
 import { getPurchaseOrder, getSupplier, listPurchaseOrders, listSuppliers, type PurchaseOrderFilter } from "@/domain/purchasing/queries";
-import { purchaseSuggestions } from "@/domain/purchasing/suggestions";
+import { purchaseSuggestions, waitingWorkOrderCount } from "@/domain/purchasing/suggestions";
 import { createSupplier, type NewSupplier, removeSupplierItem, setSupplierItem, updateSupplier } from "@/domain/purchasing/suppliers";
 import { approvalThresholds } from "@/domain/settings";
 import { useDb } from "@/shell/db-context";
@@ -16,6 +16,11 @@ const KEY = "purchasing";
 export function useSuggestions() {
   const { db } = useDb();
   return useQuery({ queryKey: [KEY, "suggestions"], queryFn: () => purchaseSuggestions(db) });
+}
+
+export function useWaitingWorkOrderCount() {
+  const { db } = useDb();
+  return useQuery({ queryKey: [KEY, "waiting-work-orders"], queryFn: () => waitingWorkOrderCount(db) });
 }
 
 export function useSuppliers(filter: { search?: string } = {}) {

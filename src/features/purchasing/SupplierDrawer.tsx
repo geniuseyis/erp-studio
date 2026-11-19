@@ -176,10 +176,10 @@ export function SupplierDrawer({ id, onClose }: { id: string; onClose: () => voi
                       className="press grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 rounded-2xl bg-surface-2/70 px-3.5 py-3 ring-1 ring-line ring-inset hover:bg-surface-2"
                     >
                       <span className="tabular font-semibold">{o.code}</span>
-                      <span className="tabular font-semibold whitespace-nowrap">{formatMoney(o.netKurus)}</span>
+                      <span className="tabular font-semibold whitespace-nowrap">{formatMoney(o.openNetKurus)}</span>
                       <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-fg-muted">
                         <StatusChip tone={PO_STATUS_TONE[o.status]}>{PO_STATUS_LABEL[o.status]}</StatusChip>
-                        <span>{o.lineCount} kalem, KDV hariç</span>
+                        <span>{o.lineCount} kalem, KDV hariç{o.status === "partial" ? `; sipariş ${formatMoney(o.netKurus)}, kalan tutar` : ""}</span>
                       </span>
                       <ArrowRightIcon size={16} className="justify-self-end text-fg-muted" />
                     </Link>

@@ -97,6 +97,8 @@ export type PurchaseOrderRow = {
   currency: Currency;
   netMinor: number;
   netKurus: number;
+  /** Teslim alınmamış kalan miktarın KDV hariç tutarı (kalem başına kuruşa yuvarlı). */
+  openNetKurus: number;
   lineCount: number;
   createdAt: Date;
   createdById: string;
@@ -139,25 +141,26 @@ async function orderRecords(db: Db, where: ReturnType<typeof and>) {
     .innerJoin(creator, eq(creator.id, purchaseOrders.createdBy))
     .where(where)
     .orderBy(desc(purchaseOrders.createdAt), desc(purchaseOrders.code));
-  const totals = new Map<string, { count: number; net: number }>();
+  const totals = new Map<string, { count: number; net: number; openNet: number }>();
   if (records.length > 0) {
     const sums = await db
       .select({
         orderId: purchaseOrderLines.orderId,
         count: sql<number>`count(*)::int`,
         net: sql<number>`sum(round(${purchaseOrderLines.qtyMilli} * ${purchaseOrderLines.unitPriceMinor} / 1000.0))::float8`,
+        openNet: sql<number>`sum(round((${purchaseOrderLines.qtyMilli} - ${purchaseOrderLines.receivedMilli}) * ${purchaseOrderLines.unitPriceMinor} / 1000.0))::float8`,
       })
       .from(purchaseOrderLines)
       .where(inArray(purchaseOrderLines.orderId, records.map((r) => r.order.id)))
       .groupBy(purchaseOrderLines.orderId);
-    for (const s of sums) totals.set(s.orderId, { count: Number(s.count), net: Number(s.net) });
+    for (const s of sums) totals.set(s.orderId, { count: Number(s.count), net: Number(s.net), openNet: Number(s.openNet) });
   }
   return { records, totals };
 }
 
 function toRow(
   r: Awaited<ReturnType<typeof orderRecords>>["records"][number],
-  totals: Map<string, { count: number; net: number }>,
+  totals: Map<string, { count: number; net: number; openNet: number }>,
   now: Date,
 ): PurchaseOrderRow {
   const o = r.order;
@@ -174,6 +177,7 @@ function toRow(
     currency: o.currency as Currency,
     netMinor: net,
     netKurus: net, // 3A'da yalnızca TL
+    openNetKurus: totals.get(o.id)?.openNet ?? 0,
     lineCount: totals.get(o.id)?.count ?? 0,
     createdAt: o.createdAt,
     createdById: o.createdBy,

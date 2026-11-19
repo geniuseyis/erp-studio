@@ -62,13 +62,8 @@ export function draftFromSuggestionText(group: Pick<SuggestionGroup, "supplierCo
   return `${group.supplierCode} için ${group.lines.length} kalem, ${formatMoney(group.netMinor)} KDV hariç taslak açılsın mı? ${tierSentence(group.requiredTier)}`;
 }
 
-/** Tutardan gereken kademe, onay penceresinde göstermek için (serviste gönderimde donar). */
-export function tierFor(netKurus: number, thresholds: ApprovalThresholds): ApprovalTier {
-  return requiredTier(netKurus, thresholds);
-}
-
 export function submitText(po: Pick<PurchaseOrderRow, "code" | "netKurus">, thresholds: ApprovalThresholds, expected: Date | null): string {
-  const tier = tierFor(po.netKurus, thresholds);
+  const tier = requiredTier(po.netKurus, thresholds);
   const money = `${formatMoney(po.netKurus)} KDV hariç`;
   if (tier === 0) {
     return `${po.code}: ${money}, ${limitText(thresholds.managerKurus)} eşiğini aşmıyor; onay gerekmeden tedarikçiye gönderilir${expected ? `, beklenen teslim ${formatDate(expected)}` : ""}.`;
@@ -168,7 +163,7 @@ export type ApprovalView = {
  */
 export function approvalView(user: Pick<SessionUser, "id" | "departmentCode" | "level">, po: PurchaseOrderDetail, thresholds: ApprovalThresholds | undefined): ApprovalView {
   const draft = po.status === "draft";
-  const tier: ApprovalTier = draft ? (thresholds ? tierFor(po.netKurus, thresholds) : 0) : po.requiredTier;
+  const tier: ApprovalTier = draft ? (thresholds ? requiredTier(po.netKurus, thresholds) : 0) : po.requiredTier;
   const pending = pendingTier(po);
   const steps: ApprovalView["steps"] = [];
   const stepText = (name: string | null, key: "manager" | "board") => {

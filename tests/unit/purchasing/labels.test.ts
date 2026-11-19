@@ -15,10 +15,10 @@ import {
   purchaseTotals,
   submitText,
   TIER_LABEL,
-  tierFor,
   userCanApprove,
 } from "@/features/purchasing/labels";
 
+import { requiredTier } from "@/domain/settings";
 const THRESHOLDS = { managerKurus: 5_000_000, boardKurus: 25_000_000 };
 const buyer = { id: "buyer", departmentCode: "satinalma", level: "uzman" } as const;
 const manager = { id: "manager", departmentCode: "satinalma", level: "mudur" } as const;
@@ -37,6 +37,7 @@ function po(over: Partial<PurchaseOrderDetail>): PurchaseOrderDetail {
     currency: "TRY",
     netMinor: 9_250_020,
     netKurus: 9_250_020,
+    openNetKurus: 9_250_020,
     lineCount: 1,
     createdAt: new Date("2026-11-19T09:00:00Z"),
     createdById: "buyer",
@@ -70,7 +71,7 @@ test("durum etiketleri ve tonları her durum için tanımlı", () => {
 });
 
 test("kademe eşiklerde: 50.000 TL dahil onaysız, üstü müdür, 250.000 TL üstü müdür + Yönetim", () => {
-  expect([5_000_000, 5_000_001, 25_000_000, 25_000_001].map((n) => tierFor(n, THRESHOLDS))).toEqual([0, 1, 1, 2]);
+  expect([5_000_000, 5_000_001, 25_000_000, 25_000_001].map((n) => requiredTier(n, THRESHOLDS))).toEqual([0, 1, 1, 2]);
 });
 
 test("onay ekranı: oluşturan kendi siparişini onaylayamaz ve bekleneni görür", () => {

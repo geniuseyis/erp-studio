@@ -93,6 +93,13 @@ function pickSource(options: Source[]): Source | undefined {
   )[0];
 }
 
+/** Malzemesi ayrılmamış planlı iş emri sayısı (kanban "Malzeme bekliyor" sütunuyla aynı küme): sipariş açılması bu sayıyı değiştirmez, mal kabul düşürür. */
+export async function waitingWorkOrderCount(db: Db): Promise<number> {
+  const codes = new Set<string>();
+  for (const need of (await waitingMaterialNeeds(db)).values()) for (const code of need.workOrders) codes.add(code);
+  return codes.size;
+}
+
 export async function purchaseSuggestions(db: Db): Promise<SuggestionGroup[]> {
   const waiting = await waitingMaterialNeeds(db);
   const incoming = await incomingByMaterial(db);

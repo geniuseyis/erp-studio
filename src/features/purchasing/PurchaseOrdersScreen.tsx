@@ -110,7 +110,7 @@ export function PurchaseOrdersScreen() {
         stats={
           list ? (
             <>
-              <HeroStat index={0} label="Açık sipariş tutarı" value={<CountUp value={open.reduce((n, o) => n + o.netKurus, 0)} format={formatMoneyWhole} />} hint="Sipariş toplamları, KDV hariç; onay bekleyen dahil, kısmi teslimde teslim alınan da dahil" />
+              <HeroStat index={0} label="Açık sipariş tutarı" value={<CountUp value={open.reduce((n, o) => n + o.openNetKurus, 0)} format={formatMoneyWhole} />} hint="KDV hariç, teslim alınmamış kısım" />
               <HeroStat
                 index={1}
                 label={canApproveAny ? "Sizi bekleyen onay" : "Onay bekleyen"}

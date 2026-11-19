@@ -4,7 +4,7 @@ import type { Db } from "@/db/client";
 import { goodsReceiptLines, goodsReceipts, purchaseOrderLines, purchaseOrders } from "@/db/schema";
 import type { Ctx } from "@/domain/context";
 import { createPurchaseOrder } from "@/domain/purchasing/orders";
-import { getPurchaseOrder, listPurchaseOrders } from "@/domain/purchasing/queries";
+import { getPurchaseOrder, listPurchaseOrders, listReceivable, listSuppliers } from "@/domain/purchasing/queries";
 import { addMaterial, addSupplier, addSupplierItem, addUser, ctxFor, NOW } from "../../helpers/fixtures";
 import { createTestDb } from "../../helpers/testDb";
 
@@ -111,4 +111,35 @@ test("getPurchaseOrder kalemleri, kalan miktarı ve mal kabulleri verir", async 
   ]);
   expect(await getPurchaseOrder(db, "00000000-0000-4000-8000-000000000000")).toBeNull();
   expect(await getPurchaseOrder(db, "x")).toBeNull();
+});
+
+test("açık tutar her yerde aynı: kısmi teslimde yalnızca kalan; sipariş listesi toplamı = Σ tedarikçi açık tutarı", async () => {
+  const a = await addSupplier(db, { code: "TED-0001" });
+  const b = await addSupplier(db, { code: "TED-0002" });
+  const m = await addMaterial(db, { unit: "plaka" });
+  await addSupplierItem(db, { supplierId: a.id, materialId: m.id, unitPriceMinor: 154_167 });
+  await addSupplierItem(db, { supplierId: b.id, materialId: m.id, unitPriceMinor: 100_001 });
+  const partial = await draft(a.id, m.id, 60_000);
+  const sent = await draft(b.id, m.id, 3000);
+  const pending = await draft(a.id, m.id, 5000);
+  const cancelled = await draft(b.id, m.id, 1000);
+  await db.update(purchaseOrders).set({ status: "partial" }).where(eq(purchaseOrders.id, partial.id));
+  await db.update(purchaseOrderLines).set({ receivedMilli: 20_000 }).where(eq(purchaseOrderLines.orderId, partial.id));
+  await db.update(purchaseOrders).set({ status: "sent", expectedAt: NOW }).where(eq(purchaseOrders.id, sent.id));
+  await db.update(purchaseOrders).set({ status: "pending_approval" }).where(eq(purchaseOrders.id, pending.id));
+  await db.update(purchaseOrders).set({ status: "cancelled" }).where(eq(purchaseOrders.id, cancelled.id));
+
+  const rows = await listPurchaseOrders(db, { now: NOW });
+  const row = (id: string) => rows.find((r) => r.id === id)!;
+  expect(row(partial.id)).toMatchObject({ netKurus: 9_250_020, openNetKurus: 6_166_680 }); // 40 plaka × ₺1.541,67
+  expect(row(sent.id).openNetKurus).toBe(row(sent.id).netKurus);
+
+  const open = rows.filter((r) => ["pending_approval", "sent", "partial"].includes(r.status));
+  const hero = open.reduce((n, r) => n + r.openNetKurus, 0);
+  const suppliers = await listSuppliers(db);
+  expect(hero).toBe(suppliers.reduce((n, s) => n + s.openNetMinor, 0));
+  expect(hero).toBe(6_166_680 + 300_003 + 770_835);
+  // Mal kabul listesi aynı kalan tutarı gösterir.
+  const receivable = await listReceivable(db, NOW);
+  expect(receivable.find((r) => r.id === partial.id)?.openNetKurus).toBe(6_166_680);
 });

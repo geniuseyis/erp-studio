@@ -50,11 +50,11 @@ const COLUMNS: Column<ReceivableRow>[] = [
   { id: "remaining", header: "Kalan kalem", align: "right", cell: (o) => <span className="tabular font-semibold">{o.remainingLineCount}</span>, sortValue: (o) => o.remainingLineCount },
   {
     id: "net",
-    header: "Tutar (KDV hariç)",
+    header: "Kalan tutar (KDV hariç)",
     align: "right",
-    cell: (o) => <span className="tabular whitespace-nowrap">{formatMoney(o.netKurus)}</span>,
-    sortValue: (o) => o.netKurus,
-    csvValue: (o) => o.netKurus / 100,
+    cell: (o) => <span className="tabular whitespace-nowrap">{formatMoney(o.openNetKurus)}</span>,
+    sortValue: (o) => o.openNetKurus,
+    csvValue: (o) => o.openNetKurus / 100,
   },
 ];
 

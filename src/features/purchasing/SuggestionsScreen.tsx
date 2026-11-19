@@ -18,7 +18,7 @@ import { CountUp } from "@/ui/motion";
 import { Skeleton } from "@/ui/Skeleton";
 import { StatusChip } from "@/ui/StatusChip";
 import { useToast } from "@/ui/Toast";
-import { useCreateFromSuggestion, useSuggestions } from "./hooks";
+import { useCreateFromSuggestion, useSuggestions, useWaitingWorkOrderCount } from "./hooks";
 import { draftFromSuggestionText, REASON_LABEL, TIER_LABEL, TIER_TONE } from "./labels";
 
 /** Satın alma önerisi: kritik stok ve malzeme bekleyen iş emirleri, tedarikçiye göre gruplanmış. Hiçbir şey yazmaz; "Taslak oluştur" yazar. */
@@ -34,7 +34,8 @@ export function SuggestionsScreen() {
   const groups = suggestions.data;
 
   const lines = (groups ?? []).flatMap((g) => g.lines);
-  const waitingWorkOrders = new Set(lines.flatMap((l) => l.waitingWorkOrders)).size;
+  // Bütün bekleyen iş emirleri (kanban sütunuyla aynı küme); yalnızca açığı olan satırların iş emirleri değil.
+  const waitingWorkOrders = useWaitingWorkOrderCount().data ?? 0;
   const critical = lines.filter((l) => l.reasons.includes("kritik")).length;
   const total = (groups ?? []).reduce((sum, g) => sum + g.netMinor, 0);
 

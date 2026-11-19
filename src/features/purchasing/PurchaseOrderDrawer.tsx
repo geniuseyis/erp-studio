@@ -19,6 +19,7 @@ import { NumberField, Textarea } from "@/ui/Field";
 import { formatDate, formatDateTime } from "@/ui/format";
 import { HistoryList } from "@/ui/HistoryList";
 import { AlertIcon, ArrowRightIcon, CartIcon, CheckIcon, CloseIcon, EditIcon, TrashIcon } from "@/ui/icons";
+import { requiredTier } from "@/domain/settings";
 import { Skeleton } from "@/ui/Skeleton";
 import { StatusChip } from "@/ui/StatusChip";
 import { useToast } from "@/ui/Toast";
@@ -44,7 +45,6 @@ import {
   purchaseTotals,
   removeLineText,
   submitText,
-  tierFor,
 } from "./labels";
 import { PurchaseStatusChips } from "./PurchaseStatus";
 
@@ -77,12 +77,12 @@ export function PurchaseOrderDrawer({ id, onClose }: { id: string; onClose: () =
   const canSubmit = isDraft && canWrite;
   const canApproveNow = view?.can === true;
   const canCancel = o ? CANCELLABLE.includes(o.status) && canWrite : false;
-  const draftTier = o && thresholds.data ? tierFor(o.netKurus, thresholds.data) : null;
+  const draftTier = o && thresholds.data ? requiredTier(o.netKurus, thresholds.data) : null;
   const leadDays = o?.supplierLeadDays ?? null;
 
   function requestSubmit(event: { detail: number }) {
     if (!o || !thresholds.data || event.detail > 1) return;
-    const tier = tierFor(o.netKurus, thresholds.data);
+    const tier = requiredTier(o.netKurus, thresholds.data);
     const expected = leadDays !== null && tier === 0 ? expectedDelivery(new Date(), leadDays) : null;
     void ask.confirm({
       title: tier === 0 ? "Sipariş gönderilsin mi?" : "Sipariş onaya gönderilsin mi?",

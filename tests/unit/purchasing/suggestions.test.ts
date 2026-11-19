@@ -2,11 +2,13 @@ import { eq } from "drizzle-orm";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { Db } from "@/db/client";
 import { materials, purchaseOrderLines, purchaseOrders, settings, workOrders } from "@/db/schema";
-import { purchaseSuggestions } from "@/domain/purchasing/suggestions";
+import { createFromSuggestion } from "@/domain/purchasing/orders";
+import { receiveGoods } from "@/domain/purchasing/receiving";
+import { purchaseSuggestions, waitingWorkOrderCount } from "@/domain/purchasing/suggestions";
 import type { PurchaseOrderStatus } from "@/domain/purchasing/types";
 import { bomNeedMilli } from "@/domain/production/workOrders";
 import { DEFAULT_THRESHOLDS, requiredTier } from "@/domain/settings";
-import { addBomLine, addMaterial, addProduct, addSupplier, addSupplierItem, addUser } from "../../helpers/fixtures";
+import { addBomLine, addMaterial, addProduct, addSupplier, addSupplierItem, addUser, ctxFor } from "../../helpers/fixtures";
 import { createTestDb } from "../../helpers/testDb";
 
 let db: Db;
@@ -247,4 +249,30 @@ test("en az sipariş miktarı birim adımına yukarı yuvarlanır: 1,5 plaka MOQ
   await addSupplierItem(db, { supplierId: s.id, materialId: m.id, unitPriceMinor: 100, moqMilli: 1500 });
   const line = (await purchaseSuggestions(db))[0]!.lines[0]!;
   expect(line.qtyMilli).toBe(2000);
+});
+
+test("bekleyen iş emri sayısı bütün bekleyenleri sayar; taslak sipariş değiştirmez, mal kabul düşürür", async () => {
+  const m = await stocked({ unit: "plaka", onHandMilli: 0, reorderPointMilli: 0 });
+  const other = await stocked({ unit: "plaka", onHandMilli: 100_000, reorderPointMilli: 0 }); // yeterli stoklu malzeme
+  const p = await addProduct(db);
+  await addBomLine(db, { productId: p.id, materialId: m.id, qtyMilli: 2000 });
+  await addBomLine(db, { productId: p.id, materialId: other.id, qtyMilli: 1000 });
+  const q = await addProduct(db);
+  await addBomLine(db, { productId: q.id, materialId: other.id, qtyMilli: 1000 });
+  await waitingWo(p.id, 3000); // eksik malzemeyi bekler
+  await waitingWo(q.id, 1000); // yalnızca yeterli stoklu malzeme: açığı yok ama malzemesi ayrılmamış, kanbanda bekliyor
+  const s = await addSupplier(db);
+  await addSupplierItem(db, { supplierId: s.id, materialId: m.id, unitPriceMinor: 1000 });
+  expect(await waitingWorkOrderCount(db)).toBe(2);
+
+  const buyer = ctxFor(db, await addUser(db, "satinalma", "uzman", { email: "alim@baltacioglus.example" }));
+  const po = await createFromSuggestion(buyer, s.id);
+  expect(await purchaseSuggestions(db)).toEqual([]); // yoldaki sipariş açığı kapattı
+  expect(await waitingWorkOrderCount(db)).toBe(2); // ama iş emirleri hâlâ malzeme bekliyor
+
+  await db.update(purchaseOrders).set({ status: "sent", sentAt: buyer.now, expectedAt: buyer.now }).where(eq(purchaseOrders.id, po.id));
+  const [line] = await db.select().from(purchaseOrderLines).where(eq(purchaseOrderLines.orderId, po.id));
+  const depo = ctxFor(db, await addUser(db, "depo", "uzman", { email: "depo@baltacioglus.example" }));
+  await receiveGoods(depo, { purchaseOrderId: po.id, deliveryNote: "T-1", lines: [{ lineId: line!.id, qtyMilli: line!.qtyMilli }] });
+  expect(await waitingWorkOrderCount(db)).toBe(1); // yalnızca malzemesi gelen iş emri düştü
 });
