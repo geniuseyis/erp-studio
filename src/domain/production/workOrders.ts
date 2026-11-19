@@ -141,6 +141,32 @@ export async function openWorkOrder(
   });
 }
 
+/**
+ * Planlı, malzemesi ayrılmamış iş emri için malzemeleri hepsi-ya-hiçbiri ayırır. Başarıda geçmişe yazar ve bağlı satır
+ * "Malzeme bekliyor"daysa üretime geçirip siparişi yeniler. Eksik varsa hiçbir şey yazılmaz ve eksikler döner.
+ * `source` verilirse geçmiş satırının sonuna "(kaynak)" eklenir. Yetki denetlemez.
+ */
+async function reservePlanned(tx: Ctx, wo: typeof workOrders.$inferSelect, source?: string): Promise<Shortage[]> {
+  const shortages = await reserveMaterials(tx, wo);
+  if (shortages.length > 0) return shortages;
+
+  const tail = source ? ` (${source})` : "";
+  await logAudit(tx, {
+    entity: "work_order",
+    entityId: wo.id,
+    action: "reserve_materials",
+    summary: `${wo.code}: malzemeler ayrıldı — ${await needsText(tx.db, await reservedForWorkOrder(tx.db, wo.id))}${tail}`,
+  });
+  if (wo.salesOrderLineId) {
+    const [line] = await tx.db.select().from(salesOrderLines).where(eq(salesOrderLines.id, wo.salesOrderLineId));
+    if (line?.status === "waiting_material") {
+      await setLineStatus(tx, line.id, "in_production");
+      await refreshOrderStatus(tx, line.orderId);
+    }
+  }
+  return [];
+}
+
 /** Malzemesi ayrılamamış iş emri için ayırmayı yeniden dener. Başarıda bağlı satır üretime geçer. */
 export async function retryMaterials(ctx: Ctx, workOrderId: string): Promise<{ workOrder: WorkOrder; shortages: Shortage[] }> {
   assertCan(ctx.user, "planning", "execute");
@@ -149,23 +175,40 @@ export async function retryMaterials(ctx: Ctx, workOrderId: string): Promise<{ w
     if (wo.status !== "planned" || wo.materialsReserved) {
       throw new DomainError("INVALID_STATE", "Yalnızca malzemesi ayrılmamış planlı iş emri yeniden denenir");
     }
-    const shortages = await reserveMaterials(tx, wo);
+    const shortages = await reservePlanned(tx, wo);
     if (shortages.length > 0) return { workOrder: asWorkOrder(wo), shortages };
-
-    await logAudit(tx, {
-      entity: "work_order",
-      entityId: wo.id,
-      action: "reserve_materials",
-      summary: `${wo.code}: malzemeler ayrıldı — ${await needsText(tx.db, await reservedForWorkOrder(tx.db, wo.id))}`,
-    });
-    if (wo.salesOrderLineId) {
-      const [line] = await tx.db.select().from(salesOrderLines).where(eq(salesOrderLines.id, wo.salesOrderLineId));
-      if (line?.status === "waiting_material") {
-        await setLineStatus(tx, line.id, "in_production");
-        await refreshOrderStatus(tx, line.orderId);
-      }
-    }
     return { workOrder: await reload(tx.db, wo.id), shortages: [] };
+  });
+}
+
+/**
+ * Modül içi (mal kabul çağırır, yetki denetlemez): verilen malzemelerden birini kullanan, malzemesi ayrılmamış planlı iş
+ * emirlerini bağlı siparişin terminine göre (termini olmayan sonda, sonra iş emri kodu) sırayla, iş emri başına
+ * hepsi-ya-hiçbiri ayırır. Ayrılabilenler ayrılma sırasıyla döner; yetmeyenler beklemeye devam eder.
+ */
+export async function reserveWaitingWorkOrders(ctx: Ctx, i: { materialIds: string[]; source: string }): Promise<WorkOrder[]> {
+  const ids = [...new Set(i.materialIds)].filter(isUuid);
+  if (ids.length === 0) return [];
+  return inTx(ctx, async (tx) => {
+    const rows = await tx.db
+      .select({ wo: workOrders, dueAt: salesOrders.dueAt })
+      .from(workOrders)
+      .innerJoin(bomLines, eq(bomLines.productId, workOrders.productId))
+      .leftJoin(salesOrderLines, eq(salesOrderLines.id, workOrders.salesOrderLineId))
+      .leftJoin(salesOrders, eq(salesOrders.id, salesOrderLines.orderId))
+      .where(and(eq(workOrders.status, "planned"), eq(workOrders.materialsReserved, false), inArray(bomLines.materialId, ids)));
+    const waiting = new Map<string, { code: string; due: number }>();
+    for (const r of rows) waiting.set(r.wo.id, { code: r.wo.code, due: r.dueAt ? r.dueAt.getTime() : Number.POSITIVE_INFINITY });
+    const order = [...waiting.entries()].sort(([, a], [, b]) => (a.due === b.due ? a.code.localeCompare(b.code) : a.due < b.due ? -1 : 1));
+
+    const reserved: WorkOrder[] = [];
+    for (const [id] of order) {
+      const wo = await mustFindWorkOrder(tx.db, id); // satır kilidi; bu arada ayrılmış ya da iptal olmuş olabilir
+      if (wo.status !== "planned" || wo.materialsReserved) continue;
+      if ((await reservePlanned(tx, wo, i.source)).length > 0) continue;
+      reserved.push(await reload(tx.db, wo.id));
+    }
+    return reserved;
   });
 }
 
