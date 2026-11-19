@@ -3,14 +3,14 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { Db } from "@/db/client";
-import { auditLog, MOVEMENT_TYPES, PRODUCT_MOVEMENT_TYPES, salesOrders, stockCounts, workOrders } from "@/db/schema";
+import { auditLog, MOVEMENT_TYPES, PRODUCT_MOVEMENT_TYPES, purchaseOrders, salesOrders, stockCounts, workOrders } from "@/db/schema";
 import { logAudit } from "@/domain/audit";
 import { activityStats, listActivity } from "@/domain/audit-queries";
 import type { SessionUser } from "@/domain/context";
 import { searchKey } from "@/domain/text";
 import { exportSnapshot, loadSnapshot } from "@/seed/snapshot";
 import { actionLabel, ACTION_LABEL, ENTITY_LABEL } from "@/features/activity/labels";
-import { addCustomer, addMaterial, addProduct, addUser, ctxFor } from "../../helpers/fixtures";
+import { addCustomer, addMaterial, addProduct, addSupplier, addUser, ctxFor } from "../../helpers/fixtures";
 import { createTestDb } from "../../helpers/testDb";
 
 let db: Db;
@@ -111,9 +111,13 @@ test("kayıt etiketi ve bağlantısı her tür için çözülür; silinmiş kay�
     .values({ code: "IE-2026-0004", productId: product.id, qtyMilli: 1000, createdBy: ayse.id })
     .returning();
   const [count] = await db.insert(stockCounts).values({ code: "SAY-2026-0002", createdBy: onur.id }).returning();
-  if (!order || !wo || !count) throw new Error("kayıt eklenemedi");
+  const supplier = await addSupplier(db, { code: "TED-0003", name: "Sapanca Yonga" });
+  const [po] = await db.insert(purchaseOrders).values({ code: "SAS-2026-0005", supplierId: supplier.id, createdBy: onur.id }).returning();
+  if (!order || !wo || !count || !po) throw new Error("kayıt eklenemedi");
 
   const t = at("2026-11-15T09:00:00");
+  await log(onur, "supplier", supplier.id, "x", t);
+  await log(onur, "purchase_order", po.id, "x", t);
   await log(ayse, "sales_order", order.id, "x", t);
   await log(ayse, "customer", customer.id, "x", t);
   await log(ayse, "work_order", wo.id, "x", t);
@@ -140,10 +144,23 @@ test("kayıt etiketi ve bağlantısı her tür için çözülür; silinmiş kay�
   expect(pick("material", material.id)).toEqual({ label: "MLZ-0007 Meşe Masif", href: `/stok/malzemeler?ac=${material.id}` });
   expect(pick("stock_count", count.id)).toEqual({ label: "SAY-2026-0002", href: `/stok/sayim?fis=${count.id}` });
   expect(pick("user", onur.id)).toEqual({ label: "Onur Tekin", href: `/yonetim/kullanicilar?q=${encodeURIComponent("Onur Tekin")}` });
+  expect(pick("supplier", supplier.id)).toEqual({ label: "TED-0003 Sapanca Yonga", href: `/satin-alma/tedarikciler?ac=${supplier.id}` });
+  expect(pick("purchase_order", po.id)).toEqual({ label: "SAS-2026-0005", href: `/satin-alma/siparisler?ac=${po.id}` });
   expect(pick("sales_order", gone)).toEqual({ label: "SIP-2026-0077", href: null });
   expect(rows.find((r) => r.summary.startsWith("Eski Çalışan"))).toMatchObject({ recordLabel: "silinmiş kayıt", recordHref: null });
   expect(pick("work_order", "uuid-değil")).toEqual({ label: "IE-2026-0099", href: null });
   expect(pick("settings", "x")).toEqual({ label: null, href: null });
+});
+
+test("tedarikçi ve satın alma kayıtları kod ve tedarikçi adıyla aranır", async () => {
+  const supplier = await addSupplier(db, { code: "TED-0003", name: "Sapanca Yonga" });
+  const [po] = await db.insert(purchaseOrders).values({ code: "SAS-2026-0005", supplierId: supplier.id, createdBy: onur.id }).returning();
+  const t = at("2026-11-15T09:00:00");
+  await log(onur, "supplier", supplier.id, "kart işlemi", t);
+  await log(onur, "purchase_order", po?.id ?? "", "sipariş işlemi", t);
+  expect((await listActivity(db, bt, { search: "sapanca" })).map((r) => r.entity).sort()).toEqual(["purchase_order", "supplier"]);
+  expect((await listActivity(db, bt, { search: "SAS-2026-0005" })).map((r) => r.entity)).toEqual(["purchase_order"]);
+  expect((await listActivity(db, bt, { search: "TED-0003" })).map((r) => r.entity)).toEqual(["supplier"]);
 });
 
 test("kayıt etiketleri satır başına sorguyla değil, tür başına toplu okunur", async () => {
@@ -341,7 +358,7 @@ function domainActionCodes(): Set<string> {
 
 test("koddaki her işlem kodunun Türkçe etiketi var; bilinmeyen kod olduğu gibi gösterilir", () => {
   const codes = domainActionCodes();
-  for (const expected of ["create", "remove_line", "confirm", "ship", "step_start", "receipt", "production_in", "activate", "deactivate", "reset_password"]) {
+  for (const expected of ["set_item", "remove_item", "create", "remove_line", "confirm", "ship", "step_start", "receipt", "production_in", "activate", "deactivate", "reset_password"]) {
     expect(codes).toContain(expected);
   }
   const missing = [...codes].filter((c) => !(c in ACTION_LABEL));
@@ -349,5 +366,5 @@ test("koddaki her işlem kodunun Türkçe etiketi var; bilinmeyen kod olduğu gi
   expect(actionLabel("remove_line")).toBe("Satır silindi");
   expect(actionLabel("receipt")).toBe("Stok girişi");
   expect(actionLabel("garip_kod")).toBe("garip_kod");
-  expect(Object.keys(ENTITY_LABEL)).toEqual(["sales_order", "customer", "work_order", "product", "material", "stock_count", "user"]);
+  expect(Object.keys(ENTITY_LABEL)).toEqual(["sales_order", "customer", "work_order", "product", "material", "purchase_order", "supplier", "stock_count", "user"]);
 });

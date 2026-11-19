@@ -2,12 +2,12 @@
 // Yazma anı (logAudit) ve örnek veri yüklemesi (loadSnapshot) aynı biçimlendiriciyi kullanır; ayrışamazlar.
 import { eq } from "drizzle-orm";
 import type { Db } from "@/db/client";
-import { customers, materials, products, salesOrders, stockCounts, users, workOrders } from "@/db/schema";
+import { customers, materials, products, purchaseOrders, salesOrders, stockCounts, suppliers, users, workOrders } from "@/db/schema";
 import { isUuid } from "./context";
 
 /**
  * Kayıt türüne göre aranacak ad: müşteri, ürün ve malzemede "kod ad"; iş emrinde "kod ürün adı"; siparişte "kod müşteri adı";
- * sayım fişinde kod; kullanıcıda ad. `primary` kod (kullanıcıda ad), `secondary` eşlik eden ad.
+ * sayım fişinde kod; kullanıcıda ad; tedarikçide "kod ad", satın almada "kod tedarikçi adı". `primary` kod (kullanıcıda ad), `secondary` eşlik eden ad.
  */
 export function recordSearchLabel(entity: string, primary: string, secondary?: string): string {
   if (entity === "stock_count" || entity === "user") return primary;
@@ -44,6 +44,18 @@ export async function lookupSearchLabel(db: Db, entity: string, entityId: string
         .from(salesOrders)
         .innerJoin(customers, eq(customers.id, salesOrders.customerId))
         .where(eq(salesOrders.id, entityId));
+      return r ? recordSearchLabel(entity, r.a, r.b) : "";
+    }
+    case "supplier": {
+      const [r] = await db.select({ a: suppliers.code, b: suppliers.name }).from(suppliers).where(eq(suppliers.id, entityId));
+      return r ? recordSearchLabel(entity, r.a, r.b) : "";
+    }
+    case "purchase_order": {
+      const [r] = await db
+        .select({ a: purchaseOrders.code, b: suppliers.name })
+        .from(purchaseOrders)
+        .innerJoin(suppliers, eq(suppliers.id, purchaseOrders.supplierId))
+        .where(eq(purchaseOrders.id, entityId));
       return r ? recordSearchLabel(entity, r.a, r.b) : "";
     }
     case "stock_count": {

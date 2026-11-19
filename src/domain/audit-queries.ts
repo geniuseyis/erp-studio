@@ -1,7 +1,7 @@
 // Kayıt çekmecelerindeki "Geçmiş" bölümünün ve İşlemler ekranının sorguları. Yalnızca okur.
 import { and, desc, eq, gte, inArray, lt, ne, or, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
-import { auditLog, customers, departments, materials, products, salesOrderLines, salesOrders, stockCounts, users, workOrders } from "@/db/schema";
+import { auditLog, customers, departments, materials, products, purchaseOrders, salesOrderLines, salesOrders, stockCounts, suppliers, users, workOrders } from "@/db/schema";
 import { type DepartmentCode, isUuid, type SessionUser } from "./context";
 import { can } from "./permissions";
 import { istanbulDayStart } from "./production/calendar";
@@ -124,6 +124,14 @@ const RESOLVERS: Record<string, Resolver> = {
   async material(db, ids) {
     const rows = await db.select({ id: materials.id, code: materials.code, name: materials.name }).from(materials).where(inArray(materials.id, ids));
     return new Map(rows.map((r) => opens("/stok/malzemeler", r.id, `${r.code} ${r.name}`)));
+  },
+  async supplier(db, ids) {
+    const rows = await db.select({ id: suppliers.id, code: suppliers.code, name: suppliers.name }).from(suppliers).where(inArray(suppliers.id, ids));
+    return new Map(rows.map((r) => opens("/satin-alma/tedarikciler", r.id, `${r.code} ${r.name}`)));
+  },
+  async purchase_order(db, ids) {
+    const rows = await db.select({ id: purchaseOrders.id, code: purchaseOrders.code }).from(purchaseOrders).where(inArray(purchaseOrders.id, ids));
+    return new Map(rows.map((r) => opens("/satin-alma/siparisler", r.id, r.code)));
   },
   async stock_count(db, ids) {
     const rows = await db.select({ id: stockCounts.id, code: stockCounts.code }).from(stockCounts).where(inArray(stockCounts.id, ids));

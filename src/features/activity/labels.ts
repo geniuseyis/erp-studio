@@ -7,6 +7,8 @@ export const ENTITY_LABEL = {
   work_order: "İş emri",
   product: "Ürün",
   material: "Malzeme",
+  purchase_order: "Satın alma",
+  supplier: "Tedarikçi",
   stock_count: "Sayım",
   user: "Kullanıcı",
 } as const satisfies Record<string, string>;
@@ -55,6 +57,8 @@ export const ACTION_LABEL: Record<string, string> = {
   production_in: "Üretimden giriş",
   activate: "Etkinleştirildi",
   deactivate: "Pasife alındı",
+  set_item: "Fiyat güncellendi",
+  remove_item: "Fiyat kaldırıldı",
   reset_password: "Parola sıfırlandı",
 };
 

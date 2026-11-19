@@ -229,6 +229,10 @@ export async function loadSnapshot(db: Db, snapshot: Snapshot, now: Date): Promi
           return recordSearchLabel(entity, text("work_orders", id, "code"), text("products", byId.get("work_orders")?.get(id)?.productId, "name"));
         case "sales_order":
           return recordSearchLabel(entity, text("sales_orders", id, "code"), text("customers", byId.get("sales_orders")?.get(id)?.customerId, "name"));
+        case "supplier":
+          return recordSearchLabel(entity, text("suppliers", id, "code"), text("suppliers", id, "name"));
+        case "purchase_order":
+          return recordSearchLabel(entity, text("purchase_orders", id, "code"), text("suppliers", byId.get("purchase_orders")?.get(id)?.supplierId, "name"));
         case "stock_count":
           return recordSearchLabel(entity, text("stock_counts", id, "code"));
         case "user":

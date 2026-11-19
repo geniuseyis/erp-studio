@@ -1,5 +1,5 @@
 import type { Db } from "@/db/client";
-import { bomLines, customers, departments, materials, products, routings, stations, users } from "@/db/schema";
+import { bomLines, customers, departments, materials, products, routings, stations, supplierItems, suppliers, users } from "@/db/schema";
 import { type Ctx, DEPARTMENT_NAMES, type DepartmentCode, type Level, type SessionUser } from "@/domain/context";
 import { hashPassword } from "@/domain/password";
 
@@ -144,4 +144,36 @@ export async function addRouting(
   i: { productId: string; seq: number; stationId: string; minutesPerUnit: number },
 ): Promise<void> {
   await db.insert(routings).values(i);
+}
+
+let supplierSeq = 0;
+/** Doğrudan tabloya bir tedarikçi ekler. */
+export async function addSupplier(
+  db: Db,
+  over: Partial<typeof suppliers.$inferInsert> = {},
+): Promise<typeof suppliers.$inferSelect> {
+  supplierSeq += 1;
+  const [row] = await db
+    .insert(suppliers)
+    .values({
+      code: `TED-${String(supplierSeq).padStart(4, "0")}`,
+      name: `Test tedarikçi ${supplierSeq}`,
+      city: "Sakarya",
+      contact: "Test Yetkili",
+      phone: "0264 000 00 00",
+      paymentTermDays: 30,
+      leadTimeDays: 5,
+      ...over,
+    })
+    .returning();
+  if (!row) throw new Error("tedarikçi eklenemedi");
+  return row;
+}
+
+/** Doğrudan tabloya bir tedarikçi fiyat kalemi ekler. */
+export async function addSupplierItem(
+  db: Db,
+  i: { supplierId: string; materialId: string; unitPriceMinor: number; moqMilli?: number; isPreferred?: boolean },
+): Promise<void> {
+  await db.insert(supplierItems).values({ ...i, moqMilli: i.moqMilli ?? 0, isPreferred: i.isPreferred ?? false });
 }
