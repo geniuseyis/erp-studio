@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { Db } from "@/db/client";
-import { auditLog, salesOrderLines, salesOrders, stockCounts, workOrders } from "@/db/schema";
+import { auditLog, purchaseOrders, salesOrderLines, salesOrders, stockCounts, workOrders } from "@/db/schema";
 import { type Ctx, isUuid } from "./context";
 import { lookupSearchLabel, searchText } from "./audit-labels";
 import { searchKey } from "./text";
@@ -61,6 +61,10 @@ export async function refCode(db: Db, ref: { type: string; id: string } | undefi
   }
   if (ref.type === "stock_count") {
     const [row] = await db.select({ code: stockCounts.code }).from(stockCounts).where(eq(stockCounts.id, ref.id));
+    return row?.code ?? null;
+  }
+  if (ref.type === "purchase_order") {
+    const [row] = await db.select({ code: purchaseOrders.code }).from(purchaseOrders).where(eq(purchaseOrders.id, ref.id));
     return row?.code ?? null;
   }
   if (ref.type === "sales_order_line") {
