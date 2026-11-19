@@ -91,6 +91,8 @@ export type PurchaseOrderRow = {
   supplierId: string;
   supplierCode: string;
   supplierName: string;
+  /** Tedarikçinin teslim süresi (iş günü): gönderimde beklenen gün bundan hesaplanır. */
+  supplierLeadDays: number;
   status: PurchaseOrderStatus;
   currency: Currency;
   netMinor: number;
@@ -121,7 +123,9 @@ export type PurchaseOrderDetail = PurchaseOrderRow & {
   submittedAt: Date | null;
   sentAt: Date | null;
   managerApprovedByName: string | null;
+  managerApprovedAt: Date | null;
   boardApprovedByName: string | null;
+  boardApprovedAt: Date | null;
   receipts: { id: string; code: string; deliveryNote: string; createdAt: Date; receivedByName: string; lineCount: number }[];
 };
 
@@ -129,7 +133,7 @@ export type PurchaseOrderDetail = PurchaseOrderRow & {
 async function orderRecords(db: Db, where: ReturnType<typeof and>) {
   const creator = alias(users, "creator");
   const records = await db
-    .select({ order: purchaseOrders, supplierCode: suppliers.code, supplierName: suppliers.name, createdByName: creator.name })
+    .select({ order: purchaseOrders, supplierCode: suppliers.code, supplierName: suppliers.name, supplierLeadDays: suppliers.leadTimeDays, createdByName: creator.name })
     .from(purchaseOrders)
     .innerJoin(suppliers, eq(suppliers.id, purchaseOrders.supplierId))
     .innerJoin(creator, eq(creator.id, purchaseOrders.createdBy))
@@ -165,6 +169,7 @@ function toRow(
     supplierId: o.supplierId,
     supplierCode: r.supplierCode,
     supplierName: r.supplierName,
+    supplierLeadDays: r.supplierLeadDays,
     status: o.status as PurchaseOrderStatus,
     currency: o.currency as Currency,
     netMinor: net,
@@ -235,7 +240,9 @@ export async function getPurchaseOrder(db: Db, id: string, now: Date = new Date(
     submittedAt: o.submittedAt,
     sentAt: o.sentAt,
     managerApprovedByName: o.managerApprovedBy ? (names.get(o.managerApprovedBy) ?? null) : null,
+    managerApprovedAt: o.managerApprovedAt,
     boardApprovedByName: o.boardApprovedBy ? (names.get(o.boardApprovedBy) ?? null) : null,
+    boardApprovedAt: o.boardApprovedAt,
     lines: lineRows.map((r) => ({
       ...r.line,
       materialCode: r.materialCode,

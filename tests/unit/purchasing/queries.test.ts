@@ -100,7 +100,8 @@ test("getPurchaseOrder kalemleri, kalan miktarı ve mal kabulleri verir", async 
   await db.insert(goodsReceiptLines).values({ receiptId: receipt!.id, purchaseOrderLineId: mdfLine.id, materialId: b.id, qtyMilli: 20_000, unitCostKurus: 154_167 });
 
   const detail = await getPurchaseOrder(db, po.id, NOW);
-  expect(detail).toMatchObject({ code: po.code, status: "partial", lineCount: 2, netMinor: 9_250_020 + 50_000, note: "", managerApprovedByName: null, boardApprovedByName: null });
+  expect(detail).toMatchObject({ code: po.code, status: "partial", lineCount: 2, netMinor: 9_250_020 + 50_000, note: "", managerApprovedByName: null, managerApprovedAt: null, boardApprovedByName: null, boardApprovedAt: null });
+  expect(detail?.supplierLeadDays).toBeGreaterThan(0);
   expect(detail!.lines.map((l) => [l.materialCode, l.materialName, l.unit, l.qtyMilli, l.remainingMilli, l.lineNetMinor])).toEqual([
     ["MLZ-0001", "MDF", "plaka", 60_000, 40_000, 9_250_020],
     ["MLZ-0002", "Vernik", "L", 10_000, 10_000, 50_000],
