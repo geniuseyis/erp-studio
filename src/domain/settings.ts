@@ -23,8 +23,8 @@ export async function approvalThresholds(db: Db): Promise<ApprovalThresholds> {
     const value = rows.find((r) => r.key === key)?.value;
     return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : fallback;
   };
-  return {
-    managerKurus: read(SETTING_KEYS.approvalManagerKurus, DEFAULT_THRESHOLDS.managerKurus),
-    boardKurus: read(SETTING_KEYS.approvalBoardKurus, DEFAULT_THRESHOLDS.boardKurus),
-  };
+  const managerKurus = read(SETTING_KEYS.approvalManagerKurus, DEFAULT_THRESHOLDS.managerKurus);
+  // Yönetim eşiği müdür eşiğinin altına inemez; yalnız müdür eşiği yükseltilince kademeler ters dönmesin.
+  const boardKurus = Math.max(managerKurus, read(SETTING_KEYS.approvalBoardKurus, DEFAULT_THRESHOLDS.boardKurus));
+  return { managerKurus, boardKurus };
 }

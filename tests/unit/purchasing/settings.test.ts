@@ -29,3 +29,13 @@ test("approvalThresholds: settings'e yazılan değerleri okur; sayı olmayan de�
   await db.update(settings).set({ value: 2_000_000 }).where(eq(settings.key, SETTING_KEYS.approvalManagerKurus));
   expect(await approvalThresholds(db)).toEqual({ managerKurus: 2_000_000, boardKurus: DEFAULT_THRESHOLDS.boardKurus });
 });
+
+test("approvalThresholds: Yönetim eşiği müdür eşiğinin altına inemez; kademeler ters dönmez", async () => {
+  // yalnızca müdür eşiği yükseltildi, Yönetim eşiği yok: varsayılan 25M, müdür 30M → Yönetim eşiği 30M'ye çekilir
+  await db.insert(settings).values({ key: SETTING_KEYS.approvalManagerKurus, value: 30_000_000 });
+  expect(await approvalThresholds(db)).toEqual({ managerKurus: 30_000_000, boardKurus: 30_000_000 });
+
+  // açıkça yazılmış ters değerler de düzeltilir
+  await db.insert(settings).values({ key: SETTING_KEYS.approvalBoardKurus, value: 8_000_000 });
+  expect(await approvalThresholds(db)).toEqual({ managerKurus: 30_000_000, boardKurus: 30_000_000 });
+});

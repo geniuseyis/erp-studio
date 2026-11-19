@@ -115,7 +115,7 @@ export type SupplierItemInput = { supplierId: string; materialId: string; unitPr
  * Tedarikçinin bir malzeme için fiyatını ekler ya da (aynı tedarikçi ve malzeme varsa) günceller. `preferred: true`
  * aynı malzemenin diğer tercihli kalemini aynı transaction'da kaldırır. Değişiklik yoksa hiçbir şey yazılmaz.
  */
-export async function setSupplierItem(ctx: Ctx, i: SupplierItemInput): Promise<SupplierItem> {
+async function writeSupplierItem(ctx: Ctx, i: SupplierItemInput): Promise<SupplierItem> {
   assertCan(ctx.user, "purchasing", "write");
   if (!Number.isInteger(i.unitPriceMinor) || i.unitPriceMinor < 0) throw invalid("Fiyat sıfır ya da daha büyük olmalı");
   if (!Number.isInteger(i.moqMilli) || i.moqMilli < 0) throw invalid("En az sipariş miktarı sıfır ya da daha büyük olmalı");
@@ -181,6 +181,24 @@ export async function setSupplierItem(ctx: Ctx, i: SupplierItemInput): Promise<S
     });
     return asSupplierItem(row);
   });
+}
+
+/** PostgreSQL benzersizlik ihlali (23505) bu kısıt için mi? Sürücü hatayı `cause` içine sarmış olabilir. */
+function isPreferredConflict(e: unknown): boolean {
+  for (let err = e as { code?: string; constraint?: string; message?: string; cause?: unknown } | undefined; err; err = err.cause as typeof err) {
+    if (err.code === "23505" && (err.constraint === "supplier_items_preferred_idx" || err.message?.includes("supplier_items_preferred_idx"))) return true;
+  }
+  return false;
+}
+
+export async function setSupplierItem(ctx: Ctx, i: SupplierItemInput): Promise<SupplierItem> {
+  try {
+    return await writeSupplierItem(ctx, i);
+  } catch (e) {
+    // İki kullanıcı aynı anda aynı malzemeyi tercihli yaptı: ikincisi ham veritabanı hatası yerine açık ileti alır.
+    if (isPreferredConflict(e)) throw new DomainError("CONFLICT", "Bu malzemenin tercihli tedarikçisi az önce başkası tarafından değiştirildi; sayfayı yenileyip tekrar deneyin");
+    throw e;
+  }
 }
 
 export async function removeSupplierItem(ctx: Ctx, itemId: string): Promise<void> {

@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import type { Db } from "@/db/client";
 import { auditLog, purchaseOrderLines, purchaseOrders, supplierItems } from "@/db/schema";
 import type { Ctx } from "@/domain/context";
@@ -156,4 +156,32 @@ test("getSupplier kalemleri malzeme koduna göre, açık sipariş sayısı ve tu
   expect((await listSuppliers(db, { search: "sapanca" })).map((r) => r.code)).toEqual(["TED-0001"]);
   expect((await listSuppliers(db, { search: "TED-0002" })).map((r) => r.code)).toEqual(["TED-0002"]);
   expect(await listSuppliers(db, { search: "yokyok" })).toEqual([]);
+});
+
+test("açık sipariş tutarı kısmi teslimde yalnızca kalan miktarın değeridir", async () => {
+  const s = await addSupplier(db, { code: "TED-0001" });
+  const m = await addMaterial(db, { code: "MLZ-0001", unit: "plaka" });
+  await addSupplierItem(db, { supplierId: s.id, materialId: m.id, unitPriceMinor: 10_000 });
+  const [po] = await db.insert(purchaseOrders).values({ code: "SAS-2026-0001", supplierId: s.id, status: "partial", createdBy: alim.user.id }).returning();
+  await db.insert(purchaseOrderLines).values({ orderId: po!.id, materialId: m.id, qtyMilli: 10_000, unitPriceMinor: 10_000, receivedMilli: 4000 });
+  expect((await getSupplier(db, s.id))?.openNetMinor).toBe(60_000); // 6 plaka kaldı
+  await db.update(purchaseOrderLines).set({ receivedMilli: 10_000 });
+  expect((await getSupplier(db, s.id))?.openNetMinor).toBe(0);
+});
+
+test("tercihli kalem benzersizlik ihlali (23505) ham hata yerine CONFLICT olur; başka hata aynen geçer", async () => {
+  const s = await addSupplier(db);
+  const m = await addMaterial(db);
+  const input = { supplierId: s.id, materialId: m.id, unitPriceMinor: 100, moqMilli: 0, preferred: true };
+  const spy = vi.spyOn(db, "transaction");
+  try {
+    spy.mockRejectedValueOnce({ cause: { code: "23505", constraint: "supplier_items_preferred_idx" } });
+    await expect(setSupplierItem(alim, input)).rejects.toMatchObject({ code: "CONFLICT" });
+    const other = new Error("başka");
+    spy.mockRejectedValueOnce(other);
+    await expect(setSupplierItem(alim, input)).rejects.toBe(other);
+  } finally {
+    spy.mockRestore();
+  }
+  expect((await setSupplierItem(alim, input)).isPreferred).toBe(true);
 });

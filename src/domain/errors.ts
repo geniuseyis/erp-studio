@@ -5,7 +5,8 @@ export type DomainErrorCode =
   | "INSUFFICIENT_STOCK"
   | "INVALID_STATE"
   | "LOGIN_FAILED"
-  | "DUPLICATE";
+  | "DUPLICATE"
+  | "CONFLICT";
 
 /** İş kuralı ihlali. Arayüz `code` alanına göre Türkçe ileti gösterir; `message` geliştirici içindir. */
 export class DomainError extends Error {

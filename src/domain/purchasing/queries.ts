@@ -23,7 +23,7 @@ export type SupplierRow = Supplier & { itemCount: number; openOrderCount: number
 export type SupplierItemRow = SupplierItem & { materialCode: string; materialName: string; unit: Unit };
 export type SupplierDetail = SupplierRow & { items: SupplierItemRow[] };
 
-/** Tutar, sipariş satırlarının toplamıdır (KDV hariç, tedarikçinin para biriminin küçük birimi). */
+/** Açık tutar, açık siparişlerin teslim alınmamış kalan miktarının değeridir (KDV hariç, tedarikçinin para biriminin küçük birimi). */
 async function supplierRows(db: Db, only?: { id: string }): Promise<SupplierRow[]> {
   const records = await db
     .select()
@@ -44,6 +44,7 @@ async function supplierRows(db: Db, only?: { id: string }): Promise<SupplierRow[
       supplierId: purchaseOrders.supplierId,
       orderId: purchaseOrders.id,
       qtyMilli: purchaseOrderLines.qtyMilli,
+      receivedMilli: purchaseOrderLines.receivedMilli,
       unitPriceMinor: purchaseOrderLines.unitPriceMinor,
     })
     .from(purchaseOrders)
@@ -52,7 +53,8 @@ async function supplierRows(db: Db, only?: { id: string }): Promise<SupplierRow[
   for (const l of lines) {
     const entry = open.get(l.supplierId) ?? { orders: new Set<string>(), net: 0 };
     entry.orders.add(l.orderId);
-    entry.net += Math.round((l.qtyMilli * l.unitPriceMinor) / 1000);
+    // Açık tutar yalnızca teslim alınmamış kalan miktarın değeridir.
+    entry.net += lineValueKurus(l.qtyMilli - l.receivedMilli, l.unitPriceMinor);
     open.set(l.supplierId, entry);
   }
 
