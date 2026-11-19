@@ -5,9 +5,13 @@ import {
   departments,
   materials,
   products,
+  purchaseOrderLines,
+  purchaseOrders,
   salesOrderLines,
   salesOrders,
   stations,
+  supplierItems,
+  suppliers,
   users,
   workOrderSteps,
   workOrders,
@@ -159,4 +163,65 @@ test("bitmiş adımın başlangıcı boş olamaz", async () => {
   });
   await expect(db.insert(workOrderSteps).values(step({ finishedAt: new Date() }))).rejects.toThrow();
   await expect(db.insert(workOrderSteps).values(step({ startedAt: new Date(), finishedAt: new Date() }))).resolves.toBeDefined();
+});
+
+async function purchasingContext() {
+  const [u] = await db.insert(users).values(user()).returning();
+  const [m] = await db.insert(materials).values(material()).returning();
+  const [s] = await db
+    .insert(suppliers)
+    .values({ code: "TED-0001", name: "Test Tedarik", city: "Sakarya", contact: "A", phone: "0264 000 00 00", paymentTermDays: 30, leadTimeDays: 5 })
+    .returning();
+  return { u: u!, m: m!, s: s! };
+}
+
+test("aynı malzemede ikinci tercihli tedarikçi kalemi reddedilir; tercihsiz ikinci kalem kabul", async () => {
+  const { m, s } = await purchasingContext();
+  const [s2] = await db
+    .insert(suppliers)
+    .values({ code: "TED-0002", name: "Diğer", city: "Bursa", contact: "B", phone: "0224 000 00 00", paymentTermDays: 0, leadTimeDays: 3 })
+    .returning();
+  const [s3] = await db
+    .insert(suppliers)
+    .values({ code: "TED-0003", name: "Üçüncü", city: "Kocaeli", contact: "C", phone: "0262 000 00 00", paymentTermDays: 0, leadTimeDays: 3 })
+    .returning();
+  await db.insert(supplierItems).values({ supplierId: s.id, materialId: m.id, unitPriceMinor: 100, isPreferred: true });
+  await expect(
+    db.insert(supplierItems).values({ supplierId: s2!.id, materialId: m.id, unitPriceMinor: 90, isPreferred: true }),
+  ).rejects.toThrow();
+  await expect(
+    db.insert(supplierItems).values({ supplierId: s3!.id, materialId: m.id, unitPriceMinor: 95, isPreferred: false }),
+  ).resolves.toBeDefined();
+  // aynı (tedarikçi, malzeme) ikinci kez eklenemez
+  await expect(db.insert(supplierItems).values({ supplierId: s.id, materialId: m.id, unitPriceMinor: 1 })).rejects.toThrow();
+});
+
+test("teslim alınan sipariş miktarını aşamaz; sipariş miktarı sıfır olamaz", async () => {
+  const { u, m, s } = await purchasingContext();
+  const [po] = await db.insert(purchaseOrders).values({ code: "SAS-2026-0001", supplierId: s.id, createdBy: u.id }).returning();
+  const line = (over: Partial<typeof purchaseOrderLines.$inferInsert>) => ({
+    orderId: po!.id,
+    materialId: m.id,
+    qtyMilli: 10_000,
+    unitPriceMinor: 500,
+    ...over,
+  });
+  await expect(db.insert(purchaseOrderLines).values(line({ receivedMilli: 10_001 }))).rejects.toThrow();
+  await expect(db.insert(purchaseOrderLines).values(line({ qtyMilli: 0 }))).rejects.toThrow();
+  await expect(db.insert(purchaseOrderLines).values(line({ vatRate: 18 }))).rejects.toThrow();
+  const [ok] = await db.insert(purchaseOrderLines).values(line({ receivedMilli: 10_000 })).returning();
+  expect(ok).toMatchObject({ vatRate: 20, receivedMilli: 10_000 });
+});
+
+test("bilinmeyen sipariş durumu, para birimi ve 3 kademe reddedilir", async () => {
+  const { u, s } = await purchasingContext();
+  const po = (over: Partial<typeof purchaseOrders.$inferInsert>) => ({ code: "SAS-2026-0009", supplierId: s.id, createdBy: u.id, ...over });
+  await expect(db.insert(purchaseOrders).values(po({ status: "bekliyor" }))).rejects.toThrow();
+  await expect(db.insert(purchaseOrders).values(po({ currency: "GBP" }))).rejects.toThrow();
+  await expect(db.insert(purchaseOrders).values(po({ requiredTier: 3 }))).rejects.toThrow();
+  await expect(
+    db.insert(suppliers).values({ code: "TED-0009", name: "X", city: "Y", contact: "", phone: "1", paymentTermDays: 0, leadTimeDays: 1, currency: "GBP" }),
+  ).rejects.toThrow();
+  const [ok] = await db.insert(purchaseOrders).values(po({})).returning();
+  expect(ok).toMatchObject({ status: "draft", currency: "TRY", requiredTier: 0, fxRateE4: null, note: "", cancelReason: "" });
 });

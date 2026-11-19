@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigint, bigserial, boolean, check, index, integer, jsonb, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { bigint, bigserial, boolean, check, index, integer, jsonb, pgTable, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 // Para sütunları kuruş, miktar sütunları binde birim ("milli") tam sayıdır. Bkz. src/domain/units.ts.
 const id = () => uuid("id").primaryKey().defaultRandom();
@@ -20,6 +20,8 @@ export const ORDER_STATUSES = ["draft", "confirmed", "in_production", "ready", "
 export const LINE_STATUSES = ["draft", "waiting_material", "in_production", "ready", "shipped", "cancelled"] as const;
 export const WORK_ORDER_STATUSES = ["planned", "in_progress", "completed", "cancelled"] as const;
 export const PRODUCT_MOVEMENT_TYPES = ["production_in", "reserve", "unreserve", "ship"] as const;
+export const CURRENCIES = ["TRY", "EUR", "USD"] as const;
+export const PURCHASE_ORDER_STATUSES = ["draft", "pending_approval", "sent", "partial", "received", "cancelled"] as const;
 
 /** Veritabanının kendisi hakkında anahtar-değer kayıtları: şema sürümü, örnek verinin yüklenip yüklenmediği. */
 export const meta = pgTable("meta", {
@@ -378,6 +380,148 @@ export const productMovements = pgTable(
   (t) => [
     check("product_movements_type_check", sql`${t.type} in (${inList(PRODUCT_MOVEMENT_TYPES)})`),
     index("product_movements_product_idx").on(t.productId, t.createdAt),
+  ],
+);
+
+export const suppliers = pgTable(
+  "suppliers",
+  {
+    id: id(),
+    code: text("code").notNull().unique(),
+    name: text("name").notNull(),
+    city: text("city").notNull(),
+    contact: text("contact").notNull().default(""),
+    phone: text("phone").notNull(),
+    paymentTermDays: integer("payment_term_days").notNull().default(0),
+    leadTimeDays: integer("lead_time_days").notNull().default(7),
+    currency: text("currency").notNull().default("TRY"),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check("suppliers_term_check", sql`${t.paymentTermDays} >= 0`),
+    check("suppliers_lead_check", sql`${t.leadTimeDays} > 0`),
+    check("suppliers_currency_check", sql`${t.currency} in (${inList(CURRENCIES)})`),
+  ],
+);
+
+/** Tedarikçinin malzeme fiyatı (tedarikçinin para biriminin küçük biriminde). Malzeme başına en çok bir tercihli kalem olur. */
+export const supplierItems = pgTable(
+  "supplier_items",
+  {
+    id: id(),
+    supplierId: uuid("supplier_id")
+      .notNull()
+      .references(() => suppliers.id, { onDelete: "cascade" }),
+    materialId: uuid("material_id")
+      .notNull()
+      .references(() => materials.id),
+    unitPriceMinor: bigint("unit_price_minor", { mode: "number" }).notNull(),
+    moqMilli: qty("moq_milli"),
+    isPreferred: boolean("is_preferred").notNull().default(false),
+  },
+  (t) => [
+    unique("supplier_items_unique").on(t.supplierId, t.materialId),
+    check("supplier_items_price_check", sql`${t.unitPriceMinor} >= 0`),
+    check("supplier_items_moq_check", sql`${t.moqMilli} >= 0`),
+    uniqueIndex("supplier_items_preferred_idx").on(t.materialId).where(sql`${t.isPreferred}`),
+  ],
+);
+
+export const purchaseOrders = pgTable(
+  "purchase_orders",
+  {
+    id: id(),
+    code: text("code").notNull().unique(),
+    supplierId: uuid("supplier_id")
+      .notNull()
+      .references(() => suppliers.id),
+    status: text("status").notNull().default("draft"),
+    currency: text("currency").notNull().default("TRY"),
+    /** TL × 10.000 / 1 döviz. TRY siparişlerde null. */
+    fxRateE4: integer("fx_rate_e4"),
+    requiredTier: integer("required_tier").notNull().default(0),
+    note: text("note").notNull().default(""),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    submittedAt: tstz("submitted_at"),
+    managerApprovedBy: uuid("manager_approved_by").references(() => users.id),
+    managerApprovedAt: tstz("manager_approved_at"),
+    boardApprovedBy: uuid("board_approved_by").references(() => users.id),
+    boardApprovedAt: tstz("board_approved_at"),
+    sentAt: tstz("sent_at"),
+    expectedAt: tstz("expected_at"),
+    receivedAt: tstz("received_at"),
+    cancelledAt: tstz("cancelled_at"),
+    cancelReason: text("cancel_reason").notNull().default(""),
+  },
+  (t) => [
+    check("purchase_orders_status_check", sql`${t.status} in (${inList(PURCHASE_ORDER_STATUSES)})`),
+    check("purchase_orders_currency_check", sql`${t.currency} in (${inList(CURRENCIES)})`),
+    check("purchase_orders_tier_check", sql`${t.requiredTier} between 0 and 2`),
+  ],
+);
+
+export const purchaseOrderLines = pgTable(
+  "purchase_order_lines",
+  {
+    id: id(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => purchaseOrders.id, { onDelete: "cascade" }),
+    materialId: uuid("material_id")
+      .notNull()
+      .references(() => materials.id),
+    qtyMilli: bigint("qty_milli", { mode: "number" }).notNull(),
+    unitPriceMinor: bigint("unit_price_minor", { mode: "number" }).notNull(),
+    vatRate: integer("vat_rate").notNull().default(20),
+    receivedMilli: qty("received_milli"),
+  },
+  (t) => [
+    unique("purchase_order_lines_unique").on(t.orderId, t.materialId),
+    check("purchase_order_lines_qty_check", sql`${t.qtyMilli} > 0`),
+    check("purchase_order_lines_price_check", sql`${t.unitPriceMinor} >= 0`),
+    check("purchase_order_lines_vat_check", sql`${t.vatRate} in (10, 20)`),
+    check("purchase_order_lines_received_check", sql`${t.receivedMilli} >= 0 and ${t.receivedMilli} <= ${t.qtyMilli}`),
+  ],
+);
+
+export const goodsReceipts = pgTable("goods_receipts", {
+  id: id(),
+  code: text("code").notNull().unique(),
+  purchaseOrderId: uuid("purchase_order_id")
+    .notNull()
+    .references(() => purchaseOrders.id),
+  deliveryNote: text("delivery_note").notNull(),
+  fxRateE4: integer("fx_rate_e4"),
+  receivedBy: uuid("received_by")
+    .notNull()
+    .references(() => users.id),
+  createdAt: createdAt(),
+});
+
+export const goodsReceiptLines = pgTable(
+  "goods_receipt_lines",
+  {
+    id: id(),
+    receiptId: uuid("receipt_id")
+      .notNull()
+      .references(() => goodsReceipts.id, { onDelete: "cascade" }),
+    purchaseOrderLineId: uuid("purchase_order_line_id")
+      .notNull()
+      .references(() => purchaseOrderLines.id),
+    materialId: uuid("material_id")
+      .notNull()
+      .references(() => materials.id),
+    qtyMilli: bigint("qty_milli", { mode: "number" }).notNull(),
+    /** TL kuruş; ortalama maliyete giren birim maliyet. */
+    unitCostKurus: bigint("unit_cost_kurus", { mode: "number" }).notNull(),
+  },
+  (t) => [
+    check("goods_receipt_lines_qty_check", sql`${t.qtyMilli} > 0`),
+    check("goods_receipt_lines_cost_check", sql`${t.unitCostKurus} >= 0`),
   ],
 );
 
