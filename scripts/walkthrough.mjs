@@ -38,7 +38,7 @@ const approve = async (label) => {
   await dialog.getByRole("button", { name: label, exact: true }).click();
   await dialog.waitFor({ state: "detached", timeout: 60_000 });
 };
-const nav = (label) => page.getByRole("navigation", { name: "Ana menü" }).getByRole("link", { name: label }).click();
+const nav = (label) => page.getByRole("navigation", { name: "Ana menü" }).getByRole("link", { name: label, exact: true }).click();
 
 await step("giriş ekranı", async () => {
   await page.goto(`${BASE}/giris`);

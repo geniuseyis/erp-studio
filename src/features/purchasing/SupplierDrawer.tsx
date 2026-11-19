@@ -23,7 +23,8 @@ import { SupplierForm } from "./SupplierForm";
 import { SupplierItemForm } from "./SupplierItemForm";
 
 const supplierHistory = entityHistory("supplier");
-const OPEN = ["draft", "pending_approval", "sent", "partial"] as const;
+// Üstteki "Açık sipariş" sayısıyla aynı küme (taslak açık sayılmaz).
+const OPEN = ["pending_approval", "sent", "partial"] as const;
 
 /** Tedarikçi kartı, fiyat listesi, açık siparişleri ve geçmişi. Fiyat ekleme, düzenleme ve kaldırma `purchasing:write` ister. */
 export function SupplierDrawer({ id, onClose }: { id: string; onClose: () => void }) {

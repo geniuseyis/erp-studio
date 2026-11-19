@@ -79,13 +79,12 @@ export function submitText(po: Pick<PurchaseOrderRow, "code" | "netKurus">, thre
 
 export type ApprovalSubject = Pick<PurchaseOrderRow, "status" | "createdById" | "requiredTier" | "managerApprovedBy" | "boardApprovedBy">;
 
-/** Servisteki `canApprove` kuralına satır biçimini uydurur. */
 /** Servisteki `canApprove` kuralı (düğmeyi ve notu belirler). */
 export function userCanApprove(user: Pick<SessionUser, "id" | "departmentCode" | "level">, po: ApprovalSubject): boolean {
   return canApprove(user, { ...po, createdBy: po.createdById });
 }
 
-/** Bu onay siparişi gönderir mi, yoksa sıradaki kademeye mi bırakır? */
+/** Bu onay siparişi gönderir mi, yoksa sıradaki kademeye mi bırakır? approvePurchaseOrder (approval.ts) kuralının aynısı: son gereken onay gönderir; Yönetim kademe 2'de iki alanı birden doldurur. */
 export function approvalReleases(user: Pick<SessionUser, "departmentCode">, po: ApprovalSubject): boolean {
   const tier = pendingTier(po);
   if (tier === null) return false;

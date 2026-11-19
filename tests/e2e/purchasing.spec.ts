@@ -21,22 +21,28 @@ const BOARD = "Nermin Aksoy"; // Yönetim: iki kademeyi de onaylar
  * `kritik açık = sipariş noktası − kullanılabilir` değerinin birim adımına yukarı yuvarlanmışıdır; birim fiyat öyle seçilir ki
  * KDV hariç tutar hedefe (varsayılan 100.000 TL: müdür kademesi) yaklaşır. Beklenen değerler SQL'den türer, sabit değildir.
  */
-async function setupSupplier(page: Page, opts: { targetNetKurus?: number } = {}): Promise<Fixture> {
+/** Boşluğu hâlâ pozitif olan ilk kritik malzeme: bekleyen iş emri ihtiyacı olmayan, açık siparişle henüz karşılanmamış. */
+async function criticalMaterial(page: Page) {
   const [m] = await sql<{ id: string; code: string; name: string; unit: Unit; gap: number }>(
     page,
-    `select m.id, m.code, m.name, m.unit,
-            (m.reorder_point_milli - (m.on_hand_milli - m.reserved_milli)
-              - coalesce((select sum(l.qty_milli - l.received_milli) from purchase_order_lines l join purchase_orders o on o.id = l.order_id
-                          where l.material_id = m.id and o.status in ('draft','pending_approval','sent','partial')), 0))::float8 as gap
-       from materials m
-      where m.active
-        and (m.on_hand_milli - m.reserved_milli) < m.reorder_point_milli
-        and not exists (select 1 from bom_lines b join work_orders w on w.product_id = b.product_id
-                         where b.material_id = m.id and w.status = 'planned' and not w.materials_reserved)
-      order by m.code limit 1`,
+    `select * from (
+       select m.id, m.code, m.name, m.unit,
+              (m.reorder_point_milli - (m.on_hand_milli - m.reserved_milli)
+                - coalesce((select sum(l.qty_milli - l.received_milli) from purchase_order_lines l join purchase_orders o on o.id = l.order_id
+                            where l.material_id = m.id and o.status in ('draft','pending_approval','sent','partial')), 0))::float8 as gap
+         from materials m
+        where m.active
+          and (m.on_hand_milli - m.reserved_milli) < m.reorder_point_milli
+          and not exists (select 1 from bom_lines b join work_orders w on w.product_id = b.product_id
+                           where b.material_id = m.id and w.status = 'planned' and not w.materials_reserved)
+     ) t where t.gap > 0 order by t.code limit 1`,
   );
-  if (!m || m.gap <= 0) throw new Error("kritik malzeme yok");
-  const qtyMilli = roundUpToStep(m.gap, m.unit);
+  if (!m) throw new Error("kritik malzeme yok");
+  return m;
+}
+
+async function setupSupplier(page: Page, opts: { targetNetKurus?: number } = {}): Promise<Fixture> {
+  const m = await criticalMaterial(page);  const qtyMilli = roundUpToStep(m.gap, m.unit);
   const priceKurus = Math.max(1, Math.round(((opts.targetNetKurus ?? 10_000_000) * 1000) / qtyMilli));
   const [next] = await sql<{ n: number }>(page, "select coalesce(max(substring(code from 5)::int), 0) + 1 as n from suppliers");
   const code = `TED-${String(next?.n ?? 1).padStart(4, "0")}`;
@@ -410,4 +416,17 @@ test("390 px'te sipariş listesi ve çekmecesi yatay taşmaz", async ({ page }) 
   await expect.poll(overflow).toBeLessThanOrEqual(0);
   // Çekmecenin kendi içeriği de taşmaz.
   await expect.poll(() => drawer.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+});
+
+test("tedarikçisi tanımsız grup: taslak düğmesi yok, açıklama ve 'Tedarikçi tanımla' bağlantısı var", async ({ page }) => {
+  await loginAs(page, BUYER);
+  const m = await criticalMaterial(page);
+  await sql(page, `delete from supplier_items where material_id = '${m.id}'`);
+  await navTo(page, "Öneriler", "Satın alma önerileri");
+  const card = group(page, "Tedarikçisi tanımsız");
+  await expect(card).toBeVisible();
+  await expect(card).toContainText("Bu malzemeler için fiyat veren tedarikçi yok");
+  await expect(card).toContainText(m.code);
+  await expect(card.getByRole("button", { name: "Taslak oluştur" })).toHaveCount(0);
+  await expect(card.getByRole("link", { name: "Tedarikçi tanımla" })).toBeVisible();
 });
