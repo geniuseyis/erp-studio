@@ -358,7 +358,7 @@ function domainActionCodes(): Set<string> {
 
 test("koddaki her işlem kodunun Türkçe etiketi var; bilinmeyen kod olduğu gibi gösterilir", () => {
   const codes = domainActionCodes();
-  for (const expected of ["set_item", "remove_item", "submit", "send", "create", "remove_line", "confirm", "ship", "step_start", "receipt", "production_in", "activate", "deactivate", "reset_password"]) {
+  for (const expected of ["set_item", "remove_item", "submit", "send", "receive", "create", "remove_line", "confirm", "ship", "step_start", "receipt", "production_in", "activate", "deactivate", "reset_password"]) {
     expect(codes).toContain(expected);
   }
   const missing = [...codes].filter((c) => !(c in ACTION_LABEL));

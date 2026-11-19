@@ -42,6 +42,7 @@ export const ACTION_LABEL: Record<string, string> = {
   submit: "Onaya gönderildi",
   send: "Gönderildi",
   approve: "Onaylandı",
+  receive: "Mal kabul",
   plan: "Planlandı",
   reserve_materials: "Malzeme ayrıldı",
   start: "Üretime başladı",

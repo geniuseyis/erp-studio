@@ -254,3 +254,10 @@ export async function getPurchaseOrder(db: Db, id: string, now: Date = new Date(
     })),
   };
 }
+
+/** Mal kabule açık siparişler (gönderilmiş ve kısmi): beklenen güne göre, gecikenler önce; beklenen günü olmayan sonda. 2 sorgu. */
+export async function listReceivable(db: Db, now: Date): Promise<PurchaseOrderRow[]> {
+  const { records, totals } = await orderRecords(db, inArray(purchaseOrders.status, ["sent", "partial"]));
+  const at = (r: PurchaseOrderRow) => r.expectedAt?.getTime() ?? Number.POSITIVE_INFINITY;
+  return records.map((r) => toRow(r, totals, now)).sort((a, b) => (at(a) === at(b) ? a.code.localeCompare(b.code) : at(a) < at(b) ? -1 : 1));
+}
