@@ -90,3 +90,10 @@ test("satış uzmanı satın alma ekranlarını görür (görüntüleme serbest)
     expect(labels(user(dept, "uzman"))).toEqual(expect.arrayContaining(["Öneriler", "Satın alma siparişleri", "Tedarikçiler"]));
   }
 });
+
+test("Mal kabul Stok grubunda, Malzemelerden önce; herkes görür", () => {
+  const stok = NAV.filter((n) => n.group === "Stok");
+  expect(stok[0]).toMatchObject({ href: "/depo/mal-kabul", label: "Mal kabul", module: "inventory" });
+  expect(stok.map((n) => n.label)).toEqual(["Mal kabul", "Malzemeler", "Stok hareketleri", "Sayım"]);
+  for (const dept of ["satis", "depo", "planlama", "atolye", "satinalma", "yonetim"] as const) expect(labels(user(dept, "uzman"))).toContain("Mal kabul");
+});

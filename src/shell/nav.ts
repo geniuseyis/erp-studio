@@ -22,6 +22,8 @@ export const NAV: NavItem[] = [
   { href: "/satin-alma/oneriler", label: "Öneriler", module: "purchasing", group: "Satın alma", keywords: ["satın alma önerisi", "eksik malzeme", "kritik"] },
   { href: "/satin-alma/siparisler", label: "Satın alma siparişleri", module: "purchasing", group: "Satın alma", keywords: ["SAS", "onay"] },
   { href: "/satin-alma/tedarikciler", label: "Tedarikçiler", module: "purchasing", group: "Satın alma" },
+  // Herkes görür; mal kabul etmek inventory:execute ister (düğme ve form ekranda yok, serviste FORBIDDEN).
+  { href: "/depo/mal-kabul", label: "Mal kabul", module: "inventory", group: "Stok", keywords: ["irsaliye", "teslim"] },
   { href: "/stok/malzemeler", label: "Malzemeler", module: "inventory", group: "Stok" },
   { href: "/stok/hareketler", label: "Stok hareketleri", module: "inventory", group: "Stok" },
   { href: "/stok/sayim", label: "Sayım", module: "inventory", group: "Stok" },

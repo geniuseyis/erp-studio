@@ -1,7 +1,7 @@
 import { alias } from "drizzle-orm/pg-core";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
-import { goodsReceiptLines, goodsReceipts, materials, purchaseOrderLines, purchaseOrders, supplierItems, suppliers, users } from "@/db/schema";
+import { bomLines, goodsReceiptLines, goodsReceipts, materials, purchaseOrderLines, purchaseOrders, supplierItems, suppliers, users, workOrders } from "@/db/schema";
 import { isUuid } from "../context";
 import { istanbulDayStart } from "../production/calendar";
 import { matchesSearch } from "../text";
@@ -262,9 +262,57 @@ export async function getPurchaseOrder(db: Db, id: string, now: Date = new Date(
   };
 }
 
-/** Mal kabule açık siparişler (gönderilmiş ve kısmi): beklenen güne göre, gecikenler önce; beklenen günü olmayan sonda. 2 sorgu. */
-export async function listReceivable(db: Db, now: Date): Promise<PurchaseOrderRow[]> {
+export type ReceivableRow = PurchaseOrderRow & { remainingLineCount: number };
+
+/** Mal kabule açık siparişler (gönderilmiş ve kısmi): beklenen güne göre, gecikenler önce; beklenen günü olmayan sonda. Kalan kalem sayısıyla. 3 sorgu. */
+export async function listReceivable(db: Db, now: Date): Promise<ReceivableRow[]> {
   const { records, totals } = await orderRecords(db, inArray(purchaseOrders.status, ["sent", "partial"]));
+  const remaining = new Map<string, number>();
+  if (records.length > 0) {
+    const sums = await db
+      .select({ orderId: purchaseOrderLines.orderId, count: sql<number>`count(*)::int` })
+      .from(purchaseOrderLines)
+      .where(and(inArray(purchaseOrderLines.orderId, records.map((r) => r.order.id)), sql`${purchaseOrderLines.qtyMilli} > ${purchaseOrderLines.receivedMilli}`))
+      .groupBy(purchaseOrderLines.orderId);
+    for (const s of sums) remaining.set(s.orderId, Number(s.count));
+  }
   const at = (r: PurchaseOrderRow) => r.expectedAt?.getTime() ?? Number.POSITIVE_INFINITY;
-  return records.map((r) => toRow(r, totals, now)).sort((a, b) => (at(a) === at(b) ? a.code.localeCompare(b.code) : at(a) < at(b) ? -1 : 1));
+  return records
+    .map((r) => ({ ...toRow(r, totals, now), remainingLineCount: remaining.get(r.order.id) ?? 0 }))
+    .sort((a, b) => (at(a) === at(b) ? a.code.localeCompare(b.code) : at(a) < at(b) ? -1 : 1));
+}
+
+export type RecentReceipt = { id: string; code: string; orderId: string; orderCode: string; deliveryNote: string; receivedByName: string; createdAt: Date };
+
+/** Son mal kabuller, yeniden eskiye. */
+export async function listRecentReceipts(db: Db, limit = 10): Promise<RecentReceipt[]> {
+  const rows = await db
+    .select({ receipt: goodsReceipts, orderCode: purchaseOrders.code, receivedByName: users.name })
+    .from(goodsReceipts)
+    .innerJoin(purchaseOrders, eq(purchaseOrders.id, goodsReceipts.purchaseOrderId))
+    .innerJoin(users, eq(users.id, goodsReceipts.receivedBy))
+    .orderBy(desc(goodsReceipts.createdAt), desc(goodsReceipts.code))
+    .limit(limit);
+  return rows.map((r) => ({
+    id: r.receipt.id,
+    code: r.receipt.code,
+    orderId: r.receipt.purchaseOrderId,
+    orderCode: r.orderCode,
+    deliveryNote: r.receipt.deliveryNote,
+    receivedByName: r.receivedByName,
+    createdAt: r.receipt.createdAt,
+  }));
+}
+
+/** Bu malzemelerden birini kullanan, malzemesi henüz ayrılmamış planlı iş emri kodları (mal kabul onay penceresi için). */
+export async function waitingWorkOrderCodes(db: Db, materialIds: string[]): Promise<string[]> {
+  const ids = [...new Set(materialIds)].filter(isUuid);
+  if (ids.length === 0) return [];
+  const rows = await db
+    .selectDistinct({ code: workOrders.code })
+    .from(workOrders)
+    .innerJoin(bomLines, eq(bomLines.productId, workOrders.productId))
+    .where(and(eq(workOrders.status, "planned"), eq(workOrders.materialsReserved, false), inArray(bomLines.materialId, ids)))
+    .orderBy(asc(workOrders.code));
+  return rows.map((r) => r.code);
 }

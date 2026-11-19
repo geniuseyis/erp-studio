@@ -15,6 +15,8 @@ import {
   type MaterialFilter,
   type MovementFilter,
 } from "@/domain/inventory/queries";
+import { listReceivable, listRecentReceipts } from "@/domain/purchasing/queries";
+import { receiveGoods } from "@/domain/purchasing/receiving";
 import { useDb } from "@/shell/db-context";
 import { useAction } from "@/shell/useAction";
 
@@ -59,3 +61,16 @@ export const useCreateCount = () => useAction(createCount);
 export const useSetCountLine = () => useAction(setCountLine);
 export const useApproveCount = () => useAction(approveCount);
 export const useCancelCount = () => useAction(cancelCount);
+
+/** Mal kabule açık siparişler (gönderilmiş ve kısmi), geciken önce. */
+export function useReceivable() {
+  const { db } = useDb();
+  return useQuery({ queryKey: ["purchasing", "receivable"], queryFn: () => listReceivable(db, new Date()) });
+}
+
+export function useRecentReceipts() {
+  const { db } = useDb();
+  return useQuery({ queryKey: ["purchasing", "receipts"], queryFn: () => listRecentReceipts(db, 10) });
+}
+
+export const useReceiveGoods = () => useAction(receiveGoods);

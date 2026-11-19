@@ -22,6 +22,7 @@ import {
   SawIcon,
   SparkIcon,
   TagIcon,
+  TruckIcon,
   UsersIcon,
 } from "@/ui/icons";
 import { SLIDE_SPRING } from "@/ui/motion";
@@ -40,6 +41,7 @@ const ICON: Record<string, ComponentType<{ size?: number }>> = {
   "/satin-alma/oneriler": SparkIcon,
   "/satin-alma/siparisler": CartIcon,
   "/satin-alma/tedarikciler": FactoryIcon,
+  "/depo/mal-kabul": TruckIcon,
   "/stok/malzemeler": BoxIcon,
   "/stok/hareketler": ArrowsIcon,
   "/stok/sayim": ClipboardIcon,
