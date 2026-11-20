@@ -1,5 +1,5 @@
 import { alias } from "drizzle-orm/pg-core";
-import { and, asc, desc, eq, inArray, type SQL, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, type SQL, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { bomLines, materials, products, routings, salesOrderLines, salesOrders, stations, users, workOrders, workOrderSteps } from "@/db/schema";
 import { isUuid } from "../context";
@@ -417,4 +417,21 @@ export async function kanbanColumns(db: Db, now: Date): Promise<KanbanColumn[]> 
     ...stationList.map((s): KanbanColumn => ({ key: `station:${s.code}`, title: s.name, items: (byStation.get(s.code) ?? []).sort(byDue) })),
     { key: "completed", title: "Tamamlandı", items: completed },
   ];
+}
+
+/**
+ * Bugünün iş emirleri: açık (planlı ya da üretimde) ve bugün (İstanbul günü) bitmemiş bir adımı planlı olanlar.
+ * Hızlı yardımcı "bugünün iş emirleri" sorusunu bununla cevaplar.
+ */
+export async function todaysWorkOrders(db: Db, now: Date): Promise<WorkOrderRow[]> {
+  const start = istanbulDayStart(now);
+  const end = new Date(start.getTime() + DAY_MS);
+  const steps = await db
+    .select({ id: workOrderSteps.workOrderId })
+    .from(workOrderSteps)
+    .where(and(gte(workOrderSteps.plannedDay, start), lt(workOrderSteps.plannedDay, end), isNull(workOrderSteps.finishedAt)));
+  const ids = new Set(steps.map((s) => s.id));
+  if (ids.size === 0) return [];
+  const rows = await workOrderRows(db);
+  return rows.filter((w) => ids.has(w.id) && (w.status === "planned" || w.status === "in_progress")).sort((a, b) => a.code.localeCompare(b.code));
 }
