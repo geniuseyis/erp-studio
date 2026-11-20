@@ -9,6 +9,7 @@ import { AlertIcon, MenuIcon, MoonIcon, SunIcon } from "@/ui/icons";
 import { StatusChip } from "@/ui/StatusChip";
 import { useTheme } from "@/ui/theme";
 import { AccountMenu } from "./AccountMenu";
+import { Assistant } from "./Assistant";
 import { CommandPalette, SearchTrigger } from "./CommandPalette";
 import { useDb } from "./db-context";
 import { Sidebar } from "./Sidebar";
@@ -110,6 +111,7 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
 
         <main tabIndex={-1} className="min-h-0 flex-1 overflow-auto outline-none">{children}</main>
         <CommandPalette user={user} open={paletteOpen} onOpenChange={setPaletteOpen} />
+        <Assistant key={user.id} />
       </div>
     </div>
   );

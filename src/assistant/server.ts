@@ -175,3 +175,8 @@ export async function handleAsistan(request: Request, deps: Deps): Promise<Respo
     return json({ mode: "simple", reason: "upstream_error" }, 200, headers);
   }
 }
+
+/** Balonun başlığı için: yapay zekâ modu açık mı. Anahtarın kendisi ya da kısmı asla dönmez. */
+export function assistantStatus(deps: Pick<Deps, "apiKey">): Response {
+  return new Response(JSON.stringify({ ai: Boolean(deps.apiKey) }), { headers: { "content-type": "application/json", "cache-control": "no-store" } });
+}
