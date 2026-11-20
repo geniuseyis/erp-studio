@@ -388,7 +388,9 @@ test.describe("liste ekranlarında yerleşim ayarı", () => {
     expect(await page.evaluate(() => document.body.style.userSelect)).toBe("");
   });
 
-  test("PageUp/PageDown 160 px, End pencereyi doldurur ve altta tam 20 px boşluk bırakır", async ({ page }) => {
+  // Ana alan altta asistan balonu için 72 px (4,5 rem) boş bırakır; tablolar o payı düşerek dolar.
+  const BUBBLE_PAD = 72;
+  test("PageUp/PageDown 160 px, End pencereyi doldurur ve altta 20 px boşluk ve asistan balonu için 72 px pay bırakır", async ({ page }) => {
     const { handle, root } = await openActivity(page);
     const auto = await settledHeight(root);
     await handle.focus();
@@ -407,14 +409,14 @@ test.describe("liste ekranlarında yerleşim ayarı", () => {
         const card = document.querySelector('[role="separator"]')?.parentElement as HTMLElement;
         return { gap: main.getBoundingClientRect().bottom - card.getBoundingClientRect().bottom, spill: main.scrollHeight - main.clientHeight };
       });
-    await expect.poll(async () => Math.abs((await gap()).gap - 20)).toBeLessThanOrEqual(1);
+    await expect.poll(async () => Math.abs((await gap()).gap - (20 + BUBBLE_PAD))).toBeLessThanOrEqual(1);
     expect((await gap()).spill).toBeLessThanOrEqual(1);
 
-    // Alan aşılınca main kayar ve en altta da kabın altında tam 20 px boşluk kalır (padding değil, son öğe).
+    // Alan aşılınca main kayar ve en altta da kabın altında 20 px boşluk ve balon payı kalır.
     for (let i = 0; i < 3; i++) await page.keyboard.press("PageDown");
     await expect.poll(async () => (await gap()).spill).toBeGreaterThan(400);
     await page.locator("main").evaluate((el) => el.scrollTo(0, el.scrollHeight));
-    await expect.poll(async () => Math.abs((await gap()).gap - 20)).toBeLessThanOrEqual(1);
+    await expect.poll(async () => Math.abs((await gap()).gap - (20 + BUBBLE_PAD))).toBeLessThanOrEqual(1);
   });
 
   test("1280×720'de bant daraltılmış başlar; kayıtlı 'açık' seçim yenilemeden sonra kazanır", async ({ page }) => {

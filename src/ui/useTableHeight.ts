@@ -7,6 +7,8 @@ const STEP = 40;
 const PAGE_STEP = 160;
 /** Sayfanın alt boşluğu (Page fill: `after:` ara öğesi, 20 px); "pencereyi doldur" bunu bırakır. */
 const BOTTOM_GAP = 20;
+/** Asistan balonunun (56 px + kenar) son satırı örtmemesi için sayfa altında bırakılan yer; AppGuard'daki alt boşlukla aynıdır. */
+const BUBBLE_ROOM = 72;
 
 /**
  * Tablo kabının yüksekliği: `null` otomatik (kalan alanı doldurur, 24rem'den kısa olmaz), sayı ise kullanıcının ayarı.
@@ -62,10 +64,8 @@ export function useTableHeight(rootRef: RefObject<HTMLElement | null>, screen: s
     const el = rootRef.current;
     if (!el) return TABLE_MIN;
     const scroller = el.closest("main");
-    // Alt dolgu (asistan balonu için ayrılan yer) kapın altında boş kalır: son satır balonun altına girmez.
-    const pad = scroller ? parseFloat(getComputedStyle(scroller).paddingBottom) || 0 : 0;
     const bottom = scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight;
-    return bottom - pad - el.getBoundingClientRect().top - BOTTOM_GAP;
+    return bottom - el.getBoundingClientRect().top - BOTTOM_GAP - BUBBLE_ROOM;
   }
 
   const handleProps = {

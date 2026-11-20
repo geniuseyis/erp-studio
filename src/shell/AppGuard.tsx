@@ -206,7 +206,7 @@ export function Page({ children, fill = false }: { children: ReactNode; fill?: b
   const screen = screenKey(usePathname());
   const fillValue = useMemo(() => ({ screen }), [screen]);
   const body = (
-    <div className={fill ? "flex flex-col gap-5 px-3 after:-mt-5 after:block after:shrink-0 after:h-5 after:content-[''] sm:px-6 md:h-full md:min-h-[44rem]" : "grid grid-cols-[minmax(0,1fr)] gap-5 px-3 pb-8 sm:px-6"}>
+    <div className={fill ? "flex flex-col gap-5 px-3 after:-mt-5 after:block after:shrink-0 after:h-[5.75rem] after:content-[''] sm:px-6 md:h-full md:min-h-[44rem]" : "grid grid-cols-[minmax(0,1fr)] gap-5 px-3 pb-[5.5rem] sm:px-6"}>
       {children}
     </div>
   );
