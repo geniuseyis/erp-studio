@@ -38,12 +38,21 @@ Son güncelleme: 2026-11-18 (Plan 2B: haftalık plan, termin önerisi ve kanban 
 - **Örnek veride hafta senaryoları:** son üç iş gününe 15 sipariş eklendi (yoğun hafta, termini kaçan toplu iş, planlanmamış iş emirleri, arkalığı gelmemiş planlı iş emirleri). Senaryolar anlık görüntünün alındığı güne değil, yükleme gününe göre aranır: birim testi pazartesiden pazara her açılış gününde hücre aşımı, termin sonrası planlı iş emri, planlanmamış iş emri, kanbanda "Malzeme bekliyor" kartı ve bugünden başlayan dört iş gününün dolu olduğunu denetler. Geçmişin günlük sipariş sayısı 1–3'ten 1–2'ye indi (dosya boyutu için).
 - Ekran görüntüleri: `docs/screens/asama-2b` (haftalık plan masaüstü, tablet ve telefon; taşıma onayı; kanban; termin önerisi; özeti gizlenmiş liste).
 
+## Yapılanlar (Aşama 3A: satın alma)
+
+- **Satın alma önerileri (`/satin-alma/oneriler`):** kritik stok ve malzeme bekleyen iş emirlerinden, tedarikçiye göre gruplanmış sipariş önerisi (`purchaseSuggestions`). Miktar en az sipariş miktarına ve birim adımına yukarı yuvarlanır; yoldaki taslak, onay bekleyen, gönderilmiş ve kısmi siparişlerin kalanı ihtiyaçtan düşer. "Taslak oluştur" onay penceresinden sonra siparişi açar. Üstteki "Malzeme bekleyen iş emri" sayısı bütün bekleyen iş emirlerini sayar (kanban sütunuyla aynı küme).
+- **Tedarikçiler (`/satin-alma/tedarikciler`):** liste, çekmece, malzeme başına fiyat ve en az sipariş miktarı, tercihli tedarikçi (malzeme başına en çok bir), açık siparişler ve geçmiş.
+- **Satın alma siparişleri (`/satin-alma/siparisler`):** taslak, onay bekliyor, gönderildi, kısmi, teslim alındı, iptal. KDV hariç tutara göre iki kademeli onay: 50.000 TL'ye kadar (dahil) onay yok, üstü Satın Alma müdürü, 250.000 TL üstü müdür ve Yönetim; eşikler `settings` tablosunda. Kademe gönderimde donar, oluşturan kendi siparişini onaylayamaz, başka onaycı yoksa gönderim reddedilir, son onayla sipariş kendiliğinden gönderilir. Açık tutar her yerde teslim alınmamış kalan kısımdır (`openNetKurus`).
+- **Mal kabul (`/depo/mal-kabul`):** mal kabule açık siparişler (geciken önce), son 10 mal kabul, irsaliye numarası (tedarikçi başına tekil; eş zamanlı girişler danışma kilidiyle sıraya girer) ve kalem miktarlarıyla kısmi ya da tam teslim. Stok defterine ortalama maliyetle girer; malzeme bekleyen iş emirleri termin sırasıyla ayrılır ve "üretime hazır" olur. Yalnızca `inventory:execute` yapabilir, diğerleri okur.
+- **Örnek veri:** 7 kurgusal tedarikçi (fiyat = kaynaklı malzeme fiyatı, alternatifler %6-7 pahalı) ve 9 sipariş (her durumdan; arkalık hiçbir açık siparişte yok). Anlık görüntü 621 KB'tan 632 KB'a çıktı (sınır 650 KB, test sınırı 700 KB).
+- **Bitti tanımı testi:** `purchase-flow.spec.ts`: kritik stoktan öneri, taslak, müdür onayı, gönderim, depoda mal kabul ve bekleyen iş emrinin hazır olması.
+- İşlemler'de tür etiketi "Satın alma siparişi", Ctrl+K gruplarında "Satış siparişleri" ve "Satın alma siparişleri".
 ## Testler
 
 | Tür | Sayı | Not |
 |---|---|---|
-| Birim (Vitest) | 601 | Gerçek PGlite veritabanıyla; dosya başına paylaşılan veritabanı |
-| Tarayıcı (Playwright) | 133 (+1 elle çalıştırılan: ekran görüntüsü) | Başsız Chrome, "hareketi azalt" açık |
+| Birim (Vitest) | 721 | Gerçek PGlite veritabanıyla; dosya başına paylaşılan veritabanı |
+| Tarayıcı (Playwright) | 153 (+1 elle çalıştırılan: ekran görüntüsü) | Başsız Chrome, "hareketi azalt" açık |
 | Üretim dolaşımı | `scripts/walkthrough.mjs` | Giriş, stok girişi, sayım, palet, siparişten sevke (satış, planlama, atölye, depo), haftalık planda klavyeyle bir adım taşıma, kullanıcı ekleme, sıfırlama; konsol hatası ve 4xx yok |
 
 ## Tarayıcıda PostgreSQL
@@ -101,4 +110,4 @@ Ayrıca örnek veriyi tarayıcıda servislerle üretmek (2.000'den fazla sorgu) 
 
 ## Sıradaki
 
-Aşama 2 (satış ve üretim) tamam. Sırada Aşama 3 (satın alma), ardından Aşama 4 (raporlar ve 12 aylık veri) ve Aşama 5 (asistan ve yayın).
+Aşama 2 (satış ve üretim) ve Aşama 3A (satın alma) tamam. Sırada Aşama 3B (kur, döviz, bildirimler, bekleyen işler, eşik düzenleme), ardından Aşama 4 (raporlar ve 12 aylık veri) ve Aşama 5 (asistan ve yayın).

@@ -16,6 +16,7 @@ Mobilya üretimi yapan bir atölye için kurumsal kaynak planlama (ERP) uygulama
 - **Ürünler:** mobilya kataloğundan ürünler; reçete, rota, mamul stoğu ve birim maliyet.
 - **İş emirleri:** adım çizelgesi, ayrılan malzemeler, eksik listesi; planlama başlangıç gününü verir. Liste ya da kanban (Malzeme bekliyor, Planlanmadı, istasyon sütunları, Tamamlandı).
 - **Haftalık plan:** istasyon × gün ızgarası, kapasite çubuğu; kart fareyle sürüklenir ya da klavyeyle taşınır, her taşıma önce onay ister ve işlem geçmişine yazılır. Taslak siparişte istasyon kapasitesine göre önerilen termin.
+- **Satın alma:** kritik stok ve malzeme bekleyen iş emirlerinden tedarikçiye göre sipariş önerisi, tedarikçiler ve fiyat listeleri, satın alma siparişleri (50.000 TL'ye kadar onaysız, üstü Satın Alma müdürü, 250.000 TL üstü müdür ve Yönetim onayı; kademe gönderimde donar) ve depoda mal kabul (irsaliye, kısmi teslim, ortalama maliyet; malzeme bekleyen iş emirleri otomatik ayrılır).
 - **İşlemler:** her değişikliğin kaydı; tür, departman, kişi, tarih ve metinle süzme, CSV.
 - **Atölye:** istasyonun kuyruğu, tablette rahat büyük Başla ve Bitti düğmeleri; son adım bitince mamul stoğa girer, sipariş Hazır olur, depo sevk eder.
 - **Kullanıcı yönetimi:** bilgi işlem ve yönetim kullanıcı ekler, düzenler, pasife alır, parola sıfırlar.
@@ -90,10 +91,10 @@ npm run test:e2e   # tarayıcı testleri (Playwright, başsız Chrome)
 npm run verify     # tür denetimi, lint, birim testleri ve üretim derlemesi
 ```
 
-601 birim testi ve 133 tarayıcı testi var. Tarayıcı testleri siparişten sevke beş departmanlı akışı, haftalık planda sürükle-bırak ve klavyeyle taşımayı, kanbanı, yetkileri, Türkçe aramayı, çift tıklamayı, iki sekmeyi, kapalı tarayıcı deposunu, klavye odağını ve telefon genişliğini kapsar.
+721 birim testi ve 153 tarayıcı testi var. Tarayıcı testleri siparişten sevke beş departmanlı akışı, satın almada kritik stoktan öneri, onay, mal kabul ve üretime hazır iş emrine uzanan akışı, haftalık planda sürükle-bırak ve klavyeyle taşımayı, kanbanı, yetkileri, Türkçe aramayı, çift tıklamayı, iki sekmeyi, kapalı tarayıcı deposunu, klavye odağını ve telefon genişliğini kapsar.
 
 ## Durum
 
-Plan 1 (temel, stok ve kullanıcılar), Plan 2A (satış ve üretim: siparişten sevke) ve Plan 2B (haftalık üretim planı, termin önerisi, kanban) tamam; Aşama 2 bitti. Sırada satın alma, ardından raporlar ve yapay zekâ destekli yardımcı var.
+Plan 1 (temel, stok ve kullanıcılar), Plan 2A (satış ve üretim: siparişten sevke), Plan 2B (haftalık üretim planı, termin önerisi, kanban) ve Plan 3A (satın alma: öneri, onay, mal kabul) tamam; sırada Plan 3B (kur, bildirimler, eşik düzenleme), ardından raporlar ve yapay zekâ destekli yardımcı var.
 
 Bu bir vitrin sürümüdür: kişi ve firma adları kurgusaldır, fiyatların bir kısmı tahmindir.
