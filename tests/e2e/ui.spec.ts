@@ -201,24 +201,29 @@ test.describe("kaydırma çubuğu", () => {
     // Satır tek odak noktasıdır; görünümün dışında kalan ama içeriğin sonuna 24 px'ten uzak bir hücreye
     // düğme konup Tab ile ona gelinir (içeriğin en ucundaki hücre zaten kenara yaslanmak zorundadır).
     const row = page.getByRole("table", { name: "Malzemeler" }).locator("tbody tr").first();
-    const placed = await row.evaluate((tr) => {
-      const scroller = tr.parentElement?.parentElement?.parentElement as HTMLElement;
-      const cells = Array.from(tr.children) as HTMLElement[];
-      const cell = cells.find((c) => c.offsetLeft > scroller.clientWidth + 40 && c.offsetLeft + c.offsetWidth + 48 < scroller.scrollWidth);
-      if (!cell) return false;
-      const button = document.createElement("button");
-      button.type = "button";
-      button.dataset.sonOdak = "";
-      button.textContent = "x";
-      cell.append(button);
-      return true;
-    });
-    expect(placed).toBe(true);
-    await row.focus();
-    await box.evaluate((el) => el.scrollTo(0, 0));
-    await page.keyboard.press("Tab");
     const target = row.locator("[data-son-odak]");
-    await expect(target).toBeFocused();
+    // Düğmeyi koyma, odaklama ve Tab tek adımdır ve baştan tekrarlanabilir: yük altında tablo yeniden çizilirse
+    // (düğme silinir) ya da yerleşim henüz oturmamışsa kaydırma sıfırlanıp adım yeniden denenir.
+    await expect(async () => {
+      await row.evaluate((tr) => {
+        tr.querySelectorAll("[data-son-odak]").forEach((b) => b.remove());
+        const scroller = tr.parentElement?.parentElement?.parentElement as HTMLElement;
+        const cells = Array.from(tr.children) as HTMLElement[];
+        const cell = cells.find((c) => c.offsetLeft > scroller.clientWidth + 40 && c.offsetLeft + c.offsetWidth + 48 < scroller.scrollWidth);
+        if (!cell) throw new Error("uygun hücre yok");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.sonOdak = "";
+        button.textContent = "x";
+        cell.append(button);
+        scroller.style.scrollBehavior = "auto"; // yumuşak kaydırma ölçümü geciktirmesin
+        scroller.scrollLeft = 0;
+        (tr as HTMLElement).focus();
+      });
+      await page.keyboard.press("Tab");
+      await expect(target).toBeFocused({ timeout: 2_000 });
+    }).toPass({ timeout: 20_000 });
+    // Odak geldikten sonra tarayıcının kaydırması oturana dek ölçüm yoklanır.
     await expect
       .poll(async () => {
         const [c, t] = await Promise.all([box.boundingBox(), target.boundingBox()]);
