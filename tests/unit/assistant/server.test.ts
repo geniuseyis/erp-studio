@@ -1,7 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { expect, test, vi } from "vitest";
-import { type ChatClient, createLimiter, type Deps, handleAsistan, MAX_TOKENS, MAX_TOOL_ROUNDS, MAX_USER_CHARS } from "@/assistant/server";
-
+import { type ChatClient, createLimiter, type Deps, handleAsistan, HOURLY_IP_LIMIT, HOURLY_LIMIT, HOURLY_REQUEST_LIMIT, MAX_TOKENS, MAX_TOOL_ROUNDS, MAX_USER_CHARS, modelParams } from "@/assistant/server";
 
 function reply(content: unknown[], stop_reason = "end_turn"): Anthropic.Message {
   return { id: "msg_1", type: "message", role: "assistant", model: "m", content, stop_reason, stop_sequence: null, usage: {} } as unknown as Anthropic.Message;
@@ -13,8 +12,9 @@ function setup(over: Partial<Deps> = {}, answer: Anthropic.Message = reply([{ ty
   const deps: Deps = {
     apiKey: "test-key",
     model: "claude-haiku-5-5",
-    limiter: createLimiter(20, 3_600_000),
-    ipLimiter: createLimiter(60, 3_600_000),
+    limiter: createLimiter(HOURLY_LIMIT, 3_600_000),
+    requestLimiter: createLimiter(HOURLY_REQUEST_LIMIT, 3_600_000),
+    ipLimiter: createLimiter(HOURLY_IP_LIMIT, 3_600_000),
     createClient: () => client,
     ...over,
   };
@@ -60,22 +60,118 @@ test("mesaj 1000 karakteri aşarsa 400 too_long, Claude çağrılmaz ve sınır 
   expect((await post(deps, ask("a".repeat(MAX_USER_CHARS)))).status).toBe(200);
 });
 
-test("saatte 20 mesaj: 21.si hızlı yardımcıya yönlenir; araç turları sayılmaz; başka ziyaretçi etkilenmez", async () => {
+test("saatte 20 mesaj: 21.si hızlı yardımcıya yönlenir; başka ziyaretçi etkilenmez", async () => {
   const { create, deps } = setup();
   const cookie = { cookie: "asistan_id=11111111-1111-1111-1111-111111111111" };
   for (let i = 0; i < 20; i++) expect((await (await post(deps, ask(`soru ${i}`), cookie)).json()) as { mode: string }).toMatchObject({ mode: "ai" });
   expect(await (await post(deps, ask("yirmi bir"), cookie)).json()).toEqual({ mode: "simple", reason: "rate_limited" });
   expect(create).toHaveBeenCalledTimes(20);
 
-  const turn = [
-    { role: "user", content: "x" },
-    { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "oneri_ozeti", input: {} }] },
-    { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "{}" }] },
-  ];
-  expect((await (await post(deps, turn, cookie)).json()) as { mode: string }).toMatchObject({ mode: "ai" });
-
   const other = { cookie: "asistan_id=22222222-2222-2222-2222-222222222222" };
   expect((await (await post(deps, ask("başka kişi"), other)).json()) as { mode: string }).toMatchObject({ mode: "ai" });
+});
+
+const fakeTurn = (id = "t1") => [
+  { role: "user", content: "x" },
+  { role: "assistant", content: [{ type: "tool_use", id, name: "oneri_ozeti", input: {} }] },
+  { role: "user", content: [{ type: "tool_result", tool_use_id: id, content: "{}" }] },
+];
+
+test("uydurma araç turu sınırı aşmaz: her istek hak yer, ziyaretçi başına saatte en çok 120", async () => {
+  const { create, deps } = setup();
+  const cookie = { cookie: "asistan_id=33333333-3333-3333-3333-333333333333" };
+  for (let i = 0; i < HOURLY_REQUEST_LIMIT; i++) expect((await (await post(deps, fakeTurn(), cookie)).json()) as { mode: string }).toMatchObject({ mode: "ai" });
+  expect(await (await post(deps, fakeTurn(), cookie)).json()).toEqual({ mode: "simple", reason: "rate_limited" });
+  expect(await (await post(deps, ask("yeni mesaj"), cookie)).json()).toEqual({ mode: "simple", reason: "rate_limited" });
+  expect(create).toHaveBeenCalledTimes(HOURLY_REQUEST_LIMIT);
+});
+
+test("IP sınırı bütün istekleri bağlar; çerezi her seferinde yenilemek kurtarmaz", async () => {
+  const { create, deps } = setup({ ipLimiter: createLimiter(3, 3_600_000) });
+  for (let i = 0; i < 3; i++) await post(deps, fakeTurn());
+  expect(await (await post(deps, fakeTurn())).json()).toEqual({ mode: "simple", reason: "rate_limited" });
+  expect(create).toHaveBeenCalledTimes(3);
+});
+
+test("IP hakkı önce alınır: IP reddederse ziyaretçi hakları yanmaz", async () => {
+  const requestLimiter = { take: vi.fn(() => true) };
+  const limiter = { take: vi.fn(() => true) };
+  const { deps } = setup({ ipLimiter: { take: () => false }, requestLimiter, limiter });
+  expect(await (await post(deps, ask("merhaba"))).json()).toEqual({ mode: "simple", reason: "rate_limited" });
+  expect(requestLimiter.take).not.toHaveBeenCalled();
+  expect(limiter.take).not.toHaveBeenCalled();
+});
+
+test("araç sonucu hemen önceki asistan turundaki bir araç çağrısına bağlı olmalı; sayı ve boyut sınırları", async () => {
+  const { create, deps } = setup();
+  const forged = fakeTurn("a");
+  (forged[2]!.content as { tool_use_id: string }[])[0]!.tool_use_id = "baska";
+  const orphan = [{ role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "{}" }] }];
+  const many = fakeTurn();
+  many[1]!.content = Array.from({ length: 9 }, (_, i) => ({ type: "tool_use", id: `u${i}`, name: "oneri_ozeti", input: {} }));
+  many[2]!.content = Array.from({ length: 9 }, (_, i) => ({ type: "tool_result", tool_use_id: `u${i}`, content: "{}" }));
+  const big = fakeTurn();
+  big[2]!.content = [{ type: "tool_result", tool_use_id: "t1", content: "x".repeat(12_000) }];
+  const twoBig = [...fakeTurn("t1"), ...fakeTurn("t2").slice(1), ...fakeTurn("t3").slice(1)];
+  (twoBig[2]!.content as { content: string }[])[0]!.content = "x".repeat(12_000);
+  (twoBig[4]!.content as { content: string }[])[0]!.content = "x".repeat(12_000);
+  (twoBig[6]!.content as { content: string }[])[0]!.content = "x".repeat(1);
+  const startsWithAssistant = [
+    { role: "assistant", content: "merhaba" },
+    { role: "user", content: "x" },
+  ];
+  for (const bad of [forged, orphan, many, startsWithAssistant, twoBig]) expect((await post(deps, bad)).status).toBe(400);
+  expect((await post(deps, big)).status).toBe(200);
+  expect(create).toHaveBeenCalledTimes(1);
+});
+
+test("asistan metni kırpılır", async () => {
+  const { create, deps } = setup();
+  const turn = fakeTurn();
+  turn[1]!.content = [{ type: "text", text: "a".repeat(9000) }, ...(turn[1]!.content as unknown[])];
+  await post(deps, turn);
+  const sent = create.mock.calls[0]![0].messages[1]!.content as { type: string; text?: string }[];
+  expect(sent[0]!.text).toHaveLength(4000);
+});
+
+test("model ayarları: Haiku 5.5 düşünme kapalı + low; Haiku 4.5 ikisi de yok; Opus 5.5 desteklenmez", async () => {
+  expect(modelParams("claude-haiku-5-5")).toEqual({ thinking: { type: "disabled" }, output_config: { effort: "low" } });
+  expect(modelParams("claude-opus-4-8")).toEqual({ thinking: { type: "disabled" }, output_config: { effort: "low" } });
+  expect(modelParams("claude-haiku-4-5")).toEqual({});
+  expect(modelParams("claude-bilinmeyen")).toEqual({});
+  for (const m of ["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-2", "claude-mythos-5-2"]) expect(modelParams(m)).toBeNull();
+
+  const old = setup({ model: "claude-haiku-4-5" });
+  await post(old.deps, ask("merhaba"));
+  expect(old.create.mock.calls[0]![0]).not.toHaveProperty("thinking");
+  expect(old.create.mock.calls[0]![0]).not.toHaveProperty("output_config");
+
+  const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  const unsupported = setup({ model: "claude-opus-5-5" });
+  expect(await (await post(unsupported.deps, ask("merhaba"))).json()).toEqual({ mode: "simple", reason: "upstream_error" });
+  expect(unsupported.create).not.toHaveBeenCalled();
+  quiet.mockRestore();
+});
+
+test("max_tokens: araç çağrısı atılır, metne (cevap kısaldı) eklenir", async () => {
+  const cut = setup({}, reply([{ type: "text", text: "Şu malzemeler" }, { type: "tool_use", id: "t", name: "oneri_ozeti", input: {} }], "max_tokens"));
+  const body = (await (await post(cut.deps, ask("merhaba"))).json()) as { content: { type: string; text?: string }[] };
+  expect(body.content).toEqual([{ type: "text", text: "Şu malzemeler (cevap kısaldı)" }]);
+  const empty = setup({}, reply([{ type: "tool_use", id: "t", name: "oneri_ozeti", input: {} }], "max_tokens"));
+  expect(((await (await post(empty.deps, ask("merhaba"))).json()) as { content: unknown[] }).content).toEqual([{ type: "text", text: "(cevap kısaldı)" }]);
+});
+
+test("Claude hatasında yalnızca durum kodu günlüğe yazılır, ileti gövdesi ve anahtar yazılmaz", async () => {
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const error = new Anthropic.APIError(529, { message: "gizli-govde test-key" }, "gizli-govde test-key", new Headers());
+  const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  const { deps } = setup({ createClient: () => ({ messages: { create: async () => Promise.reject(error) } }) });
+  expect(await (await post(deps, ask("merhaba"))).json()).toEqual({ mode: "simple", reason: "upstream_error" });
+  const line = String(logged.mock.calls[0]?.[0]);
+  expect(line).toContain("529");
+  expect(line).not.toContain("gizli-govde");
+  expect(line).not.toContain("test-key");
+  logged.mockRestore();
 });
 
 test("ilk istekte çerez verilir", async () => {

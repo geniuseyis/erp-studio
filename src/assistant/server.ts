@@ -8,10 +8,16 @@ export const MAX_USER_CHARS = 1000;
 export const MAX_TOOL_ROUNDS = 5;
 export const MAX_TOKENS = 800;
 export const HOURLY_LIMIT = 20;
-export const HOURLY_IP_LIMIT = 60;
+/** Ziyaretçi başına saatlik İSTEK sınırı: araç turları dahil her POST bir hak yer (20 mesaj × ~6 tur). */
+export const HOURLY_REQUEST_LIMIT = 120;
+/** IP başına saatlik istek sınırı: çerezi silip yeniden başlayan istemciyi de bağlar. */
+export const HOURLY_IP_LIMIT = 360;
 export const DEFAULT_MODEL = "claude-haiku-5-5";
 const MAX_MESSAGES = 40;
 const MAX_TOOL_RESULT_CHARS = 12_000;
+const MAX_TOOL_RESULT_TOTAL = 24_000;
+const MAX_RESULTS_PER_TURN = 8;
+const MAX_ASSISTANT_TEXT = 4000;
 const MAX_BODY_CHARS = 120_000;
 const COOKIE = "asistan_id";
 
@@ -57,9 +63,11 @@ export function createLimiter(limit: number, windowMs: number, clock: () => numb
 export type Deps = {
   apiKey: string | undefined;
   model: string;
-  /** Ziyaretçi (IP + çerez) başına saatlik mesaj sınırı. */
+  /** Ziyaretçi (IP + çerez) başına saatlik yeni kullanıcı mesajı sınırı (20). */
   limiter: Limiter;
-  /** Çerez silinerek aşılmasın diye yalnızca IP için daha geniş ikinci sınır. */
+  /** Ziyaretçi başına saatlik istek sınırı; her POST bir hak yer. */
+  requestLimiter: Limiter;
+  /** IP başına saatlik istek sınırı; her POST bir hak yer, önce bu alınır. */
   ipLimiter: Limiter;
   createClient?: (apiKey: string) => ChatClient;
 };
@@ -75,24 +83,37 @@ function parseMessages(raw: unknown): Message[] | "bad_request" | "too_long" | "
   if (!Array.isArray(raw) || raw.length === 0) return "bad_request";
   if (raw.length > MAX_MESSAGES) return "too_many_messages";
   const out: Message[] = [];
+  let resultChars = 0;
   for (const m of raw) {
     if (!isRecord(m) || (m.role !== "user" && m.role !== "assistant")) return "bad_request";
+    // Konuşma düz bir kullanıcı mesajıyla başlar ve roller sırayla gider.
+    const prev = out[out.length - 1];
+    if (prev ? prev.role === m.role : m.role !== "user" || typeof m.content !== "string") return "bad_request";
     if (typeof m.content === "string") {
       if (m.role === "user" && (m.content.length > MAX_USER_CHARS || !m.content.trim())) return m.content.trim() ? "too_long" : "bad_request";
-      out.push({ role: m.role, content: m.content });
+      out.push({ role: m.role, content: m.role === "assistant" ? m.content.slice(0, MAX_ASSISTANT_TEXT) : m.content });
       continue;
     }
     if (!Array.isArray(m.content) || m.content.length === 0) return "bad_request";
+    // Araç sonuçları, hemen önceki asistan turundaki araç çağrılarına karşılık gelmelidir (uydurma tur yok).
+    const issued = new Set<string>();
+    if (m.role === "user" && Array.isArray(prev?.content)) {
+      for (const b of prev.content as unknown as Record<string, unknown>[]) if (b.type === "tool_use" && typeof b.id === "string") issued.add(b.id);
+    }
+    if (m.role === "user" && (m.content.length > MAX_RESULTS_PER_TURN || issued.size === 0)) return "bad_request";
     const blocks: Record<string, unknown>[] = [];
     for (const b of m.content) {
       if (!isRecord(b)) return "bad_request";
-      if (m.role === "assistant" && b.type === "text" && typeof b.text === "string") blocks.push({ type: "text", text: b.text });
+      if (m.role === "assistant" && b.type === "text" && typeof b.text === "string") blocks.push({ type: "text", text: b.text.slice(0, MAX_ASSISTANT_TEXT) });
       else if (m.role === "assistant" && b.type === "tool_use" && typeof b.id === "string" && typeof b.name === "string" && TOOL_NAMES.has(b.name) && isRecord(b.input))
         blocks.push({ type: "tool_use", id: b.id, name: b.name, input: b.input });
-      else if (m.role === "user" && b.type === "tool_result" && typeof b.tool_use_id === "string" && typeof b.content === "string")
-        blocks.push({ type: "tool_result", tool_use_id: b.tool_use_id, content: b.content.slice(0, MAX_TOOL_RESULT_CHARS), is_error: b.is_error === true });
-      else return "bad_request";
+      else if (m.role === "user" && b.type === "tool_result" && typeof b.tool_use_id === "string" && issued.has(b.tool_use_id) && typeof b.content === "string") {
+        const content = b.content.slice(0, MAX_TOOL_RESULT_CHARS);
+        resultChars += content.length;
+        blocks.push({ type: "tool_result", tool_use_id: b.tool_use_id, content, is_error: b.is_error === true });
+      } else return "bad_request";
     }
+    if (resultChars > MAX_TOOL_RESULT_TOTAL) return "bad_request";
     out.push({ role: m.role, content: blocks } as unknown as Message);
   }
   if (out[out.length - 1]?.role !== "user") return "bad_request";
@@ -112,22 +133,50 @@ function json(body: AsistanResponse, status = 200, headers: Record<string, strin
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store", ...headers } });
 }
 
+/**
+ * Ziyaretçinin IP'si. Vercel, istemci başlıklarını ezip `x-real-ip` ve `x-forwarded-for` değerlerini kendisi yazar;
+ * bu yüzden önce `x-real-ip`, yoksa `x-forwarded-for`'un ilk değeri alınır. (Vercel'e özgüdür: başka bir ters vekilin
+ * arkasında bu başlıklar istemci tarafından sahtelenebilir.)
+ */
 function visitor(request: Request): { ip: string; id: string; fresh: boolean } {
-  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const ip = forwarded || request.headers.get("x-real-ip") || "bilinmiyor";
+  const ip = request.headers.get("x-real-ip")?.trim() || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "bilinmiyor";
   const cookie = /(?:^|;\s*)asistan_id=([0-9a-f-]{36})/.exec(request.headers.get("cookie") ?? "")?.[1];
   return { ip, id: cookie ?? crypto.randomUUID(), fresh: !cookie };
 }
 
 function toBlocks(message: Anthropic.Message): AssistantBlock[] {
   if (message.stop_reason === "refusal") return [{ type: "text", text: "Bu isteğe yardımcı olamıyorum. ERP ile ilgili başka bir şey sorabilirsiniz." }];
+  const cut = message.stop_reason === "max_tokens";
   const blocks: AssistantBlock[] = [];
   for (const b of message.content) {
     if (b.type === "text" && b.text.trim()) blocks.push({ type: "text", text: b.text });
-    else if (b.type === "tool_use" && isRecord(b.input) && TOOL_NAMES.has(b.name)) blocks.push({ type: "tool_use", id: b.id, name: b.name, input: b.input });
+    // Jeton sınırında kesilen bir araç çağrısı eksik olabilir: atılır.
+    else if (!cut && b.type === "tool_use" && isRecord(b.input) && TOOL_NAMES.has(b.name)) blocks.push({ type: "tool_use", id: b.id, name: b.name, input: b.input });
+  }
+  if (cut) {
+    const last = blocks[blocks.length - 1];
+    if (last?.type === "text") last.text = `${last.text.trimEnd()} (cevap kısaldı)`;
+    else blocks.push({ type: "text", text: "(cevap kısaldı)" });
   }
   if (blocks.length === 0) blocks.push({ type: "text", text: "Bir cevap üretemedim. Soruyu başka sözlerle yazar mısınız?" });
   return blocks;
+}
+
+type ModelParams = Pick<Anthropic.MessageCreateParamsNonStreaming, "thinking" | "output_config">;
+
+/**
+ * Modele göre düşünme ve çaba ayarı (claude-api yönergesine göre). Düşünme kapalı + çaba "low": kısa cevaplarda
+ * 800 jeton düşünceye gitmez ve düşünce blokları tarayıcıya gidip gelmez. Bu ayar her modelde geçerli değildir:
+ * - Haiku 5.5, Sonnet 5, Opus 4.6/4.7/4.8, Sonnet 4.6, Opus 5: `disabled` + `effort` kabul edilir.
+ * - Haiku 4.5: `effort` yok (400); düşünme zaten kapalı gelir, ikisi de gönderilmez.
+ * - Opus 5.5, Sonnet 5.5, Fable ve Mythos: düşünme kapatılamaz (400) ve düşünce blokları geri yollanmalıdır;
+ *   bu uç düşünce bloklarını taşımaz, bu yüzden desteklenmez (null).
+ * - Bilinmeyen modeller: ayar gönderilmez, modelin varsayılanı geçerlidir.
+ */
+export function modelParams(model: string): ModelParams | null {
+  if (/^claude-(opus-5-5|sonnet-5-5|fable-|mythos-)/.test(model)) return null;
+  if (/^claude-(haiku-5-5|sonnet-5$|sonnet-4-6|opus-5$|opus-4-[678])/.test(model)) return { thinking: { type: "disabled" }, output_config: { effort: "low" } };
+  return {};
 }
 
 export async function handleAsistan(request: Request, deps: Deps): Promise<Response> {
@@ -145,17 +194,23 @@ export async function handleAsistan(request: Request, deps: Deps): Promise<Respo
   if (rounds > MAX_TOOL_ROUNDS) return json({ error: "tool_loop" }, 400);
 
   if (!deps.apiKey) return json({ mode: "simple", reason: "no_key" });
-
-  // Sınır yalnızca yeni kullanıcı mesajında düşer; araç turları aynı mesajın devamıdır.
-  const who = visitor(request);
-  const headers: Record<string, string> = who.fresh ? { "set-cookie": `${COOKIE}=${who.id}; Path=/api/asistan; Max-Age=86400; HttpOnly; SameSite=Lax` } : {};
-  if (rounds === 0) {
-    const ok = deps.limiter.take(`${who.ip}|${who.id}`) && deps.ipLimiter.take(who.ip);
-    if (!ok) return json({ mode: "simple", reason: "rate_limited" }, 200, headers);
+  const params = modelParams(deps.model);
+  if (!params) {
+    console.error("asistan: model desteklenmiyor", deps.model);
+    return json({ mode: "simple", reason: "upstream_error" });
   }
 
+  // Her POST hak yer; araç turu olarak görünen istek de (tur sayısı istemciden gelir, güvenilmez).
+  // IP hakkı önce alınır: IP sınırı reddederse ziyaretçi hakkı boşuna yanmaz.
+  const who = visitor(request);
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  const headers: Record<string, string> = who.fresh ? { "set-cookie": `${COOKIE}=${who.id}; Path=/api/asistan; Max-Age=86400; HttpOnly; SameSite=Lax${secure}` } : {};
+  const visitorKey = `${who.ip}|${who.id}`;
+  const allowed = deps.ipLimiter.take(who.ip) && deps.requestLimiter.take(visitorKey) && (rounds > 0 || deps.limiter.take(visitorKey));
+  if (!allowed) return json({ mode: "simple", reason: "rate_limited" }, 200, headers);
+
   try {
-    const client = deps.createClient ? deps.createClient(deps.apiKey) : new Anthropic({ apiKey: deps.apiKey });
+    const client = deps.createClient ? deps.createClient(deps.apiKey) : new Anthropic({ apiKey: deps.apiKey, timeout: 20_000, maxRetries: 1 });
     const message = await client.messages.create({
       model: deps.model,
       max_tokens: MAX_TOKENS,
@@ -163,15 +218,14 @@ export async function handleAsistan(request: Request, deps: Deps): Promise<Respo
       tools: TOOL_DEFS.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema })),
       // Son turda araç istenemez: model eldeki sonuçlarla cevabı yazar.
       tool_choice: rounds >= MAX_TOOL_ROUNDS ? { type: "none" } : { type: "auto" },
-      // Düşünme kapalı: kısa cevaplarda max_tokens'ı düşünce yemesin, düşünce blokları tarayıcıya gidip gelmesin.
-      thinking: { type: "disabled" },
-      output_config: { effort: "low" },
+      ...params,
       messages: parsed,
     });
     return json({ mode: "ai", content: toBlocks(message), stopReason: message.stop_reason }, 200, headers);
   } catch (error) {
-    // İleti ve konuşma günlüğe yazılmaz; yalnızca hata türü.
-    console.error("asistan: Claude çağrısı başarısız", error instanceof Error ? error.name : "bilinmiyor");
+    // Konuşma ve anahtar günlüğe yazılmaz; yalnızca hata türü ve (varsa) HTTP durumu.
+    const status = error instanceof Anthropic.APIError ? ` ${error.status}` : "";
+    console.error(`asistan: Claude çağrısı başarısız (${error instanceof Error ? error.name : "bilinmiyor"}${status})`);
     return json({ mode: "simple", reason: "upstream_error" }, 200, headers);
   }
 }
