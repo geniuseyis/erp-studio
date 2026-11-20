@@ -5,7 +5,7 @@ import { announceChange, useDb } from "@/shell/db-context";
 import { errorMessage } from "@/shell/useAction";
 import { useCtx } from "@/shell/useCtx";
 import type { AssistantBlock, AsistanResponse } from "./server";
-import { trimHistory } from "./history";
+import { dropIncompleteExchange, trimBySize, trimHistory } from "./history";
 import { answerSimple } from "./simple";
 import { isActionTool, type ActionPreview, previewActionTool, runActionTool, runReadTool } from "./tools";
 
@@ -113,13 +113,13 @@ export function useAssistant() {
     async (question: string) => {
       history.current.push({ role: "user", content: question });
       // Sunucuya yalnızca son birkaç alışveriş gider: konuşma uzadıkça istek ve maliyet büyümez.
-      history.current = trimHistory(history.current);
+      history.current = trimBySize(trimHistory(history.current));
       let retried = false;
       for (let round = 0; round <= MAX_ROUNDS; round++) {
         const res = await fetch("/api/asistan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history.current }) });
         const data = (await res.json()) as AsistanResponse;
         if ("error" in data) {
-          if (data.error === "too_many_messages" && !retried) {
+          if ((data.error === "too_many_messages" || data.error === "too_large") && !retried) {
             // Konuşma sunucunun üst sınırını aştı: yalnızca şimdiki soruyla bir kez yeniden denenir.
             retried = true;
             history.current = [{ role: "user", content: question }];
@@ -138,6 +138,7 @@ export function useAssistant() {
           } else {
             setMode("simple");
             if (data.reason === "rate_limited") add({ kind: "note", text: "Saatlik yapay zekâ sınırı doldu; hızlı yardımcıya geçildi." });
+            else if (data.reason === "unsupported_model") add({ kind: "note", text: "Yapay zekâ modeli bu yayında desteklenmiyor; hızlı yardımcıya geçildi." });
           }
           await answerLocally(question);
           return;
@@ -150,6 +151,8 @@ export function useAssistant() {
         for (const use of uses) results.push(await runTool(use));
         history.current.push({ role: "user", content: results });
       }
+      // Döngü cevap yazılmadan bitti: yarım alışveriş atılır, sonraki soru sunucunun rol denetimine takılmaz.
+      history.current = dropIncompleteExchange(history.current);
     },
     [add, answerLocally, runTool],
   );

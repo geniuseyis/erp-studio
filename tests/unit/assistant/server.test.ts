@@ -1,6 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { expect, test, vi } from "vitest";
-import { type ChatClient, createLimiter, type Deps, handleAsistan, HOURLY_IP_LIMIT, HOURLY_LIMIT, HOURLY_REQUEST_LIMIT, MAX_TOKENS, MAX_TOOL_ROUNDS, MAX_USER_CHARS, modelParams } from "@/assistant/server";
+import { trimBySize, trimHistory } from "@/assistant/history";
+import { type ChatClient, createLimiter, ipKey, type Deps, handleAsistan, HOURLY_IP_LIMIT, HOURLY_LIMIT, HOURLY_REQUEST_LIMIT, MAX_TOKENS, MAX_TOOL_ROUNDS, MAX_USER_CHARS, modelParams } from "@/assistant/server";
 
 function reply(content: unknown[], stop_reason = "end_turn"): Anthropic.Message {
   return { id: "msg_1", type: "message", role: "assistant", model: "m", content, stop_reason, stop_sequence: null, usage: {} } as unknown as Anthropic.Message;
@@ -148,7 +149,7 @@ test("model ayarları: Haiku 5.5 düşünme kapalı + low; Haiku 4.5 ikisi de yo
 
   const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
   const unsupported = setup({ model: "claude-opus-5-5" });
-  expect(await (await post(unsupported.deps, ask("merhaba"))).json()).toEqual({ mode: "simple", reason: "upstream_error" });
+  expect(await (await post(unsupported.deps, ask("merhaba"))).json()).toEqual({ mode: "simple", reason: "unsupported_model" });
   expect(unsupported.create).not.toHaveBeenCalled();
   quiet.mockRestore();
 });
@@ -219,4 +220,57 @@ test("Claude hata verirse hızlı yardımcıya düşer; ret cevabı nazik metne 
   const refused = setup({}, reply([], "refusal"));
   const body = (await (await post(refused.deps, ask("merhaba"))).json()) as { content: { type: string; text: string }[] };
   expect(body.content[0]!.text).toContain("yardımcı olamıyorum");
+});
+
+test("too_large: 24 bin karakter aşımı ve büyük gövde bad_request değil too_large döner; istemci kısaltınca kabul edilir", async () => {
+  const { create, deps } = setup();
+  const exchange = (n: number) => [
+    { role: "user", content: `soru ${n}` },
+    { role: "assistant", content: [{ type: "tool_use", id: `t${n}`, name: "oneri_ozeti", input: {} }] },
+    { role: "user", content: [{ type: "tool_result", tool_use_id: `t${n}`, content: "x".repeat(9000) }] },
+    { role: "assistant", content: [{ type: "text", text: "cevap" }] },
+  ];
+  const three = [...exchange(1), ...exchange(2), ...exchange(3), { role: "user", content: "şimdiki soru" }];
+  const res = await post(deps, three);
+  expect(res.status).toBe(400);
+  expect(await res.json()).toEqual({ error: "too_large" });
+  expect(create).not.toHaveBeenCalled();
+
+  const trimmed = trimBySize(trimHistory(three as { role: "user" | "assistant"; content: string | unknown[] }[]));
+  expect((await post(deps, trimmed)).status).toBe(200);
+
+  const big = await handleAsistan(new Request("http://x/api/asistan", { method: "POST", body: "x".repeat(130_000) }), deps);
+  expect(big.status).toBe(413);
+  expect(await big.json()).toEqual({ error: "too_large" });
+});
+
+test("desteklenmeyen model: ayrı neden döner, model adı örnek başına yalnızca bir kez günlüğe yazılır", async () => {
+  const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  const { create, deps } = setup({ model: "claude-fable-5-2" });
+  expect(await (await post(deps, ask("bir"))).json()).toEqual({ mode: "simple", reason: "unsupported_model" });
+  expect(await (await post(deps, ask("iki"))).json()).toEqual({ mode: "simple", reason: "unsupported_model" });
+  expect(create).not.toHaveBeenCalled();
+  expect(logged).toHaveBeenCalledTimes(1);
+  logged.mockRestore();
+});
+
+test("sınırlayıcı belleği sınırlıdır: anahtar sayısı üst sınırı aşmaz, süresi dolanlar dakikada bir temizlenir", () => {
+  let now = 0;
+  const limiter = createLimiter(1, 3_600_000, () => now, 100);
+  for (let i = 0; i < 1000; i++) expect(limiter.take(`k${i}`)).toBe(true);
+  // Son 100 anahtar duruyor (hâlâ sınırda), en eskiler atıldı ve yeniden hak alabilir.
+  expect(limiter.take("k999")).toBe(false);
+  expect(limiter.take("k0")).toBe(true);
+  // Pencere dolunca ve temizlik aralığı geçince eski anahtarlar yeniden hak alır.
+  now += 3_600_001;
+  expect(limiter.take("k999")).toBe(true);
+});
+
+test("IPv6 adresleri /64 önekiyle sayılır; IPv4 değişmez", () => {
+  expect(ipKey("203.0.113.7")).toBe("203.0.113.7");
+  expect(ipKey("2001:db8:abcd:12:1:2:3:4")).toBe("2001:db8:abcd:12::/64");
+  expect(ipKey("2001:db8:abcd:12:ffff:ffff:ffff:ffff")).toBe("2001:db8:abcd:12::/64");
+  expect(ipKey("2001:DB8::1")).toBe("2001:db8:0:0::/64");
+  expect(ipKey("::1")).toBe("0:0:0:0::/64");
+  expect(ipKey("::ffff:1.2.3.4")).toBe("::ffff:1.2.3.4");
 });

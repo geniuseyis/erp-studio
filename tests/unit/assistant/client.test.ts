@@ -42,3 +42,32 @@ test("parseRich: uygulama içi bağlantı çizilir; // ve /\\ ile başlayanlar v
     expect(parseRich(bad).every((t) => t.type !== "link")).toBe(true);
   }
 });
+
+import { dropIncompleteExchange, trimBySize } from "@/assistant/history";
+
+const bulky = (n: number, chars: number): Turn[] => [
+  { role: "user", content: `soru ${n}` },
+  { role: "assistant", content: [{ type: "tool_use", id: `t${n}` }] },
+  { role: "user", content: [{ type: "tool_result", tool_use_id: `t${n}`, content: "x".repeat(chars) }] },
+  { role: "assistant", content: [{ type: "text", text: `cevap ${n}` }] },
+];
+
+test("trimBySize: 3 gerçekçi alışveriş (9000 karakterlik sonuç) 20 bini aşarsa en eskisi atılır", () => {
+  const three = [1, 2, 3].flatMap((n) => bulky(n, 9000));
+  const kept = trimBySize(three);
+  expect(kept[0]).toEqual({ role: "user", content: "soru 2" });
+  expect(kept).toHaveLength(8);
+  // Tek alışveriş bile sınırı aşsa son alışveriş (şimdiki soru) kalır.
+  expect(trimBySize(bulky(1, 30_000))).toHaveLength(4);
+  // Sınır altındaysa dokunulmaz.
+  const small = [1, 2, 3].flatMap((n) => bulky(n, 100));
+  expect(trimBySize(small)).toBe(small);
+});
+
+test("dropIncompleteExchange: araç sonucu turuyla biten konuşmada yarım alışveriş atılır", () => {
+  const done = bulky(1, 10);
+  const dangling = [...done, { role: "user" as const, content: "soru 2" }, { role: "assistant" as const, content: [{ type: "tool_use", id: "t2" }] }, { role: "user" as const, content: [{ type: "tool_result", tool_use_id: "t2", content: "{}" }] }];
+  expect(dropIncompleteExchange(dangling)).toEqual(done);
+  expect(dropIncompleteExchange(done)).toBe(done);
+  expect(dropIncompleteExchange([{ role: "user" as const, content: "x" }])).toHaveLength(1);
+});

@@ -27,34 +27,63 @@ Bir kayıttan söz ederken araç sonucundaki href ile [KOD](href) biçiminde ba�
 İşlem araçları (onayla_siparis, satin_alma_taslagi) kullanıcıya bir onay kartı gösterir ve kullanıcı Onayla demeden hiçbir şey değişmez. Bu yüzden işlemi yaptığını önceden söyleme; sonucu araç sonucundan bildir. Kullanıcı vazgeçtiyse hiçbir şeyin değişmediğini söyle.
 Kısa ve sade Türkçe yaz. Tutarlar TL'dir. Veriler örnek (kurgusal) veridir. Bir araç çağırırken önce en fazla tek kısa cümle yazabilirsin. Dahili ya da sistem etiketleri yazma.`;
 
-export type SimpleReason = "no_key" | "rate_limited" | "upstream_error";
+export type SimpleReason = "no_key" | "rate_limited" | "upstream_error" | "unsupported_model";
 export type AssistantBlock =
   | { type: "text"; text: string }
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> };
 export type AsistanResponse =
   | { mode: "simple"; reason: SimpleReason }
   | { mode: "ai"; content: AssistantBlock[]; stopReason: string | null }
-  | { error: "bad_request" | "too_long" | "tool_loop" | "too_many_messages" };
+  | { error: "bad_request" | "too_long" | "too_large" | "tool_loop" | "too_many_messages" };
 
 /** Sahte istemciyle test edilebilmesi için SDK'dan yalnızca kullanılan yüzey. */
 export type ChatClient = { messages: { create(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message> } };
 
 export type Limiter = { take(key: string): boolean };
 
-/** Bellekte kayan pencere sayacı. Sunucusuz ortamda örnek başına çalışır: en iyi çaba (belgelenmiştir). */
-export function createLimiter(limit: number, windowMs: number, clock: () => number = Date.now): Limiter {
+const PRUNE_EVERY_MS = 60_000;
+const MAX_KEYS = 10_000;
+
+/**
+ * IPv6 adresini /64 önekine indirger (bir abone tüm /64'ü kullanabilir; tek adresle saymak sınırı delerdi).
+ * IPv4 ve diğer değerler olduğu gibi döner.
+ */
+export function ipKey(ip: string): string {
+  const raw = ip.replace(/^\[|\]$/g, "").split("%")[0]!;
+  if (!raw.includes(":") || raw.includes(".")) return raw;
+  const [head = "", tail] = raw.split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const groups = tail === undefined ? left : [...left, ...Array<string>(Math.max(0, 8 - left.length - right.length)).fill("0"), ...right];
+  return `${groups
+    .slice(0, 4)
+    .map((g) => (parseInt(g || "0", 16) || 0).toString(16))
+    .join(":")}::/64`;
+}
+
+/**
+ * Bellekte kayan pencere sayacı. Sunucusuz ortamda örnek başına çalışır: en iyi çaba (belgelenmiştir).
+ * Bellek sınırlıdır: süresi dolan anahtarlar en çok dakikada bir temizlenir, sonra anahtar sayısı `maxKeys`'i
+ * geçemez (en eski eklenen anahtarlar atılır).
+ */
+export function createLimiter(limit: number, windowMs: number, clock: () => number = Date.now, maxKeys: number = MAX_KEYS): Limiter {
   const hits = new Map<string, number[]>();
+  let lastPrune = clock();
   return {
     take(key) {
       const now = clock();
+      if (now - lastPrune >= PRUNE_EVERY_MS) {
+        lastPrune = now;
+        for (const [k, v] of hits) if (v.every((t) => now - t >= windowMs)) hits.delete(k);
+      }
       const recent = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
       if (recent.length >= limit) {
         hits.set(key, recent);
         return false;
       }
       recent.push(now);
+      if (!hits.has(key)) for (const oldest of hits.keys()) if (hits.size >= maxKeys) hits.delete(oldest);
       hits.set(key, recent);
-      if (hits.size > 5000) for (const [k, v] of hits) if (v.every((t) => now - t >= windowMs)) hits.delete(k);
       return true;
     },
   };
@@ -79,7 +108,7 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 /** Tarayıcıdan gelen konuşmayı denetler; yalnızca bilinen blok türlerini ve araç adlarını geçirir. */
-function parseMessages(raw: unknown): Message[] | "bad_request" | "too_long" | "too_many_messages" {
+function parseMessages(raw: unknown): Message[] | "bad_request" | "too_long" | "too_large" | "too_many_messages" {
   if (!Array.isArray(raw) || raw.length === 0) return "bad_request";
   if (raw.length > MAX_MESSAGES) return "too_many_messages";
   const out: Message[] = [];
@@ -113,7 +142,7 @@ function parseMessages(raw: unknown): Message[] | "bad_request" | "too_long" | "
         blocks.push({ type: "tool_result", tool_use_id: b.tool_use_id, content, is_error: b.is_error === true });
       } else return "bad_request";
     }
-    if (resultChars > MAX_TOOL_RESULT_TOTAL) return "bad_request";
+    if (resultChars > MAX_TOOL_RESULT_TOTAL) return "too_large";
     out.push({ role: m.role, content: blocks } as unknown as Message);
   }
   if (out[out.length - 1]?.role !== "user") return "bad_request";
@@ -139,7 +168,7 @@ function json(body: AsistanResponse, status = 200, headers: Record<string, strin
  * arkasında bu başlıklar istemci tarafından sahtelenebilir.)
  */
 function visitor(request: Request): { ip: string; id: string; fresh: boolean } {
-  const ip = request.headers.get("x-real-ip")?.trim() || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "bilinmiyor";
+  const ip = ipKey(request.headers.get("x-real-ip")?.trim() || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "bilinmiyor");
   const cookie = /(?:^|;\s*)asistan_id=([0-9a-f-]{36})/.exec(request.headers.get("cookie") ?? "")?.[1];
   return { ip, id: cookie ?? crypto.randomUUID(), fresh: !cookie };
 }
@@ -173,6 +202,8 @@ type ModelParams = Pick<Anthropic.MessageCreateParamsNonStreaming, "thinking" | 
  *   bu uç düşünce bloklarını taşımaz, bu yüzden desteklenmez (null).
  * - Bilinmeyen modeller: ayar gönderilmez, modelin varsayılanı geçerlidir.
  */
+const warnedModels = new Set<string>();
+
 export function modelParams(model: string): ModelParams | null {
   if (/^claude-(opus-5-5|sonnet-5-5|fable-|mythos-)/.test(model)) return null;
   if (/^claude-(haiku-5-5|sonnet-5$|sonnet-4-6|opus-5$|opus-4-[678])/.test(model)) return { thinking: { type: "disabled" }, output_config: { effort: "low" } };
@@ -183,7 +214,7 @@ export async function handleAsistan(request: Request, deps: Deps): Promise<Respo
   let body: unknown;
   try {
     const raw = await request.text();
-    if (raw.length > MAX_BODY_CHARS) return json({ error: "bad_request" }, 413);
+    if (raw.length > MAX_BODY_CHARS) return json({ error: "too_large" }, 413);
     body = JSON.parse(raw);
   } catch {
     return json({ error: "bad_request" }, 400);
@@ -196,8 +227,11 @@ export async function handleAsistan(request: Request, deps: Deps): Promise<Respo
   if (!deps.apiKey) return json({ mode: "simple", reason: "no_key" });
   const params = modelParams(deps.model);
   if (!params) {
-    console.error("asistan: model desteklenmiyor", deps.model);
-    return json({ mode: "simple", reason: "upstream_error" });
+    if (!warnedModels.has(deps.model)) {
+      warnedModels.add(deps.model);
+      console.error("asistan: model desteklenmiyor", deps.model);
+    }
+    return json({ mode: "simple", reason: "unsupported_model" });
   }
 
   // Her POST hak yer; araç turu olarak görünen istek de (tur sayısı istemciden gelir, güvenilmez).
