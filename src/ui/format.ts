@@ -1,7 +1,10 @@
 import { formatQty, type Unit } from "@/domain/units";
 
-const DATE = new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric" });
-const DATE_TIME = new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+// Her iş günü bir İstanbul günüdür (UTC+3 sabit); tarayıcının saat dilimi gün sınırını kaydırmamalı.
+const TIME_ZONE = "Europe/Istanbul";
+const DATE = new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: TIME_ZONE });
+const DATE_TIME = new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: TIME_ZONE });
+const TIME_ONLY = new Intl.DateTimeFormat("tr-TR", { hour: "2-digit", minute: "2-digit", timeZone: TIME_ZONE });
 
 const ISTANBUL_DATE_TIME = new Intl.DateTimeFormat("tr-TR", {
   day: "2-digit",
@@ -15,6 +18,11 @@ const ISTANBUL_DATE_TIME = new Intl.DateTimeFormat("tr-TR", {
 /** 15.11.2026 */
 export function formatDate(date: Date): string {
   return DATE.format(date);
+}
+
+/** İstanbul saatiyle 09:00 */
+export function formatTime(date: Date): string {
+  return TIME_ONLY.format(date);
 }
 
 /** 15.11.2026 09:00 */

@@ -15,7 +15,7 @@ import { cn } from "@/ui/cn";
 import { type Column, DataTable } from "@/ui/DataTable";
 import { EmptyState } from "@/ui/EmptyState";
 import { Input, Select } from "@/ui/Field";
-import { formatDate, formatSignedQty } from "@/ui/format";
+import { formatDate, formatSignedQty, formatTime } from "@/ui/format";
 import { CloseIcon } from "@/ui/icons";
 import { CountUp } from "@/ui/motion";
 import { CategorySwatch } from "./CategorySwatch";
@@ -24,7 +24,6 @@ import { MOVEMENT_LABEL } from "./labels";
 import { MovementIcon } from "./MovementIcon";
 
 const LIMIT = 500;
-const TIME = new Intl.DateTimeFormat("tr-TR", { hour: "2-digit", minute: "2-digit" });
 
 const COLUMNS: Column<MovementRow>[] = [
   {
@@ -33,11 +32,11 @@ const COLUMNS: Column<MovementRow>[] = [
     cell: (m) => (
       <span className="tabular grid whitespace-nowrap">
         <span className="font-semibold">{formatDate(m.createdAt)}</span>
-        <span className="text-xs text-fg-muted">{TIME.format(m.createdAt)}</span>
+        <span className="text-xs text-fg-muted">{formatTime(m.createdAt)}</span>
       </span>
     ),
     sortValue: (m) => m.createdAt.getTime(),
-    csvValue: (m) => `${formatDate(m.createdAt)} ${TIME.format(m.createdAt)}`,
+    csvValue: (m) => `${formatDate(m.createdAt)} ${formatTime(m.createdAt)}`,
   },
   {
     id: "material",
@@ -118,10 +117,10 @@ function asType(value: string | null): MovementType | undefined {
   return (MOVEMENT_TYPES as readonly string[]).includes(value ?? "") ? (value as MovementType) : undefined;
 }
 
-/** "2026-11-15" → o günün yerel başlangıcı ya da sonu. Geçersizse undefined. */
+/** "2026-11-15" → o İstanbul gününün başlangıcı ya da sonu. Geçersizse undefined. */
 function dayBound(value: string | null, end: boolean): Date | undefined {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
-  const date = new Date(`${value}T${end ? "23:59:59.999" : "00:00:00"}`);
+  const date = new Date(`${value}T${end ? "23:59:59.999" : "00:00:00"}+03:00`);
   return Number.isNaN(date.getTime()) ? undefined : date;
 }
 

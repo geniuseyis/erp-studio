@@ -14,19 +14,18 @@ import { MovementIcon } from "@/features/inventory/MovementIcon";
 import { HeroStat, Page, PageHeader } from "@/shell/AppGuard";
 import { useSession } from "@/shell/session";
 import { cn } from "@/ui/cn";
-import { formatMoneyWhole, formatSignedQty } from "@/ui/format";
+import { formatMoneyWhole, formatSignedQty, formatTime } from "@/ui/format";
 import { ArrowRightIcon } from "@/ui/icons";
 import { Meter } from "@/ui/Meter";
 import { CountUp } from "@/ui/motion";
 import { Skeleton } from "@/ui/Skeleton";
 
-const LONG_DATE = new Intl.DateTimeFormat("tr-TR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-const TIME = new Intl.DateTimeFormat("tr-TR", { hour: "2-digit", minute: "2-digit" });
-const DAY_MONTH = new Intl.DateTimeFormat("tr-TR", { day: "numeric", month: "short" });
+const LONG_DATE = new Intl.DateTimeFormat("tr-TR", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Istanbul" });
+const DAY_MONTH = new Intl.DateTimeFormat("tr-TR", { day: "numeric", month: "short", timeZone: "Europe/Istanbul" });
 
 /** Saate göre selam: 05–12 günaydın, 12–18 iyi günler, gerisi iyi akşamlar. */
 export function greeting(date: Date): string {
-  const h = date.getHours();
+  const h = (date.getUTCHours() + 3) % 24; // İstanbul saati (UTC+3 sabit)
   if (h >= 5 && h < 12) return "Günaydın";
   if (h >= 12 && h < 18) return "İyi günler";
   return "İyi akşamlar";
@@ -152,7 +151,7 @@ export function DashboardScreen() {
                         <span className="grid min-w-0">
                           <span className="truncate font-semibold">{mv.materialName}</span>
                           <span className="truncate text-xs text-fg-muted">
-                            {MOVEMENT_LABEL[mv.type]}, {DAY_MONTH.format(mv.createdAt)} {TIME.format(mv.createdAt)}, {mv.userName}
+                            {MOVEMENT_LABEL[mv.type]}, {DAY_MONTH.format(mv.createdAt)} {formatTime(mv.createdAt)}, {mv.userName}
                           </span>
                         </span>
                         <span className={cn("tabular text-sm font-semibold whitespace-nowrap", delta > 0 && "text-ok")}>{formatSignedQty(delta, mv.unit)}</span>

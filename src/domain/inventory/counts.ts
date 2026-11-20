@@ -6,6 +6,7 @@ import { type Ctx, inTx, isUuid } from "../context";
 import { DomainError } from "../errors";
 import { assertCan } from "../permissions";
 import { formatQty, type Unit } from "../units";
+import { istanbulYear } from "../production/calendar";
 import { postMovement } from "./ledger";
 import { asCount, type StockCount } from "./types";
 
@@ -26,7 +27,7 @@ export async function createCount(ctx: Ctx, i: { materialIds: string[]; note?: s
     const found = ids.every(isUuid) ? await tx.db.select().from(materials).where(inArray(materials.id, ids)) : [];
     if (found.length !== ids.length) throw new DomainError("NOT_FOUND", "Malzeme bulunamadı");
 
-    const prefix = `SYM-${tx.now.getFullYear()}-`;
+    const prefix = `SYM-${istanbulYear(tx.now)}-`;
     const existing = await tx.db.select({ code: stockCounts.code }).from(stockCounts).where(like(stockCounts.code, `${prefix}%`));
     const max = existing.reduce((n, r) => Math.max(n, Number(r.code.slice(prefix.length)) || 0), 0);
     const code = `${prefix}${String(max + 1).padStart(4, "0")}`;

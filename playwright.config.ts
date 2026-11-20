@@ -16,6 +16,8 @@ export default defineConfig({
     headless: true,
     // Geçiş animasyonları ölçümleri ve ekran görüntülerini oynatmasın.
     contextOptions: { reducedMotion: "reduce" },
+    // CI (GitHub) UTC çalışır; yerel makine İstanbul. Tarayıcıyı UTC'ye sabitlemek, gün sınırı hatalarını yerelde de yakalar.
+    timezoneId: "UTC",
     trace: "retain-on-failure",
   },
   projects: [{ name: "masaustu", use: { ...devices["Desktop Chrome"], channel: process.env.PW_CHANNEL ?? "chrome", viewport: { width: 1440, height: 900 } } }],
