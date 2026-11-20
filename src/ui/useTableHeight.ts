@@ -62,8 +62,10 @@ export function useTableHeight(rootRef: RefObject<HTMLElement | null>, screen: s
     const el = rootRef.current;
     if (!el) return TABLE_MIN;
     const scroller = el.closest("main");
+    // Alt dolgu (asistan balonu için ayrılan yer) kapın altında boş kalır: son satır balonun altına girmez.
+    const pad = scroller ? parseFloat(getComputedStyle(scroller).paddingBottom) || 0 : 0;
     const bottom = scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight;
-    return bottom - el.getBoundingClientRect().top - BOTTOM_GAP;
+    return bottom - pad - el.getBoundingClientRect().top - BOTTOM_GAP;
   }
 
   const handleProps = {

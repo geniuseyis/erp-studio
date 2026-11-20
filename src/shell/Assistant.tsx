@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { type FormEvent, Fragment, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { parseRich } from "@/assistant/rich";
 import { type CardState, type ChatItem, type Mode, useAssistant } from "@/assistant/useAssistant";
 import { Button, IconButton, Spinner } from "@/ui/Button";
 import { cn } from "@/ui/cn";
@@ -11,30 +12,18 @@ const MAX_CHARS = 1000;
 const SUGGESTIONS = ["Kritik stok", "Geciken siparişler", "Bugünün iş emirleri", "Sipariş nasıl açılır?"];
 const MODE_TITLE: Record<Mode, string> = { checking: "Asistan", ai: "Claude", simple: "Hızlı yardımcı · yapay zekâ kapalı" };
 
-const RICH = /\[([^\]]+)\]\((\/[^)\s]*)\)|\*\*([^*]+)\*\*/g;
-
-/** Cevaptaki uygulama içi bağlantıları ([KOD](/yol?ac=…)) ve **kalın** yazıyı çizer; başka bağlantı türü çizilmez. */
+/** Cevaptaki uygulama içi bağlantıları ve **kalın** yazıyı çizer (ayrıştırma: rich.ts). */
 function Rich({ text, onNavigate }: { text: string; onNavigate: () => void }): ReactNode {
-  const parts: ReactNode[] = [];
-  let last = 0;
-  for (const m of text.matchAll(RICH)) {
-    const at = m.index ?? 0;
-    if (at > last) parts.push(text.slice(last, at));
-    if (m[2] && !m[2].startsWith("//")) {
-      parts.push(
-        <Link key={at} href={m[2]} onClick={onNavigate} className="font-semibold text-accent underline underline-offset-2">
-          {m[1]}
-        </Link>,
+  return parseRich(text).map((t, i) => {
+    if (t.type === "link") {
+      return (
+        <Link key={i} href={t.href} onClick={onNavigate} className="font-semibold text-accent underline underline-offset-2">
+          {t.label}
+        </Link>
       );
-    } else if (m[3]) {
-      parts.push(<strong key={at}>{m[3]}</strong>);
-    } else {
-      parts.push(m[0]);
     }
-    last = at + m[0].length;
-  }
-  if (last < text.length) parts.push(text.slice(last));
-  return parts.map((p, i) => <Fragment key={i}>{p}</Fragment>);
+    return t.type === "bold" ? <strong key={i}>{t.text}</strong> : <Fragment key={i}>{t.text}</Fragment>;
+  });
 }
 
 const CARD_NOTE: Record<CardState, string> = { pending: "", running: "İşleniyor…", done: "", declined: "", error: "" };

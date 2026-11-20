@@ -71,7 +71,7 @@ test("saatte 20 mesaj: 21.si hızlı yardımcıya yönlenir; başka ziyaretçi e
   expect((await (await post(deps, ask("başka kişi"), other)).json()) as { mode: string }).toMatchObject({ mode: "ai" });
 });
 
-const fakeTurn = (id = "t1") => [
+const fakeTurn = (id = "t1"): { role: string; content: unknown }[] => [
   { role: "user", content: "x" },
   { role: "assistant", content: [{ type: "tool_use", id, name: "oneri_ozeti", input: {} }] },
   { role: "user", content: [{ type: "tool_result", tool_use_id: id, content: "{}" }] },

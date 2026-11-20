@@ -5,6 +5,7 @@ import { announceChange, useDb } from "@/shell/db-context";
 import { errorMessage } from "@/shell/useAction";
 import { useCtx } from "@/shell/useCtx";
 import type { AssistantBlock, AsistanResponse } from "./server";
+import { trimHistory } from "./history";
 import { answerSimple } from "./simple";
 import { isActionTool, type ActionPreview, previewActionTool, runActionTool, runReadTool } from "./tools";
 
@@ -111,19 +112,33 @@ export function useAssistant() {
   const askClaude = useCallback(
     async (question: string) => {
       history.current.push({ role: "user", content: question });
+      // Sunucuya yalnızca son birkaç alışveriş gider: konuşma uzadıkça istek ve maliyet büyümez.
+      history.current = trimHistory(history.current);
+      let retried = false;
       for (let round = 0; round <= MAX_ROUNDS; round++) {
         const res = await fetch("/api/asistan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history.current }) });
         const data = (await res.json()) as AsistanResponse;
         if ("error" in data) {
+          if (data.error === "too_many_messages" && !retried) {
+            // Konuşma sunucunun üst sınırını aştı: yalnızca şimdiki soruyla bir kez yeniden denenir.
+            retried = true;
+            history.current = [{ role: "user", content: question }];
+            round = -1;
+            continue;
+          }
           history.current = [];
           add({ kind: "note", text: data.error === "too_long" ? "Mesaj en çok 1000 karakter olabilir." : "Bu konuşma çok uzadı. Yeni bir soru sorarak devam edin." });
           return;
         }
         if (data.mode === "simple") {
           history.current = [];
-          setMode("simple");
-          if (data.reason === "rate_limited") add({ kind: "note", text: "Saatlik yapay zekâ sınırı doldu; hızlı yardımcıya geçildi." });
-          else if (data.reason === "upstream_error") add({ kind: "note", text: "Yapay zekâya ulaşılamadı; hızlı yardımcıya geçildi." });
+          // Geçici hata oturumu kalıcı olarak hızlı yardımcıya çevirmez: bir sonraki soru yine Claude'a gider.
+          if (data.reason === "upstream_error") {
+            add({ kind: "note", text: "Yapay zekâya şu an ulaşılamadı; bu soru hızlı yardımcıyla cevaplandı." });
+          } else {
+            setMode("simple");
+            if (data.reason === "rate_limited") add({ kind: "note", text: "Saatlik yapay zekâ sınırı doldu; hızlı yardımcıya geçildi." });
+          }
           await answerLocally(question);
           return;
         }
