@@ -1,6 +1,6 @@
 # BALTACIOĞLU'S ERP Studio
 
-Mobilya üretimi yapan bir atölye için kurumsal kaynak planlama (ERP) uygulaması. Bu sürüm bir **vitrin**: gerçek bir PostgreSQL veritabanı tarayıcının içinde çalışır, sunucu gerekmez, veriler ziyaretçinin tarayıcısından çıkmaz.
+Mobilya üretimi yapan bir atölye için kurumsal kaynak planlama (ERP) uygulaması. Bu sürüm bir **vitrin**: gerçek bir PostgreSQL veritabanı tarayıcının içinde çalışır, veriler ziyaretçinin tarayıcısından çıkmaz. Sunucu yalnızca isteğe bağlı asistan ucu içindir.
 
 ![Ana panel](docs/screens/plan-2/03-ana-panel.png)
 
@@ -21,6 +21,7 @@ Mobilya üretimi yapan bir atölye için kurumsal kaynak planlama (ERP) uygulama
 - **Atölye:** istasyonun kuyruğu, tablette rahat büyük Başla ve Bitti düğmeleri; son adım bitince mamul stoğa girer, sipariş Hazır olur, depo sevk eder.
 - **Kullanıcı yönetimi:** bilgi işlem ve yönetim kullanıcı ekler, düzenler, pasife alır, parola sıfırlar.
 - **Ctrl+K paleti:** sayfaya git; sipariş, iş emri, müşteri, ürün ya da malzeme ara ve çekmecesini aç; "Yeni sipariş" (satışta); temayı değiştir.
+- **Asistan:** her ekranda sağ altta sohbet balonu. Anahtar tanımlıysa Claude, stok, sipariş, iş emri ve satın alma için araçlarla tarayıcıdaki veriyi okur; sipariş onaylama ve satın alma taslağı gibi işlemleri önce bir onay kartında gösterir, "Onayla" denmeden hiçbir şey değişmez ve işlem giriş yapmış kişinin yetkisiyle çalışır. Anahtar yoksa ya da sınır dolduysa "Hızlı yardımcı" kritik stok, geciken siparişler, bugünün iş emirleri, kod durumu ve "nasıl yapılır" sorularını veritabanından cevaplar.
 - Açık ve koyu tema, telefon görünümü, klavyeyle tam kullanım, "hareketi azalt" ayarına uyan animasyonlar.
 
 | Giriş | Malzeme ayrıntısı | Telefon |
@@ -82,6 +83,21 @@ src/
 - Para tam sayı kuruş, miktar tam sayı binde birim olarak saklanır; kayan noktalı tutar yoktur.
 
 Depolama seçimi ve ölçümler için [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md), örnek verinin kaynakları için [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md).
+
+## Yayın (Vercel)
+
+Uygulama Vercel'e olduğu gibi yüklenir (`npm run build`, ek ayar dosyası gerekmez). Tek sunucu parçası `/api/asistan` ucudur; anahtar olmadan da uygulama eksiksiz çalışır.
+
+| Ortam değişkeni | Anlamı |
+|---|---|
+| `ANTHROPIC_API_KEY` | İsteğe bağlı. Yoksa asistan "Hızlı yardımcı" modunda kalır. Yalnızca sunucuda okunur, tarayıcıya gitmez. |
+| `ANTHROPIC_MODEL` | İsteğe bağlı. Varsayılan `claude-haiku-5-5`. |
+
+`.env.example` boş değerlerle bir örnektir; gerçek anahtar `.env.local` dosyasına ya da Vercel panelindeki ortam değişkenlerine yazılır ve depoya girmez (`.gitignore` `.env*` dosyalarını dışarıda tutar).
+
+- **Harcama sınırı:** Anthropic konsolunda hesap için aylık harcama sınırı koyun (önerilen: küçük bir üst sınır, örneğin 5 dolar). Uygulamadaki korumalar (ziyaretçi başına saatte 20 mesaj, mesaj en çok 1000 karakter, cevap en çok 800 jeton, mesaj başına en çok 5 araç turu) en iyi çabadır: sayaçlar sunucu örneğinin belleğindedir ve örnek yeniden başlayınca sıfırlanır.
+- **Gizlilik:** sohbet sunucuda saklanmaz; Claude'a yalnızca soru, araç sonuçları ve sabit sistem istemi gider.
+- **Veritabanı dosyaları:** PGlite'ın `.wasm` dosyaları ve PostgreSQL dosya paketi içerik özetli adla `immutable` önbellekle gelir. Dosya paketi (~6 MB) normalde sıkıştırılmayan bir türde geldiği için `next.config.ts` içindeki `headers()` ile sıkıştırılabilir türe çevrilir (~1,9 MB iner). Yayın sonrası `node scripts/measure-boot.mjs` ile (`MEASURE_URL` ayarlanarak) gerçek adreste ölçülmelidir.
 
 ## Testler
 
