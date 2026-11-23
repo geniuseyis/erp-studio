@@ -107,7 +107,7 @@ export function Assistant() {
     void send(text);
   }
   function pick(chip: ChipData) {
-    if (locked) return;
+    if (busy) return;
     wantFocus.current = chip.action.type === "menu" ? "tile" : "chip";
     void choose(chip.action, chip.label);
   }
@@ -168,13 +168,13 @@ export function Assistant() {
             }
             if (part.type === "card") return <div key={i} className="w-full"><AnswerCard card={part.card} onNavigate={navigated} /></div>;
             if (part.type === "menu") {
-              return item.id === lastMenuId ? (
+              return item.id === lastMenuId && item.id === lastBotId ? (
                 <div key={i} className="w-full">
-                  <MenuGrid categories={categories} disabled={locked} onPick={(id, label) => pick({ label, action: { type: "category", id } })} />
+                  <MenuGrid categories={categories} disabled={busy} onPick={(id, label) => pick({ label, action: { type: "category", id } })} />
                 </div>
               ) : null;
             }
-            return showChips ? <ChipRow key={i} chips={part.chips} onPick={pick} onNavigate={navigated} disabled={locked} /> : null;
+            return showChips ? <ChipRow key={i} chips={part.chips} onPick={pick} onNavigate={navigated} disabled={busy} /> : null;
           })}
           {!chipsOnly ? time : null}
         </div>
@@ -204,7 +204,7 @@ export function Assistant() {
             <button
               type="button"
               aria-label="Ana menü"
-              disabled={locked}
+              disabled={busy}
               onClick={() => {
                 wantFocus.current = "tile";
                 home();

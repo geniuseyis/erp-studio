@@ -19,7 +19,14 @@ async function mockAi(page: Page, answer: (messages: Msg[]) => unknown): Promise
   return { calls };
 }
 
-const panel = (page: Page) => page.getByRole("dialog", { name: "Asistan" });
+const panel = (page: Page) => page.getByRole("dialog", { name: "Atölye Asistanı" });
+const tiles = (page: Page) => panel(page).getByRole("group", { name: "Başlıklar" }).getByRole("button");
+const tile = (page: Page, name: string) => panel(page).getByRole("group", { name: "Başlıklar" }).getByRole("button", { name, exact: true });
+const chip = (page: Page, name: string) => panel(page).getByRole("group", { name: "Hızlı yanıtlar" }).getByRole("button", { name, exact: true });
+const homeButton = (page: Page) => panel(page).getByRole("button", { name: "Ana menü", exact: true });
+const card = (page: Page, name: string) => panel(page).getByRole("region", { name });
+const CRITICAL_SQL = "select code, id, name from materials where active and on_hand_milli - reserved_milli < reorder_point_milli order by code limit 1";
+
 async function openPanel(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Asistanı aç" }).click();
   await expect(panel(page)).toBeVisible();
@@ -35,16 +42,13 @@ const lastToolResult = (messages: Msg[]): string => {
 };
 const isToolTurn = (messages: Msg[]) => Array.isArray(messages[messages.length - 1]?.content);
 
-test("hızlı yardımcı: anahtar yokken kritik stok, tohumdaki gerçek malzemeyle; Esc kapatır ve odağı balona verir", async ({ page }) => {
+test("hızlı mod: anahtar yokken kritik stok, tohumdaki gerçek malzemeyle; Esc kapatır ve odağı balona verir", async ({ page }) => {
   await loginAs(page, "Elif Karaca");
-  const critical = await one<{ code: string; id: string }>(
-    page,
-    "select code, id from materials where active and on_hand_milli - reserved_milli < reorder_point_milli order by code limit 1",
-  );
+  const critical = await one<{ code: string; id: string }>(page, CRITICAL_SQL);
   await openPanel(page);
-  await expect(page.getByTestId("assistant-mode")).toHaveText("Hızlı yardımcı · yapay zekâ kapalı");
+  await expect(page.getByTestId("assistant-mode")).toHaveText("Hızlı mod");
   await ask(page, "kritik stok");
-  const link = panel(page).getByRole("log").getByRole("link", { name: critical.code });
+  const link = panel(page).getByRole("log").getByRole("link", { name: `${critical.code} kaydını aç` });
   await expect(link).toBeVisible();
   await expect(link).toHaveAttribute("href", `/stok/malzemeler?ac=${critical.id}`);
 
@@ -61,10 +65,7 @@ test("yapay zekâ modu (taklit): okuma aracı tarayıcıda çalışır, cevap ka
     return [{ type: "text", text: `En acil: [${first.kod}](${first.href})` }];
   });
   await loginAs(page, "Elif Karaca");
-  const critical = await one<{ code: string; id: string }>(
-    page,
-    "select code, id from materials where active and on_hand_milli - reserved_milli < reorder_point_milli order by code limit 1",
-  );
+  const critical = await one<{ code: string; id: string }>(page, CRITICAL_SQL);
   await openPanel(page);
   await expect(page.getByTestId("assistant-mode")).toHaveText("Claude");
   await ask(page, "hangi malzeme kritik?");
@@ -91,11 +92,11 @@ test("yapay zekâ modu (taklit): işlem aracı onay kartı gösterir; Vazgeç hi
 
   // Vazgeç: kart çıkar, odak Vazgeç'te, sipariş taslak kalır.
   await ask(page, `${draft.code} siparişini onayla`);
-  const card = panel(page).getByRole("group", { name: "Onay kartı" });
-  await expect(card).toContainText(draft.code);
-  await expect(card.getByRole("button", { name: "Vazgeç" })).toBeFocused();
+  const confirm = panel(page).getByRole("group", { name: "Onay kartı" });
+  await expect(confirm).toContainText(draft.code);
+  await expect(confirm.getByRole("button", { name: "Vazgeç" })).toBeFocused();
   expect(await status()).toBe("draft");
-  await card.getByRole("button", { name: "Vazgeç" }).click();
+  await confirm.getByRole("button", { name: "Vazgeç" }).click();
   await expect(panel(page).getByText("Hiçbir şey değişmedi").first()).toBeVisible();
   await expect.poll(status).toBe("draft");
 
@@ -109,24 +110,141 @@ test("yapay zekâ modu (taklit): işlem aracı onay kartı gösterir; Vazgeç hi
   await expect(panel(page).getByText("Sipariş onaylandı").first()).toBeVisible();
 });
 
-test("390 px: balon ve pencere ekrana sığar, sayfa yatay taşmaz", async ({ page }) => {
+test("açılışta ana menü: 6 kutucuk görünür ve ilki odak alır; Satış alt menüsü yazma seçeneğini gösterir", async ({ page }) => {
+  await loginAs(page, "Elif Karaca");
+  await openPanel(page);
+  await expect(tiles(page)).toHaveCount(6);
+  await expect(panel(page).getByText("Merhaba Elif")).toBeVisible();
+  await expect(tiles(page).first()).toBeFocused();
+  await tile(page, "Satış").click();
+  await expect(chip(page, "Geciken siparişler")).toBeVisible();
+  await expect(panel(page).getByRole("link", { name: "Yeni sipariş aç" })).toHaveAttribute("href", "/satis/siparisler?yeni=1");
+});
+
+test("rol süzgeci: yazma yetkisi olmayan kişi 'Yeni sipariş aç' görmez; 'Kullanıcı nasıl eklenir?' yalnızca yönetime çıkar", async ({ page }) => {
+  await loginAs(page, "Cem Doğru");
+  await openPanel(page);
+  await tile(page, "Satış").click();
+  await expect(chip(page, "Geciken siparişler")).toBeVisible();
+  await expect(panel(page).getByRole("link", { name: "Yeni sipariş aç" })).toHaveCount(0);
+  await homeButton(page).click();
+  await tile(page, "Nasıl yapılır").click();
+  await expect(chip(page, "Sipariş nasıl açılır?")).toBeVisible();
+  await expect(chip(page, "Kullanıcı nasıl eklenir?")).toHaveCount(0);
+});
+
+test("kutucuk, çip, kart: Stok → Kritik stok kartı; Aç bağlantısı kaydın çekmecesini açar", async ({ page }) => {
+  await loginAs(page, "Elif Karaca");
+  const critical = await one<{ code: string; id: string }>(page, CRITICAL_SQL);
+  await openPanel(page);
+  await tile(page, "Stok").click();
+  await chip(page, "Kritik stok").click();
+  const kritik = card(page, "Kritik stok");
+  await expect(kritik).toBeVisible();
+  const open = kritik.getByRole("link", { name: `${critical.code} kaydını aç` });
+  await expect(open).toHaveAttribute("href", `/stok/malzemeler?ac=${critical.id}`);
+  await expect(kritik.getByRole("link", { name: /Hepsini gör/ })).toHaveAttribute("href", "/stok/malzemeler?kritik=1");
+  await expect(chip(page, "Satın alma önerileri")).toBeVisible();
+  await expect(chip(page, "Malzeme ara")).toBeVisible();
+  await open.click();
+  await expect(page).toHaveURL(new RegExp(`ac=${critical.id}`));
+  await expect(page.locator("[data-drawer-title]")).toBeVisible();
+});
+
+test("her cevaptan sonra Ana menü: başlıktaki düğme ve ⌂ Menü çipi menüyü geri getirir", async ({ page }) => {
+  await loginAs(page, "Elif Karaca");
+  await openPanel(page);
+  await tile(page, "Stok").click();
+  await chip(page, "Kritik stok").click();
+  await expect(card(page, "Kritik stok")).toBeVisible();
+  await expect(tiles(page)).toHaveCount(0);
+
+  await homeButton(page).click();
+  await expect(tiles(page)).toHaveCount(6);
+  await expect(tiles(page).first()).toBeFocused();
+
+  // Yazıyla sorulan cevaptan sonra da menü çipi var.
+  await ask(page, "geciken siparişler");
+  await expect(card(page, "Geciken siparişler")).toBeVisible();
+  await expect(tiles(page)).toHaveCount(0);
+  await panel(page).getByRole("button", { name: "Ana menüye dön" }).click();
+  await expect(tiles(page)).toHaveCount(6);
+});
+
+test("yazım hatası ve eş anlamlı: 'krtik stok' ve 'ne bitti' cevaplanır", async ({ page }) => {
+  await loginAs(page, "Elif Karaca");
+  const critical = await one<{ code: string }>(page, CRITICAL_SQL);
+  await openPanel(page);
+  await ask(page, "krtik stok");
+  await expect(card(page, "Kritik stok")).toBeVisible();
+  await expect(panel(page).getByRole("link", { name: `${critical.code} kaydını aç` })).toBeVisible();
+  await ask(page, "ne bitti");
+  await expect(card(page, "Kritik stok")).toHaveCount(2);
+  await expect(panel(page).getByText("anlayamadım")).toHaveCount(0);
+});
+
+test("anlamsız yazı: kesin sözcük istenmez, 'Bunu mu demek istediniz?' ve öneri çipleri gelir", async ({ page }) => {
+  await loginAs(page, "Elif Karaca");
+  await openPanel(page);
+  await ask(page, "qwzx plk");
+  await expect(panel(page).getByText("Bunu mu demek istediniz?")).toBeVisible();
+  await expect(panel(page).getByRole("group", { name: "Hızlı yanıtlar" }).getByRole("button")).toHaveCount(4);
+  await expect(chip(page, "Günün özeti")).toBeVisible();
+  await chip(page, "Günün özeti").click();
+  await expect(card(page, "Günün özeti")).toBeVisible();
+});
+
+test("boşluk doldurma: Sipariş sorgula girdi ister, son siparişleri çip yapar, sonraki yazı boşluğu doldurur", async ({ page }) => {
+  await loginAs(page, "Elif Karaca");
+  const latest = await one<{ id: string; code: string; name: string }>(
+    page,
+    "select o.id, o.code, c.name from sales_orders o join customers c on c.id = o.customer_id order by o.created_at desc, o.code desc limit 1",
+  );
+  await openPanel(page);
+  await tile(page, "Satış").click();
+  await chip(page, "Sipariş sorgula").click();
+  await expect(panel(page).getByText("Sipariş kodu ya da müşteri adı yazın")).toBeVisible();
+  await expect(chip(page, latest.code)).toBeVisible();
+
+  await ask(page, latest.name);
+  const rows = panel(page).getByRole("region", { name: /^Siparişler/ });
+  await expect(rows.getByRole("link", { name: `${latest.code} kaydını aç` })).toHaveAttribute("href", `/satis/siparisler?ac=${latest.id}`);
+  await expect(rows.getByRole("link", { name: /Hepsini gör/ })).toBeVisible();
+});
+
+test("yapay zekâ açıkken menü seçimleri API çağırmaz; yalnızca serbest yazı Claude'a gider", async ({ page }) => {
+  const { calls } = await mockAi(page, () => [{ type: "text", text: "Merhaba, ben Claude." }]);
+  await loginAs(page, "Elif Karaca");
+  await openPanel(page);
+  await expect(page.getByTestId("assistant-mode")).toHaveText("Claude");
+  await tile(page, "Stok").click();
+  await chip(page, "Kritik stok").click();
+  await expect(card(page, "Kritik stok")).toBeVisible();
+  expect(calls).toHaveLength(0);
+  await ask(page, "bana bir hikaye anlat");
+  await expect(panel(page).getByText("Merhaba, ben Claude.")).toBeVisible();
+  expect(calls).toHaveLength(1);
+  await expect(chip(page, "Ana menüye dön")).toBeVisible();
+});
+
+test("390 px: tam ekran sayfa, menü kutucukları ve cevap kartı, sayfa yatay taşmaz", async ({ page }) => {
   await loginAs(page, "Elif Karaca");
   await page.setViewportSize({ width: 390, height: 844 });
   const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-  const bubble = page.getByRole("button", { name: "Asistanı aç" });
-  await expect(bubble).toBeVisible();
+  expect(await overflow()).toBeLessThanOrEqual(0);
+  await openPanel(page);
+  await expect(tiles(page)).toHaveCount(6);
+  await expect.poll(async () => (await panel(page).boundingBox())?.width).toBe(390);
+  const box = (await panel(page).boundingBox())!;
+  expect(box.x).toBe(0);
+  expect(box.y).toBe(0);
+  expect(box.height).toBe(844);
   expect(await overflow()).toBeLessThanOrEqual(0);
 
-  await openPanel(page);
-  await ask(page, "kritik stok");
-  await expect(panel(page).getByRole("log").getByRole("link").first()).toBeVisible();
-  const box = await panel(page).boundingBox();
-  expect(box).not.toBeNull();
-  expect(box!.x).toBeGreaterThanOrEqual(0);
-  expect(box!.x + box!.width).toBeLessThanOrEqual(390);
-  expect(box!.y).toBeGreaterThanOrEqual(0);
-  expect(box!.y + box!.height).toBeLessThanOrEqual(844);
+  await tile(page, "Stok").click();
+  await chip(page, "Kritik stok").click();
+  await expect(card(page, "Kritik stok")).toBeVisible();
   expect(await overflow()).toBeLessThanOrEqual(0);
-  const close = await page.getByRole("button", { name: "Asistanı kapat" }).last().boundingBox();
+  const close = await panel(page).getByRole("button", { name: "Asistanı kapat" }).boundingBox();
   expect(close!.x + close!.width).toBeLessThanOrEqual(390);
 });
