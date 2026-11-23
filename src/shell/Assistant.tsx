@@ -6,8 +6,9 @@ import { visibleCategories } from "@/assistant/intents";
 import { type ChatItem, type Mode, useAssistant } from "@/assistant/useAssistant";
 import { cn } from "@/ui/cn";
 import { formatTime } from "@/ui/format";
-import { ArrowRightIcon, CloseIcon, HomeIcon, SparkIcon } from "@/ui/icons";
+import { ArrowRightIcon, CloseIcon, HomeIcon } from "@/ui/icons";
 import { IconButton } from "@/ui/Button";
+import { AssistantMark } from "./assistant/AssistantMark";
 import { AnswerCard, ChipRow, ConfirmCard, MenuGrid, Rich, Typing } from "./assistant/parts";
 import { useSession } from "./session";
 
@@ -20,11 +21,7 @@ const isBot = (item: ChatItem): item is BotItem => item.kind === "bot";
 const isChipsOnly = (item: ChatItem) => isBot(item) && item.parts.every((p) => p.type === "chips");
 
 function Avatar({ className }: { className?: string }) {
-  return (
-    <span aria-hidden="true" className={cn("grid shrink-0 place-items-center rounded-full bg-[linear-gradient(135deg,var(--hero-via),var(--hero-to))] text-hero-fg ring-1 ring-hero-fg/25", className)}>
-      <SparkIcon size={16} />
-    </span>
-  );
+  return <AssistantMark size={32} className={className} />;
 }
 
 /** Telefon boyutu: pencere tam ekran sayfadır, modal gibi davranır. */
@@ -292,9 +289,9 @@ export function Assistant() {
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
         onClick={() => (open ? close() : setOpen(true))}
-        className={cn("press pointer-events-auto relative grid size-14 place-items-center rounded-full border border-transparent bg-accent text-accent-fg shadow-button hover:bg-accent-hover", open && "max-[640px]:hidden")}
+        className={cn("press pointer-events-auto relative grid size-14 place-items-center rounded-full border border-transparent shadow-button", open ? "bg-accent text-accent-fg hover:bg-accent-hover" : "bg-transparent", open && "max-[640px]:hidden")}
       >
-        {open ? <CloseIcon size={22} /> : <SparkIcon size={22} />}
+        {open ? <CloseIcon size={22} /> : <AssistantMark size={56} pulse />}
         {unread > 0 ? (
           <span aria-hidden="true" data-testid="assistant-unread" className="absolute -top-1 -right-1 grid min-w-5 place-items-center rounded-full border-2 border-bg bg-danger px-1 text-[0.6875rem] font-bold leading-4 text-white">
             {unread}

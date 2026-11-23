@@ -253,6 +253,26 @@ h3 {
     transform: translateY(-8px);
   }
 }
+@keyframes assistant-glow {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 0.32;
+  }
+}
+.assistant-glow {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: assistant-glow 3s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .assistant-glow {
+    animation: none;
+  }
+}
 @keyframes tick-in {
   from {
     transform: scaleY(0);
