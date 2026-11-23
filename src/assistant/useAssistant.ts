@@ -1,18 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { announceChange, useDb } from "@/shell/db-context";
+import { announceChange } from "@/shell/db-context";
+import { useSession } from "@/shell/session";
 import { errorMessage } from "@/shell/useAction";
 import { useCtx } from "@/shell/useCtx";
+import { answerIntent, answerText, categoryReply, menuReply, MENU_CHIP, type ChipAction, type Part, type Reply, welcomeReply } from "./answers";
+import { visibleIntents } from "./intents";
+import { routeText } from "./match";
 import type { AssistantBlock, AsistanResponse } from "./server";
 import { dropIncompleteExchange, trimBySize, trimHistory } from "./history";
-import { answerSimple } from "./simple";
 import { isActionTool, type ActionPreview, previewActionTool, runActionTool, runReadTool } from "./tools";
 
 export type CardState = "pending" | "running" | "done" | "declined" | "error";
+/** Sohbet satırları. `bot` tipli parçalar taşır (metin, kart, çip, menü); `confirm` işlem onay kartıdır. */
 export type ChatItem =
-  | { id: number; kind: "user" | "bot" | "note"; text: string }
-  | { id: number; kind: "card"; preview: ActionPreview; state: CardState; text?: string };
+  | { id: number; at: Date; kind: "user" | "note"; text: string }
+  | { id: number; at: Date; kind: "bot"; parts: Part[] }
+  | { id: number; at: Date; kind: "confirm"; preview: ActionPreview; state: CardState; text?: string };
+
+/** Yerel cevap en az bu kadar "yazıyor…" gösterir; anında beliren cevap sohbeti ürkütücü yapar. */
+const MIN_TYPING_MS = 280;
+const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export type Mode = "checking" | "ai" | "simple";
 const MAX_ROUNDS = 5;
@@ -25,9 +34,11 @@ const NO_CHANGE = "Kullanıcı vazgeçti. Hiçbir şey değişmedi.";
 
 /** Asistanın sohbet durumu ve mantığı: iki mod, araç döngüsü (en çok 5 tur) ve onay kartları. */
 export function useAssistant() {
-  const { db } = useDb();
   const ctx = useCtx();
-  const [items, setItems] = useState<ChatItem[]>([]);
+  const { user } = useSession();
+  const [items, setItems] = useState<ChatItem[]>(() => (user ? [{ id: 0, at: new Date(), kind: "bot", parts: welcomeReply(user).parts }] : []));
+  /** Asistanın girdi beklediği boşluk (ör. order_lookup); sonraki serbest yazı onu doldurur. */
+  const slot = useRef<string | null>(null);
   const [mode, setMode] = useState<Mode>("checking");
   const [busy, setBusy] = useState(false);
   const seq = useRef(0);
@@ -51,8 +62,8 @@ export function useAssistant() {
     setItems((all) => [...all, { ...item, id } as ChatItem]);
     return id;
   }, []);
-  const patch = useCallback((id: number, change: Partial<Extract<ChatItem, { kind: "card" }>>) => {
-    setItems((all) => all.map((i) => (i.id === id && i.kind === "card" ? { ...i, ...change } : i)));
+  const patch = useCallback((id: number, change: Partial<Extract<ChatItem, { kind: "confirm" }>>) => {
+    setItems((all) => all.map((i) => (i.id === id && i.kind === "confirm" ? { ...i, ...change } : i)));
   }, []);
 
   const decide = useCallback((id: number, approved: boolean) => waiting.current.get(id)?.(approved), []);
@@ -72,11 +83,11 @@ export function useAssistant() {
         preview = await previewActionTool(ctx(), use.name, use.input);
       } catch (e) {
         const message = errorMessage(e);
-        add({ kind: "note", text: message });
+        add({ kind: "note", at: new Date(), text: message });
         return reply(message, true);
       }
       // Kart gösterilir; kullanıcı Onayla ya da Vazgeç diyene kadar hiçbir şey yazılmaz.
-      const id = add({ kind: "card", preview, state: "pending" });
+      const id = add({ kind: "confirm", preview, state: "pending", at: new Date() });
       const approved = await new Promise<boolean>((resolve) => waiting.current.set(id, resolve));
       waiting.current.delete(id);
       if (!approved) {
@@ -98,15 +109,25 @@ export function useAssistant() {
     [add, ctx, patch],
   );
 
+  const showReply = useCallback(
+    (r: Reply) => {
+      slot.current = r.slot ?? null;
+      add({ kind: "bot", at: new Date(), parts: r.parts });
+    },
+    [add],
+  );
+
+  /** Yerel cevap: veritabanından hesaplanır, API çağrısı yapmaz. */
   const answerLocally = useCallback(
-    async (question: string) => {
+    async (run: (c: ReturnType<typeof ctx>) => Promise<Reply>) => {
       try {
-        add({ kind: "bot", text: await answerSimple(db, question, new Date()) });
+        const [r] = await Promise.all([run(ctx()), wait(MIN_TYPING_MS)]);
+        showReply(r);
       } catch {
-        add({ kind: "note", text: "Bu soru cevaplanamadı. Biraz sonra yeniden deneyin." });
+        add({ kind: "note", at: new Date(), text: "Bu soru cevaplanamadı. Biraz sonra yeniden deneyin." });
       }
     },
-    [add, db],
+    [add, ctx, showReply],
   );
 
   const askClaude = useCallback(
@@ -127,26 +148,29 @@ export function useAssistant() {
             continue;
           }
           history.current = [];
-          add({ kind: "note", text: data.error === "too_long" ? "Mesaj en çok 1000 karakter olabilir." : "Bu konuşma çok uzadı. Yeni bir soru sorarak devam edin." });
+          add({ kind: "note", at: new Date(), text: data.error === "too_long" ? "Mesaj en çok 1000 karakter olabilir." : "Bu konuşma çok uzadı. Yeni bir soru sorarak devam edin." });
           return;
         }
         if (data.mode === "simple") {
           history.current = [];
           // Geçici hata oturumu kalıcı olarak hızlı yardımcıya çevirmez: bir sonraki soru yine Claude'a gider.
           if (data.reason === "upstream_error") {
-            add({ kind: "note", text: "Yapay zekâya şu an ulaşılamadı; bu soru hızlı yardımcıyla cevaplandı." });
+            add({ kind: "note", at: new Date(), text: "Yapay zekâya şu an ulaşılamadı; bu soru hızlı yardımcıyla cevaplandı." });
           } else {
             setMode("simple");
-            if (data.reason === "rate_limited") add({ kind: "note", text: "Saatlik yapay zekâ sınırı doldu; hızlı yardımcıya geçildi." });
-            else if (data.reason === "unsupported_model") add({ kind: "note", text: "Yapay zekâ modeli bu yayında desteklenmiyor; hızlı yardımcıya geçildi." });
+            if (data.reason === "rate_limited") add({ kind: "note", at: new Date(), text: "Saatlik yapay zekâ sınırı doldu; hızlı yardımcıya geçildi." });
+            else if (data.reason === "unsupported_model") add({ kind: "note", at: new Date(), text: "Yapay zekâ modeli bu yayında desteklenmiyor; hızlı yardımcıya geçildi." });
           }
-          await answerLocally(question);
+          await answerLocally((c) => answerText(c, question, null));
           return;
         }
         history.current.push({ role: "assistant", content: data.content });
-        for (const block of data.content) if (block.type === "text") add({ kind: "bot", text: block.text });
+        for (const block of data.content) if (block.type === "text") add({ kind: "bot", at: new Date(), parts: [{ type: "text", text: block.text }] });
         const uses = data.content.filter((b): b is ToolUse => b.type === "tool_use");
-        if (uses.length === 0) return;
+        if (uses.length === 0) {
+          add({ kind: "bot", at: new Date(), parts: [{ type: "chips", chips: [MENU_CHIP] }] });
+          return;
+        }
         const results: ToolResult[] = [];
         for (const use of uses) results.push(await runTool(use));
         history.current.push({ role: "user", content: results });
@@ -157,28 +181,62 @@ export function useAssistant() {
     [add, answerLocally, runTool],
   );
 
+  const begin = useCallback(async (task: () => Promise<void>) => {
+    if (running.current) return;
+    running.current = true;
+    setBusy(true);
+    try {
+      await task();
+    } catch {
+      history.current = [];
+      add({ kind: "note", at: new Date(), text: "Bağlantı kurulamadı. Biraz sonra yeniden deneyin." });
+    } finally {
+      running.current = false;
+      setBusy(false);
+    }
+  }, [add]);
+
+  /** Serbest yazı. Yapay zekâ açıksa yalnızca menü dışı sorular Claude'a gider; boşluk cevapları ve selam yereldir. */
   const send = useCallback(
     async (raw: string) => {
       const text = raw.trim();
       if (!text || running.current) return;
-      running.current = true;
-      setBusy(true);
-      add({ kind: "user", text });
-      try {
-        if (mode === "ai") await askClaude(text);
-        else await answerLocally(text);
-      } catch {
-        history.current = [];
-        add({ kind: "note", text: "Bağlantı kurulamadı. Biraz sonra yeniden deneyin." });
-      } finally {
-        running.current = false;
-        setBusy(false);
-      }
+      add({ kind: "user", at: new Date(), text });
+      await begin(async () => {
+        const social = user ? ["greeting", "thanks", "menu"].includes(routeText(text, visibleIntents(user), null).kind) : false;
+        if (mode === "ai" && !slot.current && !social) await askClaude(text);
+        else await answerLocally((c) => answerText(c, text, slot.current));
+      });
     },
-    [add, answerLocally, askClaude, mode],
+    [add, answerLocally, askClaude, begin, mode, user],
   );
 
-  return { items, mode, busy, send, decide };
+  /** Menü, kutucuk ve çip seçimleri: her zaman yerel, maliyetsiz. */
+  const choose = useCallback(
+    async (action: ChipAction, label: string) => {
+      if (!user || running.current) return;
+      if (action.type === "link") return;
+      add({ kind: "user", at: new Date(), text: label });
+      await begin(() =>
+        answerLocally(async (c) => {
+          if (action.type === "menu") return menuReply(user);
+          if (action.type === "category") return categoryReply(user, action.id);
+          if (action.type === "intent") return answerIntent(c, action.id);
+          return answerText(c, action.text, slot.current);
+        }),
+      );
+    },
+    [add, answerLocally, begin, user],
+  );
+
+  /** Başlıktaki "Ana menü": sohbeti silmeden menüyü en alta getirir ve bekleyen boşluğu bırakır. */
+  const home = useCallback(() => {
+    if (!user) return;
+    slot.current = null;
+    add({ kind: "bot", at: new Date(), parts: menuReply(user).parts });
+  }, [add, user]);
+
+  return { items, mode, busy, send, choose, home, decide };
 }
 
 type DistributiveOmit<T, K extends keyof never> = T extends unknown ? Omit<T, K> : never;
