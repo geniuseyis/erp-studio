@@ -248,3 +248,35 @@ test("390 px: tam ekran sayfa, menü kutucukları ve cevap kartı, sayfa yatay t
   const close = await panel(page).getByRole("button", { name: "Asistanı kapat" }).boundingBox();
   expect(close!.x + close!.width).toBeLessThanOrEqual(390);
 });
+
+test("Ana menü onay kartı beklerken de çalışır: kart Vazgeç sayılır, sipariş değişmez", async ({ page }) => {
+  let draft = { id: "", code: "" };
+  await mockAi(page, (messages) =>
+    isToolTurn(messages)
+      ? [{ type: "text", text: "Tamam." }]
+      : [{ type: "tool_use", id: "tu_h", name: "onayla_siparis", input: { siparis_kodu: draft.code } }],
+  );
+  await loginAs(page, "Elif Karaca");
+  draft = await one<{ id: string; code: string }>(
+    page,
+    `select o.id, o.code from sales_orders o where o.status = 'draft'
+       and exists (select 1 from sales_order_lines l where l.order_id = o.id) order by o.code limit 1`,
+  );
+  await openPanel(page);
+  await ask(page, `${draft.code} siparişini onayla`);
+  await expect(panel(page).getByRole("group", { name: "Onay kartı" }).getByRole("button", { name: "Vazgeç" })).toBeFocused();
+  await expect(homeButton(page)).toBeEnabled();
+  await homeButton(page).click();
+  await expect(panel(page).getByText("Hiçbir şey değişmedi").first()).toBeVisible();
+  await expect.poll(async () => (await one<{ status: string }>(page, `select status from sales_orders where id = '${draft.id}'`)).status).toBe("draft");
+});
+
+test("telefonda kapatınca odak balona döner ve pencere modaldır", async ({ page }) => {
+  await loginAs(page, "Elif Karaca");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openPanel(page);
+  await expect(panel(page)).toHaveAttribute("aria-modal", "true");
+  await panel(page).getByRole("button", { name: "Asistanı kapat" }).click();
+  await expect(panel(page)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Asistanı aç" })).toBeFocused();
+});

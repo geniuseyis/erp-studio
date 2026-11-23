@@ -233,6 +233,8 @@ export function useAssistant() {
   const home = useCallback(() => {
     if (!user) return;
     slot.current = null;
+    // Bekleyen onay kartı ana menüye dönülünce Vazgeç sayılır; hiçbir şey değişmez.
+    for (const resolve of [...waiting.current.values()]) resolve(false);
     add({ kind: "bot", at: new Date(), parts: menuReply(user).parts });
   }, [add, user]);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from "react";
+import { type FormEvent, type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ChipData } from "@/assistant/answers";
 import { visibleCategories } from "@/assistant/intents";
 import { type ChatItem, type Mode, useAssistant } from "@/assistant/useAssistant";
@@ -27,6 +27,19 @@ function Avatar({ className }: { className?: string }) {
   );
 }
 
+/** Telefon boyutu: pencere tam ekran sayfadır, modal gibi davranır. */
+function usePhone(): boolean {
+  return useSyncExternalStore(
+    (notify) => {
+      const mq = window.matchMedia(PHONE);
+      mq.addEventListener("change", notify);
+      return () => mq.removeEventListener("change", notify);
+    },
+    () => window.matchMedia(PHONE).matches,
+    () => false,
+  );
+}
+
 type Focus = "tile" | "chip" | "input" | null;
 
 /** Sağ alttaki asistan balonu ve rehberli sohbet penceresi. Konuşma pencere kapanınca da kalır; hesap değişince sıfırlanır (key). */
@@ -42,6 +55,8 @@ export function Assistant() {
   const end = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const wantFocus = useRef<Focus>(null);
+  const wasOpen = useRef(false);
+  const phone = usePhone();
 
   const categories = useMemo(() => (user ? visibleCategories(user) : []), [user]);
   const lastId = items.length ? items[items.length - 1]!.id : 0;
@@ -74,6 +89,13 @@ export function Assistant() {
     (tile ?? input.current)?.focus();
   }, [open]);
 
+  // Kapanınca odak balona döner. Telefonda balon pencere açıkken gizlidir (display:none); odak ancak kapandıktan sonra,
+  // balon yeniden görünür olunca verilebilir. Bu yüzden kapatan her yol (Esc, düğme, bağlantı) bu tek etkiden geçer.
+  useEffect(() => {
+    if (!open && wasOpen.current) bubble.current?.focus();
+    wasOpen.current = open;
+  }, [open]);
+
   // Esc pencereyi kapatır. Odak gönderim sırasında kilitlenen düğmeden body'ye düşebildiği için dinleyici belgededir;
   // başka bir pencerenin ya da çekmecenin Esc'ine karışmamak için yalnızca odak bu pencerede ya da boştayken çalışır.
   useEffect(() => {
@@ -83,7 +105,6 @@ export function Assistant() {
       const target = e.target instanceof Node ? e.target : null;
       if (target === document.body || (target && panelRef.current?.contains(target))) {
         setOpen(false);
-        bubble.current?.focus();
       }
     }
     document.addEventListener("keydown", onKey);
@@ -92,7 +113,21 @@ export function Assistant() {
 
   function close() {
     setOpen(false);
-    bubble.current?.focus();
+  }
+  // Telefonda sayfa modaldır: Tab pencerenin içinde döner.
+  function trapTab(e: ReactKeyboardEvent) {
+    if (!phone || e.key !== "Tab") return;
+    const nodes = [...(panelRef.current?.querySelectorAll<HTMLElement>("button:not([disabled]), a[href], input:not([disabled])") ?? [])];
+    const first = nodes[0];
+    const last = nodes[nodes.length - 1];
+    if (!first || !last) return;
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
   }
   function navigated() {
     // Telefonda pencere ekranı kaplar; bağlantıya gidilince kapanır.
@@ -190,6 +225,8 @@ export function Assistant() {
           id={panelId}
           role="dialog"
           aria-label="Atölye Asistanı"
+          aria-modal={phone ? true : undefined}
+          onKeyDown={trapTab}
           className="pointer-events-auto flex h-[min(38rem,calc(100dvh-7.5rem))] w-[min(26rem,calc(100vw-2rem))] animate-[pop-in_180ms_ease-out] flex-col overflow-hidden rounded-[22px] border border-line bg-surface shadow-panel max-[640px]:fixed max-[640px]:inset-0 max-[640px]:h-dvh max-[640px]:w-full max-[640px]:rounded-none max-[640px]:border-0"
         >
           <header className="flex items-center gap-2.5 bg-[linear-gradient(135deg,var(--hero-from),var(--hero-via)_55%,var(--hero-to))] py-2.5 pr-2 pl-3.5 text-hero-fg max-[640px]:pt-[max(0.625rem,env(safe-area-inset-top))]">
@@ -204,12 +241,11 @@ export function Assistant() {
             <button
               type="button"
               aria-label="Ana menü"
-              disabled={busy}
               onClick={() => {
                 wantFocus.current = "tile";
                 home();
               }}
-              className="press inline-flex h-9 items-center gap-1.5 rounded-xl border border-hero-fg/25 bg-hero-fg/10 px-3 text-sm font-semibold hover:bg-hero-fg/20 disabled:opacity-55 pointer-coarse:h-11"
+              className="press inline-flex h-9 items-center gap-1.5 rounded-xl border border-hero-fg/25 bg-hero-fg/10 px-3 text-sm font-semibold hover:bg-hero-fg/20 pointer-coarse:h-11"
             >
               <HomeIcon size={16} aria-hidden="true" />
               <span aria-hidden="true">Ana menü</span>
