@@ -113,3 +113,21 @@ test("boşluk doldurma: bekleyen boşluk varken serbest yazı boşluğu doldurur
   expect(routeText("menü", all, "order_lookup").kind).toBe("menu");
   expect(routeText("kritik stok", all, null)).toMatchObject({ kind: "intent", id: "critical" });
 });
+
+test("işlev sözcükleri tek başına niyet seçtirmez: 'ne var', 'var', 'ne'", () => {
+  for (const text of ["ne var", "var", "ne", "durum nedir"]) expect(matchText(text, all).kind, text).not.toBe("intent");
+});
+
+test("'stok durum nedir' özet yerine stoğu seçer; 'bugün ne var' özet kalır", () => {
+  expect(matchText("stok durum nedir", all)).toMatchObject({ kind: "intent", id: "material_search" });
+  expect(idOf("bugün ne var")).toBe("summary");
+});
+
+test("MUS- müşteri kodu yakalanır", () => {
+  expect(matchText("mus-0004 kim", all)).toEqual({ kind: "code", code: "MUS-0004", entity: "customer" });
+});
+
+test("bekleyen boşlukta teşekkür ve selam boşluğu doldurmaz", () => {
+  expect(routeText("teşekkürler", all, "order_lookup").kind).toBe("thanks");
+  expect(routeText("merhaba", all, "order_lookup").kind).toBe("greeting");
+});

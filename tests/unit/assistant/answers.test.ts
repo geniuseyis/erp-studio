@@ -133,3 +133,42 @@ test("menü yetkiye göre: kategori alt menüsünde yazma seçeneği operatöre 
   expect(chips(categoryReply(depo.user, "satis")).map((x) => x.label)).not.toContain("Yeni sipariş aç");
   expect(sales.at(-1)).toBe("⌂ Menü");
 });
+
+test("boşlukta bekleyen yazı niyete uyuyorsa boşluktan çıkar: Sipariş sorgula → kritik stok", async () => {
+  await addMaterial(db, { code: "MLZ-9001", name: "Düşük Meşe", onHandMilli: 1000, reorderPointMilli: 5000 });
+  const ask = await answerIntent(satis, "order_lookup");
+  expect(ask.slot).toBe("order_lookup");
+  const r = await answerText(satis, "kritik stok", ask.slot);
+  expect(card(r).title).toBe("Kritik stok");
+  expect(r.slot).toBeNull();
+  // Uymayan yazı boşlukta kalır.
+  const miss = await answerText(satis, "zzzz yok", "order_lookup");
+  expect(miss.slot).toBe("order_lookup");
+  expect(card(miss).emptyTone).toBe("none");
+});
+
+test("boşlukta teşekkür: kısa cevap verir ve boşluğu kapatır", async () => {
+  const r = await answerText(satis, "teşekkürler", "order_lookup");
+  expect(JSON.stringify(r.parts[0])).toContain("Rica ederim");
+  expect(r.slot).toBeNull();
+});
+
+test("MUS- müşteri kodu kayıt kartı verir", async () => {
+  const c = await addCustomer(db, { name: "Kod Müşteri" });
+  const r = card(await answerText(satis, c.code.toLowerCase()));
+  expect(r.rows[0]).toMatchObject({ code: c.code, name: "Kod Müşteri", href: `/satis/musteriler?ac=${c.id}` });
+});
+
+test("kritik stok satırı: kullanılabilir miktar çip, eldeki ve ayrılmış alt satır", async () => {
+  await addMaterial(db, { code: "MLZ-9005", name: "Ayrılmış Meşe", unit: "plaka", onHandMilli: 25_000, reservedMilli: 25_000, reorderPointMilli: 5000 });
+  const row = card(await answerIntent(satis, "critical")).rows[0]!;
+  expect(row.chip?.label).toBe("Kullanılabilir 0 plaka");
+  expect(row.sub).toBe("Eldeki 25 plaka · ayrılmış 25 plaka");
+});
+
+test("süzgeci olmayan listelerde bağlantı 'Listeyi aç' der", async () => {
+  await order("Geç", "2026-12-15", true);
+  const wo = card(await answerIntent({ ...satis, now: day("2027-01-10") }, "late_wo"));
+  expect(wo.more === undefined || wo.more.label === "Listeyi aç →").toBe(true);
+  expect(card(await answerIntent(satis, "po_late")).more?.label ?? "Listeyi aç →").toBe("Listeyi aç →");
+});

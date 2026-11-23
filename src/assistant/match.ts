@@ -4,7 +4,7 @@
 import { searchKey } from "@/domain/text";
 import { FALLBACK_IDS, type IntentDef } from "./intents";
 
-export type CodeEntity = "order" | "workorder" | "po" | "material" | "supplier" | "product";
+export type CodeEntity = "order" | "workorder" | "po" | "material" | "supplier" | "product" | "customer";
 
 export type Match =
   | { kind: "greeting" }
@@ -33,8 +33,8 @@ const STOP = new Set([
 ]);
 
 const DOC_CODE = /\b(sip|ie|sas)[\s-]?(\d{4})[\s-]?(\d{1,4})\b/;
-const ITEM_CODE = /\b(mlz|ted|urn)[\s-]?(\d{1,4})\b/;
-const CODE_ENTITY: Record<string, CodeEntity> = { sip: "order", ie: "workorder", sas: "po", mlz: "material", ted: "supplier", urn: "product" };
+const ITEM_CODE = /\b(mlz|ted|urn|mus)[\s-]?(\d{1,4})\b/;
+const CODE_ENTITY: Record<string, CodeEntity> = { sip: "order", ie: "workorder", sas: "po", mlz: "material", ted: "supplier", urn: "product", mus: "customer" };
 
 /** Küçük harf, Türkçe harfsiz, noktalamasız ve tek boşluklu anahtar. */
 export function normalize(text: string): string {
@@ -117,7 +117,8 @@ function social(tokens: string[]): "greeting" | "thanks" | "menu" | null {
   const only = (list: string[]) => {
     const words = list.flatMap((p) => p.split(" "));
     const hit = (t: string) => words.some((w) => tokenScore(t, w) >= 0.8);
-    return tokens.every((t) => hit(t) || POLITE.has(t)) && tokens.some(hit);
+    // Yalnızca "ne" ya da "var" gibi işlev sözcüklerinin tuttuğu yazı selam ya da menü isteği sayılmaz.
+    return tokens.every((t) => hit(t) || POLITE.has(t)) && tokens.some((t) => hit(t) && !STOP.has(t));
   };
   if (only(THANKS)) return "thanks";
   if (only(MENU)) return "menu";
@@ -155,7 +156,10 @@ export function matchText(text: string, allowed: IntentDef[]): Match {
     .map((def) => ({ def, ...scoreIntent(def, tokens) }))
     .filter((r) => r.score > 0)
     .sort((a, b) => b.score - a.score);
-  const [best, second] = scored;
+  // Emin olmak için söyleyişin en az bir içerik sözcüğüne (işlev sözcüğü değil) denk gelmesi gerekir:
+  // "ne var" ya da "durum nedir" tek başına bir seçeneği seçtirmez, "stok durum nedir" stoğu öne çıkarır.
+  const ranked = scored.filter((r) => [...r.used].some((i) => !STOP.has(tokens[i]!)));
+  const [best, second] = ranked;
   const leftover = (used: Set<number>) =>
     tokens
       .filter((t, i) => !used.has(i) && !STOP.has(t) && t.length >= 2)
@@ -177,7 +181,7 @@ export function routeText(text: string, allowed: IntentDef[], pendingSlot?: stri
   if (pendingSlot) {
     const tokens = normalize(text).split(" ").filter(Boolean);
     const s = social(tokens);
-    if (s && s !== "thanks") return { kind: s };
+    if (s) return { kind: s };
     const code = detectCode(text);
     if (code) return { kind: "code", ...code };
     const term = text.trim();

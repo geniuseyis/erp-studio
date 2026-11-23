@@ -8,7 +8,7 @@ import { parseRich } from "@/assistant/rich";
 import type { CardState, ChatItem } from "@/assistant/useAssistant";
 import { Button, Spinner } from "@/ui/Button";
 import { cn } from "@/ui/cn";
-import { BoxIcon, CheckIcon, ChevronRightIcon, ClipboardIcon, FactoryIcon, InfoIcon, ReceiptIcon, TruckIcon } from "@/ui/icons";
+import { BoxIcon, CheckIcon, ChevronRightIcon, ClipboardIcon, FactoryIcon, InfoIcon, ReceiptIcon, SearchIcon, TruckIcon } from "@/ui/icons";
 import { StatusChip } from "@/ui/StatusChip";
 
 /** Cevaptaki uygulama içi bağlantıları ve **kalın** yazıyı çizer (ayrıştırma: rich.ts). */
@@ -143,8 +143,8 @@ export function AnswerCard({ card, onNavigate }: { card: CardData; onNavigate: (
       ) : null}
       {empty ? (
         <p className="flex items-center gap-2.5 px-3 py-3.5 text-sm text-fg">
-          <span aria-hidden="true" className="grid size-6 shrink-0 place-items-center rounded-full bg-ok-bg text-ok">
-            <CheckIcon size={14} />
+          <span aria-hidden="true" className={cn("grid size-6 shrink-0 place-items-center rounded-full", card.emptyTone === "none" ? "bg-surface-2 text-fg-muted" : "bg-ok-bg text-ok")}>
+            {card.emptyTone === "none" ? <SearchIcon size={14} /> : <CheckIcon size={14} />}
           </span>
           {card.empty}
         </p>

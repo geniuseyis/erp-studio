@@ -15,8 +15,8 @@ import { PO_STATUS_LABEL, PO_STATUS_TONE } from "@/features/purchasing/labels";
 import { ORDER_STATUS_LABEL, ORDER_STATUS_TONE } from "@/features/sales/labels";
 import { formatDate, formatSignedQty } from "@/ui/format";
 import type { Tone } from "@/ui/StatusChip";
-import { type CategoryId, CATEGORIES, followUps, INTENT_BY_ID, type IntentDef, type SlotEntity, visibleCategories, visibleIntents } from "./intents";
-import { type CodeEntity, routeText } from "./match";
+import { type CategoryId, CATEGORIES, followUps, INTENT_BY_ID, type IntentDef, type SlotEntity, visibleIntents } from "./intents";
+import { type CodeEntity, matchText, routeText } from "./match";
 
 export const MAX_ROWS = 5;
 
@@ -29,6 +29,8 @@ export type CardData = {
   steps?: string[];
   more?: { label: string; href: string };
   empty?: string;
+  /** `ok`: sorun yok (yeşil onay); `none`: kayıt bulunamadı (nötr simge). */
+  emptyTone?: "ok" | "none";
 };
 export type ChipAction =
   | { type: "intent"; id: string }
@@ -104,8 +106,8 @@ export const materialRow = (m: MaterialRow): Row => ({
   key: m.id,
   code: m.code,
   name: m.name,
-  sub: `Eldeki ${formatQty(m.onHandMilli, m.unit)}`,
-  chip: { label: m.isCritical ? `${formatQty(m.availableMilli, m.unit)} · kritik` : formatQty(m.availableMilli, m.unit), tone: m.isCritical ? "danger" : "ok" },
+  sub: `Eldeki ${formatQty(m.onHandMilli, m.unit)} · ayrılmış ${formatQty(m.reservedMilli, m.unit)}`,
+  chip: { label: `Kullanılabilir ${formatQty(m.availableMilli, m.unit)}`, tone: m.isCritical ? "danger" : "ok" },
   href: `/stok/malzemeler?ac=${m.id}`,
 });
 export const purchaseRow = (p: PurchaseOrderRow): Row => ({
@@ -117,8 +119,8 @@ export const purchaseRow = (p: PurchaseOrderRow): Row => ({
   href: `/satin-alma/siparisler?ac=${p.id}`,
 });
 
-function listCard(title: string, all: Row[], o: { more?: { label: string; href: string }; empty: string }): CardData {
-  return { title, count: all.length, rows: all.slice(0, MAX_ROWS), more: all.length > 0 ? o.more : undefined, empty: o.empty };
+function listCard(title: string, all: Row[], o: { more?: { label: string; href: string }; empty: string; emptyTone?: "ok" | "none" }): CardData {
+  return { title, count: all.length, rows: all.slice(0, MAX_ROWS), more: all.length > 0 ? o.more : undefined, empty: o.empty, emptyTone: o.emptyTone ?? "ok" };
 }
 const reply = (user: SessionUser, id: string, card: CardData, slot?: string | null): Reply => withChips([{ type: "card", card }], followUps(user, id).map(intentChip), slot);
 
@@ -203,7 +205,7 @@ async function slotResult(ctx: Ctx, def: IntentDef, term: string): Promise<Reply
   const rows = await lookup(ctx, entity, term);
   const empty = `“${term}” ile eşleşen kayıt bulunamadı. Başka bir yazılışla deneyin.`;
   const more = { label: "Hepsini gör →", href: `${info.more}?q=${encodeURIComponent(term)}` };
-  const card = listCard(`${info.title}: “${term}”`, rows, { more, empty });
+  const card = listCard(`${info.title}: “${term}”`, rows, { more, empty, emptyTone: "none" });
   // Sonuç yoksa asistan aynı boşluğu tekrar bekler; bir sonraki yazı yeni deneme olur.
   return reply(ctx.user, def.id, card, rows.length === 0 ? def.id : null);
 }
@@ -243,7 +245,7 @@ export async function answerIntent(ctx: Ctx, id: string, term?: string): Promise
     }
     case "today_wo": {
       const rows = (await todaysWorkOrders(db, now)).map(workOrderRow);
-      return reply(user, id, listCard("Bugünün iş emirleri", rows, { more: { label: "Hepsini gör →", href: "/uretim/is-emirleri" }, empty: "Bugün planlı iş emri yok." }));
+      return reply(user, id, listCard("Bugünün iş emirleri", rows, { more: { label: "Listeyi aç →", href: "/uretim/is-emirleri" }, empty: "Bugün planlı iş emri yok." }));
     }
     case "unscheduled_wo": {
       const rows = (await listWorkOrders(db, { unscheduled: true })).map(workOrderRow);
@@ -258,7 +260,7 @@ export async function answerIntent(ctx: Ctx, id: string, term?: string): Promise
       const rows = (await listWorkOrders(db))
         .filter((w) => (w.status === "planned" || w.status === "in_progress") && w.dueAt !== null && w.dueAt.getTime() < today)
         .map((w) => ({ ...workOrderRow(w), sub: `Termin ${formatDate(w.dueAt!)}` }));
-      return reply(user, id, listCard("Termine yetişmeyen iş emirleri", rows, { more: { label: "Hepsini gör →", href: "/uretim/is-emirleri" }, empty: none("Termini geçen iş emri") }));
+      return reply(user, id, listCard("Termine yetişmeyen iş emirleri", rows, { more: { label: "Listeyi aç →", href: "/uretim/is-emirleri" }, empty: none("Termini geçen iş emri") }));
     }
     case "critical": {
       const rows = (await listMaterials(db, { criticalOnly: true })).map(materialRow);
@@ -286,7 +288,7 @@ export async function answerIntent(ctx: Ctx, id: string, term?: string): Promise
     }
     case "po_late": {
       const rows = (await listPurchaseOrders(db, { now })).filter((p) => p.late).map(purchaseRow);
-      return reply(user, id, listCard("Geciken teslimler", rows, { more: { label: "Hepsini gör →", href: "/satin-alma/siparisler" }, empty: none("Geciken teslim") }));
+      return reply(user, id, listCard("Geciken teslimler", rows, { more: { label: "Listeyi aç →", href: "/satin-alma/siparisler" }, empty: none("Geciken teslim") }));
     }
     case "receivable": {
       const rows = (await listReceivable(db, now)).map((p): Row => ({ ...purchaseRow(p), sub: `${p.remainingLineCount} kalem bekliyor`, href: `/depo/mal-kabul?ac=${p.id}` }));
@@ -296,26 +298,25 @@ export async function answerIntent(ctx: Ctx, id: string, term?: string): Promise
   return menuReply(user);
 }
 
-const CODE_INTENT: Record<CodeEntity, { entity: SlotEntity; intent: string }> = {
-  order: { entity: "order", intent: "order_lookup" },
-  workorder: { entity: "workorder", intent: "wo_lookup" },
-  po: { entity: "order", intent: "po_pending" },
-  material: { entity: "material", intent: "material_search" },
-  supplier: { entity: "supplier", intent: "supplier_search" },
-  product: { entity: "product", intent: "product_stock" },
+const CODE_INTENT: Record<CodeEntity, string> = {
+  order: "order_lookup",
+  workorder: "wo_lookup",
+  po: "po_pending",
+  material: "material_search",
+  supplier: "supplier_search",
+  product: "product_stock",
+  customer: "customer_search",
 };
 
 /** Kayıt koduna göre doğrudan kayıt kartı. */
 export async function answerCode(ctx: Ctx, code: string, entity: CodeEntity): Promise<Reply> {
   const { db, now, user } = ctx;
-  const map = CODE_INTENT[entity];
-  let rows: Row[];
-  if (entity === "po") rows = (await listPurchaseOrders(db, { search: code, now })).filter((p) => p.code === code).map(purchaseRow);
-  else rows = (await lookup(ctx, map.entity, code)).filter((r) => r.code === code);
-  const title = code;
-  const card: CardData = { title, count: rows.length, rows, empty: `${code} bulunamadı. Kodu kontrol edin.` };
-  const chips = followUps(user, map.intent).map(intentChip);
-  return withChips([{ type: "card", card }], chips);
+  const rows: Row[] =
+    entity === "po"
+      ? (await listPurchaseOrders(db, { search: code, now })).filter((p) => p.code === code).map(purchaseRow)
+      : (await lookup(ctx, entity, code)).filter((r) => r.code === code);
+  const card: CardData = { title: code, count: rows.length, rows, empty: `${code} bulunamadı. Kodu kontrol edin.`, emptyTone: "none" };
+  return withChips([{ type: "card", card }], followUps(user, CODE_INTENT[entity]).map(intentChip));
 }
 
 /** Niyet çıkmayan yazıdaki ad parçasını müşteri, ürün, malzeme ve tedarikçilerde arar. */
@@ -336,7 +337,7 @@ export async function answerEntitySearch(ctx: Ctx, term: string): Promise<Reply 
     rows.push(...found.slice(0, 2).map((r) => ({ ...r, sub: [label, r.sub].filter(Boolean).join(" · ") })));
   }
   if (total === 0) return null;
-  const card: CardData = { title: `“${term}” için sonuçlar`, count: total, rows: rows.slice(0, MAX_ROWS), empty: "" };
+  const card: CardData = { title: `“${term}” için sonuçlar`, count: total, rows: rows.slice(0, MAX_ROWS), empty: "", emptyTone: "none" };
   return withChips([{ type: "card", card }], []);
 }
 
@@ -352,8 +353,14 @@ export async function answerText(ctx: Ctx, input: string, pendingSlot?: string |
       return socialReply(ctx.user, route.kind);
     case "code":
       return answerCode(ctx, route.code, route.entity);
-    case "slot_fill":
-      return answerIntent(ctx, route.id, route.term);
+    case "slot_fill": {
+      const filled = await answerIntent(ctx, route.id, route.term);
+      const empty = filled.parts.some((p) => p.type === "card" && p.card.count === 0);
+      if (!empty) return filled;
+      // Boşluğa uymayan yazı (ör. "kritik stok") boşluktan çıkar: emin bir niyet varsa o cevaplanır ve boşluk kapanır.
+      const m = matchText(input, allowed);
+      return m.kind === "intent" ? answerIntent(ctx, m.id, m.term) : filled;
+    }
     case "intent":
       return answerIntent(ctx, route.id, route.term);
     case "unsure": {
@@ -365,5 +372,3 @@ export async function answerText(ctx: Ctx, input: string, pendingSlot?: string |
     }
   }
 }
-
-export { visibleCategories };
