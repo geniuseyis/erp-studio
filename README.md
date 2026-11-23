@@ -102,6 +102,34 @@ Bir mobilya atölyesinin ERP'sini gösteren bir vitrin. Gerçek bir PostgreSQL v
 
 <p align="center"><img src="docs/screens/tanitim/21-komut-paleti.png" width="100%" alt="Ctrl+K paleti: sayfalar ve sipariş kayıtları arasında arama"></p>
 
+## Asistan
+
+### Ana menü
+
+<p align="center"><img src="docs/screens/tanitim/22-asistan-menu.png" width="100%" alt="Asistan penceresi: Satış, Üretim, Stok, Satın alma, Özet ve Nasıl yapılır başlıklı altı kutucuk"></p>
+
+### Kart cevabı
+
+<p align="center"><img src="docs/screens/tanitim/23-asistan-kart.png" width="100%" alt="Asistan kritik stok kartı: kalemler, Aç bağlantıları ve devam çipleri"></p>
+
+### Bunu mu demek istediniz?
+
+<p align="center"><img src="docs/screens/tanitim/24-asistan-yazim-hatasi.png" width="100%" alt="Asistan anlaşılmayan yazıya Bunu mu demek istediniz diye öneri çipleri sunuyor"></p>
+
+### Telefonda tam ekran
+
+<p align="center"><img src="docs/screens/tanitim/25-asistan-telefon.png" width="100%" alt="Asistan telefonda tam ekran pencere olarak açılmış, altı kutucuklu ana menü"></p>
+
+## Koyu tema ve telefon
+
+### Koyu tema
+
+<p align="center"><img src="docs/screens/tanitim/26-koyu-tema.png" width="100%" alt="Koyu temada ana panel"></p>
+
+### Telefon
+
+<p align="center"><img src="docs/screens/tanitim/27-telefon.png" width="100%" alt="Telefonda siparişler listesi"></p>
+
 ## Kullanılan teknolojiler
 
 - **Next.js 16** ve **React 19**: uygulama iskeleti
