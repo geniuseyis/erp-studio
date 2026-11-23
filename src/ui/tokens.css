@@ -37,6 +37,8 @@
   --hero-fg: #fff6e8;
   --hero-fg-muted: #e0ccb2;
   --overlay: rgb(30 20 13 / 0.5);
+  /* Sade düğmelerin üzerine gelme zemini: yarı saydam, hem sayfa zemininde (--bg) hem kartta (--surface) seçilir. */
+  --ghost-hover: rgb(107 63 29 / 0.1);
   /* Kaydırma çubuğu tutamağı: --fg-muted (#67584b) tonu, dinlenmede %35, üzerinde %60. */
   --scroll-thumb: rgb(103 88 75 / 0.35);
   --scroll-thumb-hover: rgb(103 88 75 / 0.6);
@@ -78,6 +80,7 @@
   --hero-fg: #fff6e8;
   --hero-fg-muted: #d9c4a8;
   --overlay: rgb(0 0 0 / 0.62);
+  --ghost-hover: rgb(255 240 220 / 0.09);
   /* --fg-muted (#bcab97) tonu. */
   --scroll-thumb: rgb(188 171 151 / 0.35);
   --scroll-thumb-hover: rgb(188 171 151 / 0.6);

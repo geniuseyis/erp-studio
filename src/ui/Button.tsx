@@ -20,7 +20,7 @@ const VARIANT: Record<Variant, string> = {
   primary:
     "border-transparent text-accent-fg shadow-button bg-[linear-gradient(180deg,color-mix(in_oklab,var(--accent)_82%,white)_0%,var(--accent)_55%,var(--accent-hover)_100%)] hover:brightness-110",
   secondary: "border-line bg-surface text-fg shadow-[0_1px_2px_rgb(60_38_18/0.06)] hover:border-line-strong hover:bg-surface-2",
-  ghost: "border-transparent bg-transparent text-fg hover:bg-surface-2",
+  ghost: "border-transparent bg-transparent text-fg hover:bg-ghost-hover",
   danger: "border-danger/40 bg-danger-bg text-danger hover:border-danger",
   light: "border-transparent bg-hero-fg text-[#2a1a0e] shadow-[0_8px_24px_-10px_rgb(0_0_0/0.6)] hover:bg-white",
 };
